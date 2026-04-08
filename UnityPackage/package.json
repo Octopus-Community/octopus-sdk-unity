@@ -1,0 +1,25 @@
+{
+    "name": "com.octopuscommunity.octopus_sdk_for_unity",
+    "version": "1.10.0",
+    "displayName": "Octopus SDK for Unity",
+    "description": "Unity wrapper for the Octopus SDK Android and iOS libraries.",
+    "unity": "2019.4",
+    "license": "SEE LICENSE IN LICENSE.md",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Octopus-Community/octopus-sdk-unity.git"
+    },
+    "keywords": ["octopus", "community", "social", "sdk"],
+    "documentationUrl": "https://doc.octopuscommunity.com",
+    "author": {
+        "name": "Octopus Community",
+        "url": "https://octopuscommunity.com"
+    },
+    "samples": [
+        {
+            "displayName": "Octopus Auth Example",
+            "description": "Example of minimal integration by using Octopus Authentication.",
+            "path": "Samples~/OctopusAuthExample"
+        }
+    ]
+}

@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1045 &1
+EditorBuildSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Scenes:
+  - enabled: 1
+    path: Assets/MainMenu/MainMenu.unity
+    guid: b5c4a40837d438e45a6aa07c29325263
+  - enabled: 1
+    path: Assets/SSOExample/SSOExample.unity
+    guid: 75dd6c2226080e140b7365df0aa900ef
+  - enabled: 1
+    path: Assets/OctopusAuthExample/OctopusAuthExample.unity
+    guid: b59c89dfcca3ccc44a953c914c320ca8
+  - enabled: 1
+    path: Assets/ForcedLoginExample/ForcedLoginExample.unity
+    guid: 37a46315eabf5ed479db3ae4d28a01af
+  - enabled: 1
+    path: Assets/CustomThemesExample/CustomThemesExample.unity
+    guid: 471aec16dc469af48b8bc203f4c12d34
+  - enabled: 1
+    path: Assets/ManagedFieldsExample/ManagedFieldsExample.unity
+    guid: 45ad83b15acf5ba4eb7cce9d3d3b511f
+  - enabled: 1
+    path: Assets/PushNotificationsExample/PushNotificationsExample.unity
+    guid: dbfe3f4c63bc5fa47b13e3206dc2e6e7
+  - enabled: 1
+    path: Assets/EventsExample/EventsExample.unity
+    guid: ec5007f4e0d65bf40b2687cecce70d15
+  - enabled: 1
+    path: Assets/LanguageOverrideExample/LanguageOverrideExample.unity
+    guid: d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9
+  m_configObjects:
+    com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  m_UseUCBPForAssetBundles: 0

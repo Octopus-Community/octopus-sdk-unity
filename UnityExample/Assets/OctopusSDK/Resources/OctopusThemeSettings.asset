@@ -1,0 +1,61 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 256eae85e75ea4f1abff2a7556aaa3c2, type: 3}
+  m_Name: OctopusThemeSettings
+  m_EditorClassIdentifier: OctopusSDK.Runtime::OctopusThemeSettings
+  logo: {fileID: 0}
+  fonts: []
+  logoFileName: 
+  appName: 
+  navBarUsesPrimaryColor: 0
+  colorScheme: 0
+  fontStyles:
+  - enabled: 0
+    fontIndex: -1
+    fontSize: 0
+  - enabled: 0
+    fontIndex: -1
+    fontSize: 0
+  - enabled: 0
+    fontIndex: -1
+    fontSize: 0
+  - enabled: 0
+    fontIndex: -1
+    fontSize: 0
+  - enabled: 0
+    fontIndex: -1
+    fontSize: 0
+  - enabled: 0
+    fontIndex: -1
+    fontSize: 0
+  - enabled: 0
+    fontIndex: -1
+    fontSize: 0
+  fontFileNames: []
+  lightColorSchemeConfig:
+    primaryEnabled: 0
+    primary: {r: 0.2, g: 0.4, b: 0.8, a: 1}
+    primaryLowEnabled: 0
+    primaryLow: {r: 0.4, g: 0.6, b: 0.9, a: 1}
+    primaryHighEnabled: 0
+    primaryHigh: {r: 0.1, g: 0.3, b: 0.7, a: 1}
+    onPrimaryEnabled: 0
+    onPrimary: {r: 1, g: 1, b: 1, a: 1}
+  darkColorSchemeConfig:
+    primaryEnabled: 0
+    primary: {r: 0.2, g: 0.4, b: 0.8, a: 1}
+    primaryLowEnabled: 0
+    primaryLow: {r: 0.4, g: 0.6, b: 0.9, a: 1}
+    primaryHighEnabled: 0
+    primaryHigh: {r: 0.1, g: 0.3, b: 0.7, a: 1}
+    onPrimaryEnabled: 0
+    onPrimary: {r: 1, g: 1, b: 1, a: 1}

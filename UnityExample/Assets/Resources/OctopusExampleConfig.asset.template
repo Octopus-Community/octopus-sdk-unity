@@ -1,0 +1,26 @@
+// OctopusExampleConfig — ScriptableObject template
+//
+// This file documents the expected structure. To set up:
+//
+// 1. In Unity, go to Assets > Create > Octopus Example Config
+//    This creates Assets/Resources/OctopusExampleConfig.asset (git-ignored).
+//
+// 2. Fill in the fields in the Inspector:
+//
+//    Default Profile (used by most examples):
+//      - apiKey:    your Octopus API key for OctopusAuth mode
+//
+//    Forced Login Profile:
+//      - apiKey:    your Octopus API key for SSO mode
+//      - authToken: a valid JWT token
+//      - userId:    e.g. "user_01"
+//      - nickname:  e.g. "UNITY USER"
+//      - bio:       e.g. "Demo user for unity SDK"
+//      - picture:   URL to a profile picture
+//
+//    Managed Fields Profile:
+//      - apiKey:    your Octopus API key for SSO managed-fields mode
+//      - authToken: a valid JWT token
+//      - userId:    e.g. "user_01"
+//
+// 3. The asset is git-ignored and will not be committed.

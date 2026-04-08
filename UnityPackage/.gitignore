@@ -1,0 +1,7 @@
+# .gitignore for a SPM package
+.swiftpm/
+.build/
+.DS_Store
+
+*.resolved
+*.resolved.meta

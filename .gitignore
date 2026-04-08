@@ -1,0 +1,13 @@
+.DS_Store
+.idea/
+.vscode/
+.claude/
+
+# Secrets and credentials
+.env
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+local.properties
