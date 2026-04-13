@@ -14,7 +14,10 @@ public partial class OctopusSDK
             plugin.CallStatic("open", notification?.DeepLink ?? "");
         }
 #elif UNITY_IOS && !UNITY_EDITOR
-        OctopusSdkOpen(notification?.PostId ?? "");
+        // On iOS, notification navigation is handled natively: the UNNotificationResponse
+        // is stored by the developer's AppController (via OctopusNotificationHelper) and
+        // passed to OctopusHomeScreen via a binding. The C# notification data is not needed.
+        OctopusSdkOpen("");
 #endif
     }
 

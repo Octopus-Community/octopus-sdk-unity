@@ -123,23 +123,133 @@ For full details, see the [SSO documentation](https://doc.octopuscommunity.com/S
 
 Octopus can send push notifications to your users when others interact with them in the community. The SDK does **not** request notification permissions — your app is responsible for that.
 
-**Register the device push token** (from Firebase, APNs, or any push notification provider):
+**Register the device push token:**
+
+The native Octopus SDK expects a raw device token — APNs on iOS, FCM on Android:
 
 ```csharp
 OctopusSDK.RegisterNotificationsToken(deviceToken);
 ```
 
-**Handle incoming notifications:**
+### iOS — Notification Tap Handling
+
+On iOS, notification taps are handled natively by your `OctopusAppController.mm` (see below). The SDK fires `OnNotificationTapped` for every Octopus notification tap, regardless of app state (cold start, background, or foreground):
 
 ```csharp
-if (OctopusSDK.IsOctopusNotification(notificationData))
+OctopusSDK.OnNotificationTapped += () =>
 {
-    var notification = OctopusSDK.GetOctopusNotification(notificationData);
-    OctopusSDK.Open(notification); // opens the related content
+    OctopusSDK.Open(); // navigates to the notification's content
+};
+```
+
+No Firebase dependency is needed on iOS. You can retrieve the APNs device token using Unity Mobile Notifications (`com.unity.mobile.notifications`) or any other method.
+
+> **How it works:** The native `UNNotificationResponse` is intercepted via method swizzling on `UnityNotificationManager` and forwarded to `OctopusNotificationHelper`. This avoids a delegate-ownership conflict with Unity's Mobile Notifications package, which sets its own `UNUserNotificationCenter` delegate. The SDK notifies your C# code through `OnNotificationTapped` so you can call `Open()`.
+
+#### iOS — Native File Required
+
+Notification deep-link navigation requires a native Objective-C++ file that hooks into `UnityNotificationManager`. Without it, `Open()` will open the community home feed instead of the specific content.
+
+Add `OctopusAppController.mm` to your project under `Assets/Plugins/iOS/`:
+
+```objc
+#import "UnityAppController.h"
+#import <UserNotifications/UserNotifications.h>
+#import <objc/runtime.h>
+#if __has_include(<UnityFramework/UnityFramework-Swift.h>)
+#import <UnityFramework/UnityFramework-Swift.h>
+#else
+#import "UnityFramework-Swift.h"
+#endif
+
+// Swizzle UnityNotificationManager so Octopus is notified of every notification
+// tap, regardless of who owns the UNUserNotificationCenter delegate.
+
+static void (*sOriginalDidReceiveResponse)(id, SEL, UNUserNotificationCenter *,
+                                            UNNotificationResponse *, void (^)(void));
+
+static void swizzled_didReceiveNotificationResponse(id self, SEL _cmd,
+        UNUserNotificationCenter *center, UNNotificationResponse *response,
+        void (^completionHandler)(void)) {
+    [OctopusNotificationHelper handleNotificationResponse:response];
+    if (sOriginalDidReceiveResponse)
+        sOriginalDidReceiveResponse(self, _cmd, center, response, completionHandler);
+    else
+        completionHandler();
+}
+
+@interface OctopusNotificationSwizzler : NSObject @end
+@implementation OctopusNotificationSwizzler
++ (void)load {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        Class cls = NSClassFromString(@"UnityNotificationManager");
+        if (!cls) return;
+        SEL sel = @selector(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:);
+        Method m = class_getInstanceMethod(cls, sel);
+        if (!m) return;
+        sOriginalDidReceiveResponse = (void (*)(id, SEL, UNUserNotificationCenter *,
+            UNNotificationResponse *, void (^)(void)))method_getImplementation(m);
+        method_setImplementation(m, (IMP)swizzled_didReceiveNotificationResponse);
+    });
+}
+@end
+
+@interface OctopusAppController : UnityAppController <UNUserNotificationCenterDelegate>
+@end
+
+@implementation OctopusAppController
+
+- (BOOL)application:(UIApplication *)application
+    didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    BOOL result = [super application:application didFinishLaunchingWithOptions:launchOptions];
+    [UNUserNotificationCenter currentNotificationCenter].delegate = self;
+    return result;
+}
+
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center
+    didReceiveNotificationResponse:(UNNotificationResponse *)response
+         withCompletionHandler:(void (^)(void))completionHandler {
+    [OctopusNotificationHelper handleNotificationResponse:response];
+    completionHandler();
+}
+
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center
+       willPresentNotification:(UNNotification *)notification
+         withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
+    if (@available(iOS 14.0, *)) {
+        completionHandler(UNNotificationPresentationOptionBanner | UNNotificationPresentationOptionSound);
+    } else {
+        completionHandler(UNNotificationPresentationOptionAlert | UNNotificationPresentationOptionSound);
+    }
+}
+
+@end
+
+IMPL_APP_CONTROLLER_SUBCLASS(OctopusAppController)
+```
+
+> **Note:** `OctopusNotificationSwizzler` hooks into Unity's `UnityNotificationManager` at load time so notification taps are forwarded to Octopus even though `com.unity.mobile.notifications` owns the delegate. `OctopusAppController` serves as a fallback for projects that do not use that package.
+
+A ready-to-use version of this file is available in the **Push Notifications Example** sample (importable via Unity Package Manager).
+
+### Android — Firebase Setup
+
+Add a `google-services.json` for your Firebase project to `Assets/` in your Unity project. Create the file from the [Firebase Console](https://console.firebase.google.com) by adding an **Android** app with your package name (e.g. `com.octopuscommunity.example`).
+
+### Android — Notification Handling
+
+On Android, use Firebase Messaging (or your push provider) to detect notification taps and pass the deep link to the SDK:
+
+```csharp
+if (OctopusSDK.IsOctopusNotification(e.Message.Data) && e.Message.NotificationOpened)
+{
+    var notification = OctopusSDK.GetOctopusNotification(e.Message.Data);
+    OctopusSDK.Open(notification);
 }
 ```
 
-Where `notificationData` is an `IDictionary<string, string>` containing the notification payload.
+No additional native file is needed on Android.
 
 ## Notification Badges
 
