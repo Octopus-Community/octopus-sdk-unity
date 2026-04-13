@@ -1,6 +1,6 @@
 {
     "name": "com.octopuscommunity.octopus_sdk_for_unity",
-    "version": "1.10.0",
+    "version": "1.10.1",
     "displayName": "Octopus SDK for Unity",
     "description": "Unity wrapper for the Octopus SDK Android and iOS libraries.",
     "unity": "2019.4",
@@ -20,6 +20,11 @@
             "displayName": "Octopus Auth Example",
             "description": "Example of minimal integration by using Octopus Authentication.",
             "path": "Samples~/OctopusAuthExample"
+        },
+        {
+            "displayName": "Push Notifications Example",
+            "description": "Push notification handling without Firebase on iOS. Includes a sample UnityAppController subclass and APNs token retrieval via Unity Mobile Notifications.",
+            "path": "Samples~/PushNotificationsExample"
         }
     ]
 }

@@ -4,6 +4,7 @@ import OctopusUI
 import SwiftUI
 import UIKit
 import Combine
+import UserNotifications
 
 private let COLOR_SCHEME_TYPE_LIGHT: Int32 = 1
 private let COLOR_SCHEME_TYPE_DARK: Int32 = 2
@@ -25,6 +26,73 @@ private var fonts: OctopusTheme.Fonts?
 
 private var octopusController: UIHostingController<AnyView>?
 var notSeenNotifCancellable: AnyCancellable?
+private var sdkInitialized = false
+
+// MARK: - Push Notification State & Helper
+
+/// Holds the pending UNNotificationResponse captured at the native level when the user taps
+/// an Octopus push notification. The response is passed as a binding to OctopusHomeScreen
+/// so the native SDK can navigate to the correct screen (post, comment, reply).
+class OctopusNotificationState: ObservableObject {
+    static let shared = OctopusNotificationState()
+    @Published var pendingNotificationResponse: UNNotificationResponse?
+    private init() {}
+}
+
+/// Helper callable from Objective-C (via the auto-generated UnityFramework-Swift.h header).
+/// Developers call these methods from their UnityAppController subclass to forward
+/// notification responses to the Octopus SDK.
+@objc public class OctopusNotificationHelper: NSObject {
+    /// Call from userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:.
+    /// If the notification is from Octopus, stores the response so OctopusHomeScreen
+    /// can navigate to the correct screen when Open() is called.
+    @objc public static func handleNotificationResponse(_ response: UNNotificationResponse) {
+        if OctopusSDK.isAnOctopusNotification(notification: response.notification) {
+            let work = {
+                OctopusNotificationState.shared.pendingNotificationResponse = response
+                if sdkInitialized {
+                    // Warm/background: OctopusChannel already exists, notify C# directly.
+                    sendUnityMessage("OctopusChannel", "OnNotificationTapped", "")
+                }
+                // Cold start: sdkInitialized is false. OctopusSdkInitialize() will detect
+                // the stored response and fire OnNotificationTapped itself.
+            }
+            if Thread.isMainThread {
+                work()
+            } else {
+                DispatchQueue.main.async { work() }
+            }
+        }
+    }
+
+    /// Returns true if the notification was sent by the Octopus platform.
+    @objc public static func isOctopusNotification(_ notification: UNNotification) -> Bool {
+        return OctopusSDK.isAnOctopusNotification(notification: notification)
+    }
+}
+
+// MARK: - Bridge Root View
+
+/// Wrapper view that connects OctopusNotificationState to OctopusHomeScreen's notificationResponse binding.
+private struct OctopusBridgeRootView: View {
+    @ObservedObject var notificationState = OctopusNotificationState.shared
+    let octopus: OctopusSDK
+    let navBarTitle: OctopusMainFeedTitle?
+    let coloredNavBar: Bool
+    let postId: String?
+    let theme: OctopusTheme
+
+    var body: some View {
+        OctopusHomeScreen(
+            octopus: octopus,
+            mainFeedNavBarTitle: navBarTitle,
+            mainFeedColoredNavBar: coloredNavBar,
+            postId: postId,
+            notificationResponse: $notificationState.pendingNotificationResponse
+        )
+        .environment(\.octopusTheme, theme)
+    }
+}
 
 @_cdecl("OctopusSdkInitialize")
 public func OctopusSdkInitialize(
@@ -42,6 +110,22 @@ public func OctopusSdkInitialize(
         octopus?.overrideDefaultLocale(with: Locale.current)
         notSeenNotifCancellable = octopus?.$notSeenNotificationsCount.sink { count in
             sendUnityMessage("OctopusChannel", "OnNotSeenNotificationsCount", String(count) )
+        }
+
+        // Both sdkInitialized and pendingNotificationResponse are read/written on the
+        // main thread (from handleNotificationResponse). Dispatch here to avoid a data
+        // race if OctopusSdkInitialize is ever called off-main.
+        DispatchQueue.main.async {
+            // Mark SDK as initialized so that future notification taps (warm/background)
+            // send OnNotificationTapped directly from handleNotificationResponse.
+            sdkInitialized = true
+
+            // If a notification tap launched the app (cold start), the response was already
+            // stored by OctopusAppController before Unity booted. Notify C# so the developer
+            // can call Open().
+            if OctopusNotificationState.shared.pendingNotificationResponse != nil {
+                sendUnityMessage("OctopusChannel", "OnNotificationTapped", "")
+            }
         }
     } catch {
         print("Octopus Init Error: \(error)")
@@ -106,41 +190,52 @@ private func fieldToString(_ profileField: ConnectionMode.SSOConfiguration.Profi
 
 @_cdecl("OctopusSdkOpen")
 public func OctopusSdkOpen(postId: UnsafePointer<Int8>) {
-    var postIdString :String? = String(cString: postId)
-    if(postIdString!.isEmpty){
-        postIdString = nil;
-    } else {
-        // if a postId is received we need to make sure this open attempt doesn't
-        // just shows a hidden dialog, but actually re-init OctopusHomeScreen
-        // passing PostId as param
-        OctopusSdkClose(keepState: false)
+    // Copy the C string on the calling thread (the pointer is only valid here).
+    var postIdString: String? = String(cString: postId)
+    if postIdString?.isEmpty == true {
+        postIdString = nil
     }
-    
+
+    // All UI state and @Published reads must happen on the main thread.
     DispatchQueue.main.async {
+        // Force re-init when a notification response is pending or a specific post was requested,
+        // so OctopusHomeScreen is re-created with the correct parameters.
+        let hasPendingNotification = OctopusNotificationState.shared.pendingNotificationResponse != nil
+        if hasPendingNotification || postIdString != nil {
+            octopusController?.dismiss(animated: false)
+            octopusController = nil
+        }
+
+        guard let sdk = octopus else {
+            print("OctopusSdkOpen: SDK not initialized. Call OctopusSdkInitialize first.")
+            return
+        }
         guard let presentingVC = topViewController() else { return }
 
         if octopusController == nil {
-            let leadingItem: OctopusHomeScreen.NavBarLeadingItemKind
+            let navBarTitle: OctopusMainFeedTitle?
             if logo != nil {
-                leadingItem = .logo
+                navBarTitle = OctopusMainFeedTitle(content: .logo, placement: .leading)
             } else if let name = appName, !name.isEmpty {
-                leadingItem = .text(.init(text: name))
+                navBarTitle = OctopusMainFeedTitle(
+                    content: .text(.init(text: name)), placement: .leading)
             } else {
-                leadingItem = .logo
+                navBarTitle = nil
             }
 
             let themeFonts = fonts ?? OctopusTheme.Fonts()
-
             let effectiveColorScheme = resolveColorScheme()
 
-            let root = OctopusHomeScreen(
-                octopus: octopus!,
-                navBarLeadingItem: leadingItem,
-                navBarPrimaryColor: navBarUsesPrimaryColor
-            )
-            .environment(
-                \.octopusTheme,
-                OctopusTheme(
+            // When a notification response is pending, it handles all navigation —
+            // passing postId simultaneously would create a conflicting PostDetailView root.
+            let effectivePostId = hasPendingNotification ? nil : postIdString
+
+            let root = OctopusBridgeRootView(
+                octopus: sdk,
+                navBarTitle: navBarTitle,
+                coloredNavBar: navBarUsesPrimaryColor,
+                postId: effectivePostId,
+                theme: OctopusTheme(
                     colors: effectiveColorScheme,
                     fonts: themeFonts,
                     assets: .init(logo: logo)
@@ -162,6 +257,7 @@ public func OctopusSdkClose(keepState: Bool = true) {
         octopusController?.dismiss(animated: true)
         if !keepState {
             octopusController = nil
+            OctopusNotificationState.shared.pendingNotificationResponse = nil
         }
     }
 }

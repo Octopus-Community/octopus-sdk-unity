@@ -108,3 +108,10 @@ Assets/GeneratedLocalRepo*
 # Example config with API keys and tokens (create your own via Assets > Create > Octopus > Example Config)
 Assets/Resources/OctopusExampleConfig.asset
 Assets/Resources/OctopusExampleConfig.asset.meta
+
+# Firebase config (each developer uses their own Firebase project — download from Firebase Console)
+Assets/google-services.json
+Assets/google-services.json.meta
+Assets/StreamingAssets/google-services-desktop.json
+Assets/StreamingAssets/google-services-desktop.json.meta
+Assets/Plugins/Android/FirebaseApp.androidlib/res/values/google-services.xml
