@@ -131,107 +131,58 @@ The native Octopus SDK expects a raw device token — APNs on iOS, FCM on Androi
 OctopusSDK.RegisterNotificationsToken(deviceToken);
 ```
 
-### iOS — Notification Tap Handling
+> As of 1.12, push handling is **data-driven and identical on iOS and Android** — there is no native `.mm` file to add and no `OnNotificationTapped` event. On both platforms you detect the tap, read its payload, and pass it to the SDK:
+>
+> ```csharp
+> if (OctopusSDK.IsOctopusNotification(payload))
+>     OctopusSDK.Open(OctopusSDK.GetOctopusNotification(payload));
+> ```
+>
+> `payload` is an `IDictionary<string, string>`: the FCM data map on Android, the notification's `UserInfo` on iOS.
 
-On iOS, notification taps are handled natively by your `OctopusAppController.mm` (see below). The SDK fires `OnNotificationTapped` for every Octopus notification tap, regardless of app state (cold start, background, or foreground):
+### iOS — Notification Handling
+
+iOS uses Unity Mobile Notifications (`com.unity.mobile.notifications`) for both APNs token retrieval and tap detection. **No Firebase dependency and no native file are required** — the previous `OctopusAppController.mm` and method swizzling are no longer needed.
+
+Request authorization and register the APNs token:
 
 ```csharp
-OctopusSDK.OnNotificationTapped += () =>
+using (var req = new AuthorizationRequest(
+    AuthorizationOption.Alert | AuthorizationOption.Sound | AuthorizationOption.Badge,
+    registerForRemoteNotifications: true))
 {
-    OctopusSDK.Open(); // navigates to the notification's content
-};
+    while (!req.IsFinished) yield return null;
+    if (req.Granted && !string.IsNullOrEmpty(req.DeviceToken))
+        OctopusSDK.RegisterNotificationsToken(req.DeviceToken);
+}
 ```
 
-No Firebase dependency is needed on iOS. You can retrieve the APNs device token using Unity Mobile Notifications (`com.unity.mobile.notifications`) or any other method.
+Forward the payload's `UserInfo` to the SDK. A **tap** is exposed via `GetLastRespondedNotification()` — check it on cold start **and** when the app regains focus (a tap on a backgrounded notification resumes the app without raising `OnRemoteNotificationReceived`). `OnRemoteNotificationReceived` fires only when a notification *arrives* in the foreground, not on a tap:
 
-> **How it works:** The native `UNNotificationResponse` is intercepted via method swizzling on `UnityNotificationManager` and forwarded to `OctopusNotificationHelper`. This avoids a delegate-ownership conflict with Unity's Mobile Notifications package, which sets its own `UNUserNotificationCenter` delegate. The SDK notifies your C# code through `OnNotificationTapped` so you can call `Open()`.
-
-#### iOS — Native File Required
-
-Notification deep-link navigation requires a native Objective-C++ file that hooks into `UnityNotificationManager`. Without it, `Open()` will open the community home feed instead of the specific content.
-
-Add `OctopusAppController.mm` to your project under `Assets/Plugins/iOS/`:
-
-```objc
-#import "UnityAppController.h"
-#import <UserNotifications/UserNotifications.h>
-#import <objc/runtime.h>
-#if __has_include(<UnityFramework/UnityFramework-Swift.h>)
-#import <UnityFramework/UnityFramework-Swift.h>
-#else
-#import "UnityFramework-Swift.h"
-#endif
-
-// Swizzle UnityNotificationManager so Octopus is notified of every notification
-// tap, regardless of who owns the UNUserNotificationCenter delegate.
-
-static void (*sOriginalDidReceiveResponse)(id, SEL, UNUserNotificationCenter *,
-                                            UNNotificationResponse *, void (^)(void));
-
-static void swizzled_didReceiveNotificationResponse(id self, SEL _cmd,
-        UNUserNotificationCenter *center, UNNotificationResponse *response,
-        void (^completionHandler)(void)) {
-    [OctopusNotificationHelper handleNotificationResponse:response];
-    if (sOriginalDidReceiveResponse)
-        sOriginalDidReceiveResponse(self, _cmd, center, response, completionHandler);
-    else
-        completionHandler();
+```csharp
+void HandleTappedPayload(IDictionary<string, string> payload)
+{
+    if (OctopusSDK.IsOctopusNotification(payload))
+        OctopusSDK.Open(OctopusSDK.GetOctopusNotification(payload));
 }
 
-@interface OctopusNotificationSwizzler : NSObject @end
-@implementation OctopusNotificationSwizzler
-+ (void)load {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        Class cls = NSClassFromString(@"UnityNotificationManager");
-        if (!cls) return;
-        SEL sel = @selector(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:);
-        Method m = class_getInstanceMethod(cls, sel);
-        if (!m) return;
-        sOriginalDidReceiveResponse = (void (*)(id, SEL, UNUserNotificationCenter *,
-            UNNotificationResponse *, void (^)(void)))method_getImplementation(m);
-        method_setImplementation(m, (IMP)swizzled_didReceiveNotificationResponse);
-    });
-}
-@end
-
-@interface OctopusAppController : UnityAppController <UNUserNotificationCenterDelegate>
-@end
-
-@implementation OctopusAppController
-
-- (BOOL)application:(UIApplication *)application
-    didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    BOOL result = [super application:application didFinishLaunchingWithOptions:launchOptions];
-    [UNUserNotificationCenter currentNotificationCenter].delegate = self;
-    return result;
+// A tap — the notification that launched the app (cold start) or was tapped while backgrounded.
+void HandleRespondedNotification()
+{
+    var responded = iOSNotificationCenter.GetLastRespondedNotification();
+    if (responded != null) HandleTappedPayload(responded.UserInfo);
 }
 
-- (void)userNotificationCenter:(UNUserNotificationCenter *)center
-    didReceiveNotificationResponse:(UNNotificationResponse *)response
-         withCompletionHandler:(void (^)(void))completionHandler {
-    [OctopusNotificationHelper handleNotificationResponse:response];
-    completionHandler();
-}
+void Start() => HandleRespondedNotification();                                  // cold start
+void OnApplicationFocus(bool hasFocus) { if (hasFocus) HandleRespondedNotification(); } // resume after a tap
 
-- (void)userNotificationCenter:(UNUserNotificationCenter *)center
-       willPresentNotification:(UNNotification *)notification
-         withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
-    if (@available(iOS 14.0, *)) {
-        completionHandler(UNNotificationPresentationOptionBanner | UNNotificationPresentationOptionSound);
-    } else {
-        completionHandler(UNNotificationPresentationOptionAlert | UNNotificationPresentationOptionSound);
-    }
-}
-
-@end
-
-IMPL_APP_CONTROLLER_SUBCLASS(OctopusAppController)
+// A notification arriving while the app is already in the foreground:
+iOSNotificationCenter.OnRemoteNotificationReceived += n => HandleTappedPayload(n.UserInfo);
 ```
 
-> **Note:** `OctopusNotificationSwizzler` hooks into Unity's `UnityNotificationManager` at load time so notification taps are forwarded to Octopus even though `com.unity.mobile.notifications` owns the delegate. `OctopusAppController` serves as a fallback for projects that do not use that package.
+> The responded notification must be read from whichever scene loads first — if your app launches into a menu, handle it there (or in a persistent object), not only inside the community screen. The sample includes a small `PushNotificationLauncher` that routes a tap to the example scene for exactly this reason.
 
-A ready-to-use version of this file is available in the **Push Notifications Example** sample (importable via Unity Package Manager).
+A ready-to-use version of this flow is available in the **Push Notifications Example** sample (importable via Unity Package Manager).
 
 ### Android — Firebase Setup
 
@@ -250,6 +201,47 @@ if (OctopusSDK.IsOctopusNotification(e.Message.Data) && e.Message.NotificationOp
 ```
 
 No additional native file is needed on Android.
+
+> As on iOS, attach the `MessageReceived` listener from whichever scene loads **first** (or a persistent object) so a tap that launches a closed app is handled — not only after the user navigates into the community screen. The sample's `PushNotificationLauncher` reads the launch intent's extras and routes a tap to the example scene to cover this.
+
+## Groups
+
+List groups, synchronize follow/unfollow choices, react to changes, and open a specific group's feed:
+
+```csharp
+// Fetch the available groups
+OctopusSDK.FetchGroups(
+    onCompleted: groups => { /* OctopusGroup: Id, Name, IsFollowed, CanChangeFollowStatus */ },
+    onError: msg => Debug.LogError(msg));
+
+// Batch-sync follow/unfollow choices
+var actions = new List<OctopusSyncFollowGroupAction>
+{
+    new OctopusSyncFollowGroupAction { GroupId = groupId, Followed = true, ActionDate = DateTime.UtcNow },
+};
+OctopusSDK.SyncFollowGroups(
+    actions,
+    onCompleted: results => { /* OctopusSyncFollowGroupResult: GroupId, Status (OctopusSyncFollowGroupStatus) */ },
+    onError: msg => Debug.LogError(msg));
+
+// React to changes
+OctopusSDK.OnGroupsChanged += groups => { /* ... */ };
+
+// Open a specific group's feed
+OctopusSDK.OpenGroup(groupId);
+
+// Open a specific post's detail screen (empty string → main feed)
+OctopusSDK.OpenPost("post_123");
+
+// Open the post editor — pass null for a blank editor, or prefill it:
+OctopusSDK.OpenCreatePost(new OctopusPrefilledPost {
+    Text      = "Check this out!",
+    TopicId   = "grp_42",
+    ImagePath = Application.persistentDataPath + "/shot.png"
+});
+```
+
+A ready-to-use example is available in the **Groups Example** sample (importable via Unity Package Manager).
 
 ## Notification Badges
 

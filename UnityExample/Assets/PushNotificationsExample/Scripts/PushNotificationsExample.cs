@@ -1,31 +1,19 @@
 // Push Notifications Example
 //
-// This example shows how to handle Octopus push notifications on both Android and iOS.
+// Handles Octopus push notifications symmetrically on iOS and Android:
+//   tap -> read payload from your push library -> OctopusSDK.GetOctopusNotification(payload)
+//        -> OctopusSDK.Open(notification)
 //
-// IMPORTANT — iOS requires an additional native file:
-//   Plugins/iOS/OctopusAppController.mm (included in this sample)
-//
-// iOS flow:
-//   1. OctopusAppController.mm intercepts every UNNotificationResponse at the native level
-//      and stores it via OctopusNotificationHelper.handleNotificationResponse().
-//   2. The SDK fires OnNotificationTapped for every Octopus notification tap
-//      (cold start, background, or foreground). No Firebase dependency.
-//   3. Call OctopusSDK.Open() in your handler — OctopusHomeScreen picks up the stored
-//      response and navigates to the correct screen.
-//
-// Android flow:
-//   1. Firebase fires OnMessageReceived with NotificationOpened=true.
-//   2. Parse the notification and call OctopusSDK.Open(notification) — the DeepLink
-//      is passed to the native Android SDK which navigates via Jetpack Compose NavHost.
+// iOS uses Unity Mobile Notifications (no native AppController file, no Firebase required).
+// Android uses Firebase Messaging (the standard FCM mechanism).
 
 #if UNITY_IOS
 using Unity.Notifications.iOS;
 #endif
-
 #if UNITY_ANDROID
 using Firebase.Extensions;
 #endif
-
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -33,39 +21,32 @@ public class PushNotificationsExample : MonoBehaviour
 {
     [SerializeField] Text Message;
 
+#if UNITY_IOS && !UNITY_EDITOR
+    // The deep link we last opened, so re-checking the responded notification
+    // (on cold start and again when the app regains focus) doesn't reopen it.
+    string _lastHandledDeepLink;
+#endif
+
     void Start()
     {
         OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.OctopusAuth());
         OctopusSDK.OnNotSeenNotificationsCount += OnNotSeenNotificationCount;
-
-        // iOS: Fires when the user taps ANY Octopus notification (cold start, background,
-        // or foreground). The native layer already captured the UNNotificationResponse.
-        // Call Open() to navigate to the notification's content.
-        OctopusSDK.OnNotificationTapped += OnOctopusNotificationTapped;
-
         RegisterForPushNotifications();
+#if UNITY_IOS && !UNITY_EDITOR
+        HandleRespondedNotification();
+#endif
     }
 
     void OnDestroy()
     {
-        OctopusSDK.OnNotificationTapped -= OnOctopusNotificationTapped;
         OctopusSDK.OnNotSeenNotificationsCount -= OnNotSeenNotificationCount;
+#if UNITY_IOS && !UNITY_EDITOR
+        iOSNotificationCenter.OnRemoteNotificationReceived -= OnIOSRemoteNotification;
+#endif
     }
 
-    void OnOctopusNotificationTapped()
-    {
-        OctopusSDK.Open();
-    }
-
-    public void OpenOctopus()
-    {
-        OctopusSDK.Open();
-    }
-
-    public void UpdateNotificationCount()
-    {
-        OctopusSDK.UpdateNotSeenNotificationsCount();
-    }
+    public void OpenOctopus() => OctopusSDK.Open();
+    public void UpdateNotificationCount() => OctopusSDK.UpdateNotSeenNotificationsCount();
 
     public void OnNotSeenNotificationCount(int count)
     {
@@ -73,19 +54,30 @@ public class PushNotificationsExample : MonoBehaviour
         Debug.Log(string.Format("There are {0} unseen notification(s)", count));
     }
 
+    // Shared handler: detect Octopus notification and open it.
+    void HandleTappedPayload(IDictionary<string, string> payload)
+    {
+        if (!OctopusSDK.IsOctopusNotification(payload)) return;
+        var notification = OctopusSDK.GetOctopusNotification(payload);
+#if UNITY_IOS && !UNITY_EDITOR
+        // iOS keeps returning the same responded notification for the whole foreground
+        // session, and we re-check it on focus — so skip a deep link we already opened.
+        if (notification.DeepLink == _lastHandledDeepLink) return;
+        _lastHandledDeepLink = notification.DeepLink;
+#endif
+        Debug.Log("Octopus notification tapped, DeepLink: " + notification.DeepLink);
+        OctopusSDK.Open(notification);
+    }
+
     void RegisterForPushNotifications()
     {
 #if UNITY_IOS && !UNITY_EDITOR
         StartCoroutine(RequestIOSAuthorization());
+        iOSNotificationCenter.OnRemoteNotificationReceived += OnIOSRemoteNotification;
 #elif UNITY_ANDROID && !UNITY_EDITOR
         InitializeFirebaseForAndroid();
 #endif
     }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // iOS — Uses Unity Mobile Notifications for permission + APNs token.
-    //        No Firebase dependency.
-    // ──────────────────────────────────────────────────────────────────────
 
 #if UNITY_IOS
     System.Collections.IEnumerator RequestIOSAuthorization()
@@ -94,68 +86,68 @@ public class PushNotificationsExample : MonoBehaviour
             AuthorizationOption.Alert | AuthorizationOption.Sound | AuthorizationOption.Badge,
             registerForRemoteNotifications: true))
         {
-            while (!req.IsFinished)
-                yield return null;
-
+            while (!req.IsFinished) yield return null;
             if (req.Granted && !string.IsNullOrEmpty(req.DeviceToken))
-            {
-                Debug.Log("APNs Device Token: " + req.DeviceToken);
                 OctopusSDK.RegisterNotificationsToken(req.DeviceToken);
-            }
             else
-            {
-                Debug.LogWarning("Notification authorization denied or token unavailable. Error: " + req.Error);
-            }
+                Debug.LogWarning("iOS notification authorization denied or token unavailable. Error: " + req.Error);
         }
     }
-#endif
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Android — Uses Firebase Messaging for FCM token and tap detection.
-    //           FCM is the standard push mechanism on Android.
-    // ──────────────────────────────────────────────────────────────────────
+    // Reads the notification the user tapped (the one that launched the app on a cold
+    // start, or the one tapped while the app was backgrounded). Unity Mobile Notifications
+    // does NOT raise OnRemoteNotificationReceived for a tap, so this is how taps are handled.
+    void HandleRespondedNotification()
+    {
+        var responded = iOSNotificationCenter.GetLastRespondedNotification();
+        if (responded != null) HandleTappedPayload(responded.UserInfo);
+    }
+
+    void OnApplicationFocus(bool hasFocus)
+    {
+        // A tap on a backgrounded notification resumes the app without raising
+        // OnRemoteNotificationReceived, so re-check the responded notification on resume.
+        if (hasFocus) HandleRespondedNotification();
+#if !UNITY_EDITOR
+        else _lastHandledDeepLink = null; // iOS clears the responded notification on background; allow the next tap.
+#endif
+    }
+
+    void OnIOSRemoteNotification(iOSNotification notification)
+    {
+        // Fired only when a remote notification ARRIVES while the app is in the foreground.
+        // Taps are handled by HandleRespondedNotification (cold start + OnApplicationFocus).
+        HandleTappedPayload(notification.UserInfo);
+    }
+#endif
 
 #if UNITY_ANDROID
     void InitializeFirebaseForAndroid()
     {
-        try
-        {
-            RequestAndroidNotificationPermission();
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning("Notification permission request failed: " + e.Message);
-        }
+        try { RequestAndroidNotificationPermission(); }
+        catch (System.Exception e) { Debug.LogWarning("Notification permission request failed: " + e.Message); }
 
         Firebase.FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(task => {
-            var dependencyStatus = task.Result;
-            if (dependencyStatus == Firebase.DependencyStatus.Available)
+            if (task.Result == Firebase.DependencyStatus.Available)
             {
                 Firebase.Messaging.FirebaseMessaging.TokenReceived += OnTokenReceived;
                 Firebase.Messaging.FirebaseMessaging.MessageReceived += OnMessageReceived;
-                Debug.Log("Firebase ready (Android)");
             }
-            else
-            {
-                Debug.LogError(string.Format("Could not resolve all Firebase dependencies: {0}", dependencyStatus));
-            }
+            else Debug.LogError(string.Format("Could not resolve Firebase dependencies: {0}", task.Result));
         });
     }
 
     void OnTokenReceived(object sender, Firebase.Messaging.TokenReceivedEventArgs token)
     {
-        Debug.Log("FCM Token: " + token.Token);
+        // Logged so you can copy it for a Firebase Console "Send test message" push.
+        Debug.Log("FCM registration token: " + token.Token);
         OctopusSDK.RegisterNotificationsToken(token.Token);
     }
 
     void OnMessageReceived(object sender, Firebase.Messaging.MessageReceivedEventArgs e)
     {
-        if (OctopusSDK.IsOctopusNotification(e.Message.Data) && e.Message.NotificationOpened)
-        {
-            var notification = OctopusSDK.GetOctopusNotification(e.Message.Data);
-            Debug.Log(string.Format("Notification tapped, DeepLink: {0}", notification.DeepLink));
-            OctopusSDK.Open(notification);
-        }
+        if (e.Message.NotificationOpened)
+            HandleTappedPayload(e.Message.Data);
     }
 
     void RequestAndroidNotificationPermission()
@@ -165,13 +157,9 @@ public class PushNotificationsExample : MonoBehaviour
             using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
             using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
             {
-                string permission = "android.permission.POST_NOTIFICATIONS";
-                int granted = activity.Call<int>("checkSelfPermission", permission);
-
-                if (granted != 0)
-                {
+                const string permission = "android.permission.POST_NOTIFICATIONS";
+                if (activity.Call<int>("checkSelfPermission", permission) != 0)
                     activity.Call("requestPermissions", new string[] { permission }, 0);
-                }
             }
         }
     }
@@ -179,9 +167,7 @@ public class PushNotificationsExample : MonoBehaviour
     int GetAndroidSDKInt()
     {
         using (var version = new AndroidJavaClass("android.os.Build$VERSION"))
-        {
             return version.GetStatic<int>("SDK_INT");
-        }
     }
 #endif
 }

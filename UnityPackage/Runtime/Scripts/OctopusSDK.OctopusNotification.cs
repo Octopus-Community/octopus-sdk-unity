@@ -3,21 +3,32 @@ using System.Collections.Generic;
 public partial class OctopusSDK
 {
     const string IS_OCTOPUS_NOTIFICATION_KEY = "is_octopus_notification";
+    const string DATA_ENVELOPE_KEY = "data";
 
-    public static bool IsOctopusNotification(IDictionary<string, string> data)
+    // Returns the octopus-key dictionary from either a flat payload (Android) or the
+    // iOS shape where the keys are a JSON string under "data".
+    static IDictionary<string, string> ExtractOctopusData(IDictionary<string, string> payload)
     {
-        if(data.ContainsKey(IS_OCTOPUS_NOTIFICATION_KEY))
-        {
-            return data[IS_OCTOPUS_NOTIFICATION_KEY].ToLower() == "true";
-        }
-        return false;
+        if (payload == null) return new Dictionary<string, string>();
+        if (payload.ContainsKey(IS_OCTOPUS_NOTIFICATION_KEY)) return payload;        // flat (Android)
+        if (payload.ContainsKey(DATA_ENVELOPE_KEY))
+            return OctopusJson.ParseObject(payload[DATA_ENVELOPE_KEY]);              // nested JSON (iOS)
+        return new Dictionary<string, string>();
     }
 
-    public static OctopusNotification GetOctopusNotification(IDictionary<string, string> data)
+    public static bool IsOctopusNotification(IDictionary<string, string> payload)
     {
-        return new OctopusNotification(data);
+        var data = ExtractOctopusData(payload);
+        return data.ContainsKey(IS_OCTOPUS_NOTIFICATION_KEY)
+            && data[IS_OCTOPUS_NOTIFICATION_KEY].ToLower() == "true";
+    }
+
+    public static OctopusNotification GetOctopusNotification(IDictionary<string, string> payload)
+    {
+        return new OctopusNotification(ExtractOctopusData(payload));
     }
 }
+
 public class OctopusNotification
 {
     const string INTERNAL_DEEP_LINK_BASE_PATH = "octopus-sdk://";
@@ -31,23 +42,30 @@ public class OctopusNotification
 
     public OctopusNotification(IDictionary<string, string> data)
     {
-        this.data = data;
+        this.data = data ?? new Dictionary<string, string>();
     }
 
-    public string Title { get { return GetVal(data, TITLE_KEY, ""); } }
-    public string Body { get { return GetVal(data, BODY_KEY, ""); } }
-    private string LinkPath { get { return GetVal(data, LINK_PATH_KEY, ""); } }
-    public string PostId { get { return GetVal(data, POST_ID_KEY, ""); } }
-    public string CommentId { get { return GetVal(data, COMMENT_ID_KEY, ""); } }
-    public string ReplyId { get { return GetVal(data, REPLY_ID_KEY, ""); } }
+    public string Title { get { return GetVal(TITLE_KEY); } }
+    public string Body { get { return GetVal(BODY_KEY); } }
+    private string LinkPath { get { return GetVal(LINK_PATH_KEY); } }
+    public string PostId { get { return GetVal(POST_ID_KEY); } }
+    public string CommentId { get { return GetVal(COMMENT_ID_KEY); } }
+    public string ReplyId { get { return GetVal(REPLY_ID_KEY); } }
     public string DeepLink { get { return LinkPath.Length > 0 ? INTERNAL_DEEP_LINK_BASE_PATH + LinkPath : ""; } }
 
-    private string GetVal(IDictionary<string, string> data, string key, string defaultValue)
+    // Compact JSON of the octopus keys — what the iOS native bridge consumes.
+    internal string DataAsJson
     {
-        if(data.ContainsKey(key))
+        get
         {
-            return data[key];
+            var rows = new List<Dictionary<string, string>> { new Dictionary<string, string>(data) };
+            string arr = OctopusJson.WriteArray(rows, new HashSet<string>()); // all values quoted
+            return arr.Length >= 2 ? arr.Substring(1, arr.Length - 2) : "{}";
         }
-        return defaultValue;
+    }
+
+    private string GetVal(string key)
+    {
+        return data.ContainsKey(key) ? data[key] : "";
     }
 }

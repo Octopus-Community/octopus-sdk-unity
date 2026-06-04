@@ -1,6 +1,6 @@
 {
     "name": "com.octopuscommunity.octopus_sdk_for_unity",
-    "version": "1.10.1",
+    "version": "1.12.0",
     "displayName": "Octopus SDK for Unity",
     "description": "Unity wrapper for the Octopus SDK Android and iOS libraries.",
     "unity": "2019.4",
@@ -23,8 +23,13 @@
         },
         {
             "displayName": "Push Notifications Example",
-            "description": "Push notification handling without Firebase on iOS. Includes a sample UnityAppController subclass and APNs token retrieval via Unity Mobile Notifications.",
+            "description": "Data-driven push notification handling, symmetric on iOS and Android. iOS uses Unity Mobile Notifications for APNs token and tap detection (no native file required).",
             "path": "Samples~/PushNotificationsExample"
+        },
+        {
+            "displayName": "Groups Example",
+            "description": "Fetch groups, batch follow/unfollow sync, and open a specific group feed.",
+            "path": "Samples~/GroupsExample"
         }
     ]
 }

@@ -4,7 +4,6 @@ import OctopusUI
 import SwiftUI
 import UIKit
 import Combine
-import UserNotifications
 
 private let COLOR_SCHEME_TYPE_LIGHT: Int32 = 1
 private let COLOR_SCHEME_TYPE_DARK: Int32 = 2
@@ -26,60 +25,16 @@ private var fonts: OctopusTheme.Fonts?
 
 private var octopusController: UIHostingController<AnyView>?
 var notSeenNotifCancellable: AnyCancellable?
-private var sdkInitialized = false
-
-// MARK: - Push Notification State & Helper
-
-/// Holds the pending UNNotificationResponse captured at the native level when the user taps
-/// an Octopus push notification. The response is passed as a binding to OctopusHomeScreen
-/// so the native SDK can navigate to the correct screen (post, comment, reply).
-class OctopusNotificationState: ObservableObject {
-    static let shared = OctopusNotificationState()
-    @Published var pendingNotificationResponse: UNNotificationResponse?
-    private init() {}
-}
-
-/// Helper callable from Objective-C (via the auto-generated UnityFramework-Swift.h header).
-/// Developers call these methods from their UnityAppController subclass to forward
-/// notification responses to the Octopus SDK.
-@objc public class OctopusNotificationHelper: NSObject {
-    /// Call from userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:.
-    /// If the notification is from Octopus, stores the response so OctopusHomeScreen
-    /// can navigate to the correct screen when Open() is called.
-    @objc public static func handleNotificationResponse(_ response: UNNotificationResponse) {
-        if OctopusSDK.isAnOctopusNotification(notification: response.notification) {
-            let work = {
-                OctopusNotificationState.shared.pendingNotificationResponse = response
-                if sdkInitialized {
-                    // Warm/background: OctopusChannel already exists, notify C# directly.
-                    sendUnityMessage("OctopusChannel", "OnNotificationTapped", "")
-                }
-                // Cold start: sdkInitialized is false. OctopusSdkInitialize() will detect
-                // the stored response and fire OnNotificationTapped itself.
-            }
-            if Thread.isMainThread {
-                work()
-            } else {
-                DispatchQueue.main.async { work() }
-            }
-        }
-    }
-
-    /// Returns true if the notification was sent by the Octopus platform.
-    @objc public static func isOctopusNotification(_ notification: UNNotification) -> Bool {
-        return OctopusSDK.isAnOctopusNotification(notification: notification)
-    }
-}
+var groupsCancellable: AnyCancellable?
 
 // MARK: - Bridge Root View
 
-/// Wrapper view that connects OctopusNotificationState to OctopusHomeScreen's notificationResponse binding.
 private struct OctopusBridgeRootView: View {
-    @ObservedObject var notificationState = OctopusNotificationState.shared
     let octopus: OctopusSDK
     let navBarTitle: OctopusMainFeedTitle?
     let coloredNavBar: Bool
-    let postId: String?
+    let initialScreen: OctopusInitialScreen
+    @Binding var notificationUserInfo: [AnyHashable: Any]?
     let theme: OctopusTheme
 
     var body: some View {
@@ -87,12 +42,16 @@ private struct OctopusBridgeRootView: View {
             octopus: octopus,
             mainFeedNavBarTitle: navBarTitle,
             mainFeedColoredNavBar: coloredNavBar,
-            postId: postId,
-            notificationResponse: $notificationState.pendingNotificationResponse
+            initialScreen: initialScreen,
+            notificationUserInfo: $notificationUserInfo
         )
         .environment(\.octopusTheme, theme)
     }
 }
+
+// Holds the userInfo for the next presentation. The SwiftUI binding is reset to nil
+// by the SDK once the notification has been consumed.
+private var pendingNotificationUserInfo: [AnyHashable: Any]?
 
 @_cdecl("OctopusSdkInitialize")
 public func OctopusSdkInitialize(
@@ -111,21 +70,8 @@ public func OctopusSdkInitialize(
         notSeenNotifCancellable = octopus?.$notSeenNotificationsCount.sink { count in
             sendUnityMessage("OctopusChannel", "OnNotSeenNotificationsCount", String(count) )
         }
-
-        // Both sdkInitialized and pendingNotificationResponse are read/written on the
-        // main thread (from handleNotificationResponse). Dispatch here to avoid a data
-        // race if OctopusSdkInitialize is ever called off-main.
-        DispatchQueue.main.async {
-            // Mark SDK as initialized so that future notification taps (warm/background)
-            // send OnNotificationTapped directly from handleNotificationResponse.
-            sdkInitialized = true
-
-            // If a notification tap launched the app (cold start), the response was already
-            // stored by OctopusAppController before Unity booted. Notify C# so the developer
-            // can call Open().
-            if OctopusNotificationState.shared.pendingNotificationResponse != nil {
-                sendUnityMessage("OctopusChannel", "OnNotificationTapped", "")
-            }
+        groupsCancellable = octopus?.$groups.sink { groups in
+            sendUnityMessage("OctopusChannel", "OnGroupsChanged", groupsToJson(groups))
         }
     } catch {
         print("Octopus Init Error: \(error)")
@@ -189,52 +135,103 @@ private func fieldToString(_ profileField: ConnectionMode.SSOConfiguration.Profi
 }
 
 @_cdecl("OctopusSdkOpen")
-public func OctopusSdkOpen(postId: UnsafePointer<Int8>) {
-    // Copy the C string on the calling thread (the pointer is only valid here).
-    var postIdString: String? = String(cString: postId)
-    if postIdString?.isEmpty == true {
-        postIdString = nil
+public func OctopusSdkOpen(payloadJson: UnsafePointer<Int8>) {
+    let json = String(cString: payloadJson)
+    presentHome(initialScreen: .mainFeed, payloadJson: json.isEmpty ? nil : json)
+}
+
+@_cdecl("OctopusSdkOpenGroup")
+public func OctopusSdkOpenGroup(groupId: UnsafePointer<Int8>) {
+    let gid = String(cString: groupId)
+    presentHome(initialScreen: gid.isEmpty ? .mainFeed : .group(.init(groupId: gid)), payloadJson: nil)
+}
+
+@_cdecl("OctopusSdkOpenPost")
+public func OctopusSdkOpenPost(postId: UnsafePointer<Int8>) {
+    let pid = String(cString: postId)
+    presentHome(initialScreen: pid.isEmpty ? .mainFeed : .post(.init(postId: pid)), payloadJson: nil)
+}
+
+@_cdecl("OctopusSdkOpenCreatePost")
+public func OctopusSdkOpenCreatePost(
+    text: UnsafePointer<Int8>, topicId: UnsafePointer<Int8>, imagePath: UnsafePointer<Int8>
+) {
+    let textStr = String(cString: text)
+    let topicStr = String(cString: topicId)
+    let pathStr = String(cString: imagePath)
+    Task {
+        let imageData = pathStr.isEmpty ? nil : await fetchImageData(fromPathOrUrl: pathStr)
+        // OctopusPrefilledPost.init throws unless text or image is provided, so a
+        // blank (or topic-only) request opens the empty editor via prefilledPost: nil.
+        let info: OctopusInitialScreen.CreatePostScreenInfo
+        if textStr.isEmpty && imageData == nil {
+            info = .init(prefilledPost: nil)
+        } else {
+            do {
+                let prefilled = try OctopusPrefilledPost(
+                    text: textStr.isEmpty ? nil : textStr,
+                    image: imageData,
+                    topicId: topicStr.isEmpty ? nil : topicStr,
+                    cta: nil
+                )
+                info = .init(prefilledPost: prefilled)
+            } catch {
+                print("OctopusSdkOpenCreatePost: invalid prefilled post (\(error)); opening empty editor")
+                info = .init(prefilledPost: nil)
+            }
+        }
+        presentHome(initialScreen: .createPost(info), payloadJson: nil)
+    }
+}
+
+private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: String?) {
+    // Decode the octopus payload (if any) into the userInfo["data"] shape the SDK expects.
+    var userInfo: [AnyHashable: Any]? = nil
+    if let payloadJson,
+       let data = payloadJson.data(using: .utf8),
+       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        userInfo = ["data": obj]
     }
 
-    // All UI state and @Published reads must happen on the main thread.
     DispatchQueue.main.async {
-        // Force re-init when a notification response is pending or a specific post was requested,
-        // so OctopusHomeScreen is re-created with the correct parameters.
-        let hasPendingNotification = OctopusNotificationState.shared.pendingNotificationResponse != nil
-        if hasPendingNotification || postIdString != nil {
+        // Re-create the controller whenever we have a specific destination so it
+        // is built with the right initialScreen / notificationUserInfo.
+        if userInfo != nil || !isMainFeed(initialScreen) {
             octopusController?.dismiss(animated: false)
             octopusController = nil
         }
-
         guard let sdk = octopus else {
             print("OctopusSdkOpen: SDK not initialized. Call OctopusSdkInitialize first.")
             return
         }
         guard let presentingVC = topViewController() else { return }
 
+        pendingNotificationUserInfo = userInfo
+
         if octopusController == nil {
             let navBarTitle: OctopusMainFeedTitle?
             if logo != nil {
                 navBarTitle = OctopusMainFeedTitle(content: .logo, placement: .leading)
             } else if let name = appName, !name.isEmpty {
-                navBarTitle = OctopusMainFeedTitle(
-                    content: .text(.init(text: name)), placement: .leading)
+                navBarTitle = OctopusMainFeedTitle(content: .text(.init(text: name)), placement: .leading)
             } else {
                 navBarTitle = nil
             }
-
             let themeFonts = fonts ?? OctopusTheme.Fonts()
             let effectiveColorScheme = resolveColorScheme()
 
-            // When a notification response is pending, it handles all navigation —
-            // passing postId simultaneously would create a conflicting PostDetailView root.
-            let effectivePostId = hasPendingNotification ? nil : postIdString
+            // When a notification is pending, it drives navigation — keep initialScreen .mainFeed.
+            let effectiveScreen: OctopusInitialScreen = (userInfo != nil) ? .mainFeed : initialScreen
 
             let root = OctopusBridgeRootView(
                 octopus: sdk,
                 navBarTitle: navBarTitle,
                 coloredNavBar: navBarUsesPrimaryColor,
-                postId: effectivePostId,
+                initialScreen: effectiveScreen,
+                notificationUserInfo: Binding(
+                    get: { pendingNotificationUserInfo },
+                    set: { pendingNotificationUserInfo = $0 }
+                ),
                 theme: OctopusTheme(
                     colors: effectiveColorScheme,
                     fonts: themeFonts,
@@ -251,13 +248,18 @@ public func OctopusSdkOpen(postId: UnsafePointer<Int8>) {
     }
 }
 
+private func isMainFeed(_ screen: OctopusInitialScreen) -> Bool {
+    if case .mainFeed = screen { return true }
+    return false
+}
+
 @_cdecl("OctopusSdkClose")
 public func OctopusSdkClose(keepState: Bool = true) {
     DispatchQueue.main.async {
         octopusController?.dismiss(animated: true)
         if !keepState {
             octopusController = nil
-            OctopusNotificationState.shared.pendingNotificationResponse = nil
+            pendingNotificationUserInfo = nil
         }
     }
 }
@@ -273,22 +275,27 @@ public func OctopusSdkConnectUser(
     let pictureStr = String(cString: picture)
     Task {
         let pictureData = await fetchImageData(fromPathOrUrl: pictureStr)
-        octopus?.connectUser(
-            ClientUser(
-                userId: userIdStr,
-                profile: ClientUser.Profile(
-                    nickname: nicknameStr,
-                    bio: bioStr,
-                    picture: pictureData
-                )
-            ),
-            tokenProvider: {
-                sendUnityMessage("OctopusChannel", "OnTokenRequested", "")
-                return await withCheckedContinuation { continuation in
-                    tokenCheckedContinuation = continuation
+        do {
+            try await octopus?.connectUser(
+                ClientUser(
+                    userId: userIdStr,
+                    profile: ClientUser.Profile(
+                        nickname: nicknameStr,
+                        bio: bioStr,
+                        picture: pictureData
+                    )
+                ),
+                tokenProvider: {
+                    sendUnityMessage("OctopusChannel", "OnTokenRequested", "")
+                    return await withCheckedContinuation { continuation in
+                        tokenCheckedContinuation = continuation
+                    }
                 }
-            }
-        )
+            )
+        } catch {
+            print("Octopus connectUser failed: \(error)")
+        }
+        // Always signal completion so the Unity-side connect callback resolves.
         sendUnityMessage("OctopusChannel", "OnConnectUserCompleted", "")
     }
 }
@@ -496,6 +503,75 @@ public func OctopusSdkUpdateNotSeenNotificationsCount() {
     Task{
         try await octopus?.updateNotSeenNotificationsCount()
     }
+}
+
+@_cdecl("OctopusSdkSyncFollowGroups")
+public func OctopusSdkSyncFollowGroups(requestId: Int32, actionsJson: UnsafePointer<Int8>) {
+    let json = String(cString: actionsJson)
+    let actions = parseSyncActions(json)
+    Task {
+        do {
+            let results = try await octopus?.syncFollowGroups(actions: actions) ?? []
+            sendUnityMessage("OctopusChannel", "OnSyncFollowGroupsResult", "\(requestId)\n\(syncResultsToJson(results))")
+        } catch {
+            sendUnityMessage("OctopusChannel", "OnSyncFollowGroupsError", "\(requestId)\n\(String(describing: error))")
+        }
+    }
+}
+
+@_cdecl("OctopusSdkFetchGroups")
+public func OctopusSdkFetchGroups(requestId: Int32) {
+    Task {
+        do {
+            try await octopus?.fetchGroups()
+            let groups = octopus?.groups ?? []
+            sendUnityMessage("OctopusChannel", "OnFetchGroupsResult", "\(requestId)\n\(groupsToJson(groups))")
+        } catch {
+            sendUnityMessage("OctopusChannel", "OnFetchGroupsError", "\(requestId)\n\(String(describing: error))")
+        }
+    }
+}
+
+private func parseSyncActions(_ json: String) -> [OctopusSyncFollowGroup.Action] {
+    guard let data = json.data(using: .utf8),
+          let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+    return arr.compactMap { o in
+        guard let groupId = o["groupId"] as? String else { return nil }
+        let followed = (o["followed"] as? Bool) ?? false
+        let millis = (o["actionDateMillis"] as? NSNumber)?.doubleValue ?? 0
+        return OctopusSyncFollowGroup.Action(
+            groupId: groupId, followed: followed,
+            actionDate: Date(timeIntervalSince1970: millis / 1000.0))
+    }
+}
+
+private func syncStatusToWire(_ s: OctopusSyncFollowGroup.Status) -> String {
+    switch s {
+    case .applied: return "applied"
+    case .skipped: return "skipped"
+    case .groupNotFound: return "groupNotFound"
+    case .notFollowable: return "notFollowable"
+    case .notUnfollowable: return "notUnfollowable"
+    case .alreadyFollowed: return "alreadyFollowed"
+    case .alreadyUnfollowed: return "alreadyUnfollowed"
+    @unknown default: return "unknownError"
+    }
+}
+
+private func jsonArrayString(_ objects: [[String: Any]]) -> String {
+    guard let data = try? JSONSerialization.data(withJSONObject: objects),
+          let s = String(data: data, encoding: .utf8) else { return "[]" }
+    return s
+}
+
+private func syncResultsToJson(_ results: [OctopusSyncFollowGroup.Result]) -> String {
+    jsonArrayString(results.map { ["groupId": $0.groupId, "status": syncStatusToWire($0.status)] })
+}
+
+private func groupsToJson(_ groups: [OctopusGroup]) -> String {
+    jsonArrayString(groups.map {
+        ["id": $0.id, "name": $0.name, "isFollowed": $0.isFollowed, "canChangeFollowStatus": $0.canChangeFollowStatus]
+    })
 }
 
 @_cdecl("OctopusSdkTrackAccessToCommunity")

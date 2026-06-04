@@ -48,4 +48,9 @@ public class MainMenu : MonoBehaviour
     {
         SceneManager.LoadScene("LanguageOverrideExample");
     }
+
+    public void OpenOpenScreenExample()
+    {
+        SceneManager.LoadScene("OpenScreenExample");
+    }
 }
