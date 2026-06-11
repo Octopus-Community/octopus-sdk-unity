@@ -8,12 +8,14 @@ public partial class OctopusSDK
 {
     public static void TrackAccessToCommunity(bool hasAccess)
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.TrackAccessToCommunity(hasAccess);
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("trackAccessToCommunity", hasAccess);
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkTrackAccessToCommunity(hasAccess);
 #endif
     }

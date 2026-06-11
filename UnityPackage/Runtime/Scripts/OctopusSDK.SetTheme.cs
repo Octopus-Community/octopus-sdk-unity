@@ -18,9 +18,12 @@ public partial class OctopusSDK
 
     public static void SetLightColorScheme(OctopusColorScheme colorScheme)
     {
+#if UNITY_EDITOR
+        MockBackend.SetLightColorScheme();
+#else
         if (colorScheme != null)
         {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID
             using (AndroidJavaClass plugin = new ("com.octopuscommunity.bridge.Bridge"))
             {
                 plugin.CallStatic(
@@ -31,7 +34,7 @@ public partial class OctopusSDK
                     ColorToInt(colorScheme.OnPrimary)
                 );
             }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
             OctopusSdkSetLightColorScheme(
                 ColorToInt(colorScheme.Primary),
                 ColorToInt(colorScheme.PrimaryLow),
@@ -40,13 +43,17 @@ public partial class OctopusSDK
             );
 #endif
         }
+#endif
     }
 
     public static void SetDarkColorScheme(OctopusColorScheme colorScheme)
     {
+#if UNITY_EDITOR
+        MockBackend.SetDarkColorScheme();
+#else
         if (colorScheme != null)
         {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID
             using (AndroidJavaClass plugin = new ("com.octopuscommunity.bridge.Bridge"))
             {
                 plugin.CallStatic(
@@ -57,7 +64,7 @@ public partial class OctopusSDK
                     ColorToInt(colorScheme.OnPrimary)
                 );
             }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
             OctopusSdkSetDarkColorScheme(
                 ColorToInt(colorScheme.Primary),
                 ColorToInt(colorScheme.PrimaryLow),
@@ -66,40 +73,47 @@ public partial class OctopusSDK
             );
 #endif
         }
+#endif
     }
 
     public static void SetLogo(OctopusLogo logo)
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.SetLogo();
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("setLogo", logo?.AndroidDrawableName ?? "");
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkSetLogo(logo?.IOSResourceName ?? "");
 #endif
     }
 
     public static void SetAppName(string appName)
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.SetAppName(appName);
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("setAppName", appName);
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkSetAppName(appName);
 #endif
     }
 
     public static void SetNavBarUsesPrimaryColor(bool usesPrimary)
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.SetNavBarUsesPrimaryColor(usesPrimary);
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("setNavBarUsesPrimaryColor", usesPrimary);
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkSetNavBarUsesPrimaryColor(usesPrimary);
 #endif
     }
@@ -109,19 +123,23 @@ public partial class OctopusSDK
     /// </summary>
     public static void SetColorSchemeType(int colorSchemeType)
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.SetColorSchemeType(colorSchemeType);
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("setColorSchemeType", colorSchemeType);
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkSetColorSchemeType(colorSchemeType);
 #endif
     }
 
     public static void SetFonts(OctopusFonts fonts = null)
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.SetFonts();
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("setFonts",
@@ -141,7 +159,7 @@ public partial class OctopusSDK
                 fonts?.NavBarItem?.Size ?? 0f
             );
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkSetFonts(
             fonts?.Title1?.IOSFontName ?? "",
             fonts?.Title1?.Size ?? 0f,

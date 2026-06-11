@@ -8,12 +8,14 @@ public partial class OctopusSDK
     /// </summary>
     public static void OverrideDefaultLocale(string languageCode)
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.OverrideDefaultLocale(languageCode);
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("overrideDefaultLocale", languageCode);
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkOverrideDefaultLocale(languageCode);
 #endif
     }

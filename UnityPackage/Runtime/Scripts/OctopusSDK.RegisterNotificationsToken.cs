@@ -8,12 +8,14 @@ public partial class OctopusSDK
 {
     public static void RegisterNotificationsToken(string token)
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.RegisterNotificationsToken(token);
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("registerNotificationsToken", token);
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkRegisterNotificationsToken(token);
 #endif
     }

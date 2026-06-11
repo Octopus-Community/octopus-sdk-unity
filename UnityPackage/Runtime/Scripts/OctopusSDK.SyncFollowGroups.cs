@@ -22,6 +22,7 @@ public struct OctopusSyncFollowGroupResult
     public OctopusSyncFollowGroupStatus Status;
 }
 
+[System.Serializable]
 public struct OctopusGroup
 {
     public string Id;
@@ -124,12 +125,18 @@ public partial class OctopusSDK
         _syncCallbacks[id] = onCompleted;
         if (onError != null) _errorCallbacks[id] = onError;
         string json = OctopusSyncFollowGroupParsing.ActionsToJson(actions);
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        // Mock invokes onCompleted directly; the entries registered above are never
+        // consumed in-Editor, so drop them to avoid unbounded growth across a session.
+        _syncCallbacks.Remove(id);
+        _errorCallbacks.Remove(id);
+        MockBackend.SyncFollowGroups(actions, onCompleted);
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("syncFollowGroups", id, json);
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkSyncFollowGroups(id, json);
 #endif
     }
@@ -141,12 +148,16 @@ public partial class OctopusSDK
         int id = _nextRequestId++;
         _fetchCallbacks[id] = onCompleted;
         if (onError != null) _errorCallbacks[id] = onError;
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        _fetchCallbacks.Remove(id);
+        _errorCallbacks.Remove(id);
+        MockBackend.FetchGroups(onCompleted);
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("fetchGroups", id);
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkFetchGroups(id);
 #endif
     }

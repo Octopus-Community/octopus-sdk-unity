@@ -9,12 +9,14 @@ public partial class OctopusSDK
 {
     public static void Track(string name, IDictionary<string,string> properties)
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.Track(name, properties);
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("track", name, properties.Keys.ToArray(), properties.Values.ToArray());
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkTrack(name, properties.Keys.ToArray(), properties.Values.ToArray(), properties.Count);
 #endif
     }

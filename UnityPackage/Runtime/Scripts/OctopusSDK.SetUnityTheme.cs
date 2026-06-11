@@ -8,7 +8,7 @@ public partial class OctopusSDK
     /// </summary>
     public static void SetUnityTheme()
     {
-#if (UNITY_ANDROID || UNITY_IOS) && !UNITY_EDITOR
+#if UNITY_ANDROID || UNITY_IOS || UNITY_EDITOR
         var settings = OctopusThemeSettings.Instance;
         if (settings == null) return;
 
@@ -33,7 +33,7 @@ public partial class OctopusSDK
 #endif
     }
 
-#if (UNITY_ANDROID || UNITY_IOS) && !UNITY_EDITOR
+#if UNITY_ANDROID || UNITY_IOS || UNITY_EDITOR
     private static void ApplyColorSchemeSettings(OctopusThemeSettings settings)
     {
         // Apply light color scheme if any colors are enabled

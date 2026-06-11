@@ -24,8 +24,15 @@ private var appName: String?
 private var fonts: OctopusTheme.Fonts?
 
 private var octopusController: UIHostingController<AnyView>?
+// Tracks whether the retained controller currently hosts the main feed. Used to decide
+// whether an Open()/OpenPost("") (main-feed) request can reuse it or must rebuild.
+private var octopusControllerShowsMainFeed = false
 var notSeenNotifCancellable: AnyCancellable?
 var groupsCancellable: AnyCancellable?
+
+// Toggled from C# (OctopusSdkSetUrlInterceptionEnabled). When false the SDK opens URLs
+// itself (in-app browser); when true taps are forwarded to Unity for the host to decide.
+private var urlInterceptionEnabled = false
 
 // MARK: - Bridge Root View
 
@@ -62,6 +69,16 @@ public func OctopusSdkInitialize(
     let connMode = parseConnectionMode(connectionMode, appManagedFields, appManagedFieldsCount)
     do {
         octopus = try OctopusSDK( apiKey: key, connectionMode: connMode)
+        octopus?.set(onNavigateToURLCallback: { url in
+            if urlInterceptionEnabled {
+                sendUnityMessage("OctopusChannel", "OnNavigateToUrl", url.absoluteString)
+                return .handledByApp
+            }
+            return .handledByOctopus
+        })
+        octopus?.set(displayClientObjectCallback: { objectId in
+            sendUnityMessage("OctopusChannel", "OnNavigateToClientObject", objectId)
+        })
         // Unity's Bundle.main doesn't include .lproj folders for all languages,
         // so the SDK's default language detection (Bundle.main.preferredLocalizations)
         // returns "en" regardless of the device language.
@@ -154,13 +171,27 @@ public func OctopusSdkOpenPost(postId: UnsafePointer<Int8>) {
 
 @_cdecl("OctopusSdkOpenCreatePost")
 public func OctopusSdkOpenCreatePost(
-    text: UnsafePointer<Int8>, topicId: UnsafePointer<Int8>, imagePath: UnsafePointer<Int8>
+    text: UnsafePointer<Int8>, topicId: UnsafePointer<Int8>, imagePath: UnsafePointer<Int8>,
+    ctaLabel: UnsafePointer<Int8>, ctaUrl: UnsafePointer<Int8>
 ) {
     let textStr = String(cString: text)
     let topicStr = String(cString: topicId)
     let pathStr = String(cString: imagePath)
+    let ctaLabelStr = String(cString: ctaLabel)
+    let ctaUrlStr = String(cString: ctaUrl)
     Task {
         let imageData = pathStr.isEmpty ? nil : await fetchImageData(fromPathOrUrl: pathStr)
+
+        // CTA marshalling guarantees both fields are set together (or both empty).
+        var cta: OctopusPrefilledPost.CTA? = nil
+        if !ctaLabelStr.isEmpty, !ctaUrlStr.isEmpty, let url = URL(string: ctaUrlStr) {
+            do {
+                cta = try OctopusPrefilledPost.CTA(url: url, label: ctaLabelStr)
+            } catch {
+                print("OctopusSdkOpenCreatePost: invalid CTA (\(error)); dropping CTA")
+            }
+        }
+
         // OctopusPrefilledPost.init throws unless text or image is provided, so a
         // blank (or topic-only) request opens the empty editor via prefilledPost: nil.
         let info: OctopusInitialScreen.CreatePostScreenInfo
@@ -172,7 +203,7 @@ public func OctopusSdkOpenCreatePost(
                     text: textStr.isEmpty ? nil : textStr,
                     image: imageData,
                     topicId: topicStr.isEmpty ? nil : topicStr,
-                    cta: nil
+                    cta: cta
                 )
                 info = .init(prefilledPost: prefilled)
             } catch {
@@ -181,6 +212,20 @@ public func OctopusSdkOpenCreatePost(
             }
         }
         presentHome(initialScreen: .createPost(info), payloadJson: nil)
+    }
+}
+
+@_cdecl("OctopusSdkSetUrlInterceptionEnabled")
+public func OctopusSdkSetUrlInterceptionEnabled(enabled: Int32) {
+    urlInterceptionEnabled = enabled != 0
+}
+
+@_cdecl("OctopusSdkOpenUrlInOctopus")
+public func OctopusSdkOpenUrlInOctopus(url: UnsafePointer<Int8>) {
+    let urlStr = String(cString: url)
+    guard let urlObj = URL(string: urlStr) else { return }
+    DispatchQueue.main.async {
+        UIApplication.shared.open(urlObj)
     }
 }
 
@@ -194,9 +239,13 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
     }
 
     DispatchQueue.main.async {
-        // Re-create the controller whenever we have a specific destination so it
-        // is built with the right initialScreen / notificationUserInfo.
-        if userInfo != nil || !isMainFeed(initialScreen) {
+        // Reuse the existing controller only when re-opening the main feed AND it already
+        // hosts the main feed (preserves the user's place on close/reopen). A specific
+        // destination, a notification payload, or a main-feed request that follows a
+        // non-feed screen (e.g. the create-post composer) rebuilds it — otherwise a stale
+        // screen would be re-presented.
+        let wantsMainFeed = (userInfo == nil) && isMainFeed(initialScreen)
+        if !wantsMainFeed || !octopusControllerShowsMainFeed {
             octopusController?.dismiss(animated: false)
             octopusController = nil
         }
@@ -240,6 +289,7 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
             )
             octopusController = UIHostingController(rootView: AnyView(root))
             octopusController?.modalPresentationStyle = .fullScreen
+            octopusControllerShowsMainFeed = isMainFeed(effectiveScreen)
         }
 
         if octopusController?.presentingViewController == nil {

@@ -12,12 +12,14 @@ public partial class OctopusSDK
     {
         TokenProvider = tokenProvider;
         ConnectUserTaskCompleter = new TaskCompletionSource<bool>();
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.ConnectUser(userId, nickname, bio, picture);
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("connectUser", userId, nickname, bio, picture);
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkConnectUser(userId, nickname, bio, picture);
 #endif
         await ConnectUserTaskCompleter.Task;
@@ -25,7 +27,7 @@ public partial class OctopusSDK
 
     private static void TriggerOnConnectUserCompleted()
     {
-        ConnectUserTaskCompleter.SetResult(true);
+        ConnectUserTaskCompleter?.SetResult(true);
     }
 
     private static async void TriggerOnTokenRequested()

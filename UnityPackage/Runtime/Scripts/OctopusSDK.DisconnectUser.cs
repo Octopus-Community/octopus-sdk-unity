@@ -10,12 +10,14 @@ public partial class OctopusSDK
     public static async Task DisconnectUser()
     {
         DisconnectUserTaskCompleter = new TaskCompletionSource<bool>();
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.DisconnectUser();
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("disconnectUser");
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkDisconnectUser();
 #endif
         await DisconnectUserTaskCompleter.Task;
@@ -23,7 +25,7 @@ public partial class OctopusSDK
 
     private static void TriggerOnDisconnectUserCompleted()
     {
-        DisconnectUserTaskCompleter.SetResult(true);
+        DisconnectUserTaskCompleter?.SetResult(true);
     }
 
     public partial class OctopusChannel : MonoBehaviour

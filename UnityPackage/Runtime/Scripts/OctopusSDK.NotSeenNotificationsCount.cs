@@ -10,12 +10,14 @@ public partial class OctopusSDK
 
     public static void UpdateNotSeenNotificationsCount()
     {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_EDITOR
+        MockBackend.UpdateNotSeenNotificationsCount();
+#elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("updateNotSeenNotificationsCount");
         }
-#elif UNITY_IOS && !UNITY_EDITOR
+#elif UNITY_IOS
         OctopusSdkUpdateNotSeenNotificationsCount();
 #endif
     }
