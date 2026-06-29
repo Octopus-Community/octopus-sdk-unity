@@ -8,6 +8,16 @@ public partial class OctopusSDK
 {
     private static Func<Task<string>> TokenProvider;
     private static TaskCompletionSource<bool> ConnectUserTaskCompleter;
+    /// <summary>
+    /// Connects a user. <paramref name="tokenProvider"/> mints a fresh client token on demand from
+    /// your backend.
+    ///
+    /// IMPORTANT: it may be invoked on a BACKGROUND THREAD while the game loop is suspended (the
+    /// Octopus UI is treated like backgrounding the game, and the SDK re-pulls the token mid-session
+    /// when the JWT expires). It must therefore complete WITHOUT the Unity player loop: use
+    /// loop-independent I/O (System.Net.Http), never UnityWebRequest, and do not await continuations
+    /// that marshal back to the main thread. Do not cache tokens — mint on demand.
+    /// </summary>
     public static async Task ConnectUser(string userId, string nickname, string bio, string picture, Func<Task<string>> tokenProvider)
     {
         TokenProvider = tokenProvider;
@@ -46,6 +56,10 @@ public partial class OctopusSDK
     private static void SetUserToken(string token)
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
+        // Async token providers resume on a thread-pool thread not attached to the JVM; attach
+        // before the JNI reply or it is dropped and the native connect await hangs. See
+        // OctopusSDK.EnsureJniAttached (idempotent on the main/JNI threads).
+        EnsureJniAttached();
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
             plugin.CallStatic("setUserToken", token);
