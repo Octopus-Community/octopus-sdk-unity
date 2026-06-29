@@ -34,6 +34,11 @@ public partial class OctopusSDK
         return handler == null ? UrlOpeningStrategy.HandledByOctopus : handler(url);
     }
 
+    // Wire form of ResolveUrlStrategy for the native bridge: matches UrlOpeningStrategy ordinals
+    // (HandledByApp = 0, HandledByOctopus = 1). Pure + Editor-testable; the AndroidJavaProxy that
+    // calls this is compiled only in Android player builds.
+    internal static int ResolveUrlStrategyCode(string url) => (int)ResolveUrlStrategy(url);
+
     private static void SetUrlInterceptionEnabled(bool enabled)
     {
 #if UNITY_EDITOR
@@ -64,7 +69,9 @@ public partial class OctopusSDK
 
     public partial class OctopusChannel : MonoBehaviour
     {
-        // Native forwards a tapped URL here only while interception is enabled.
+        // iOS / Lane-B path: native forwards a tapped URL here via UnitySendMessage while
+        // interception is enabled. On Android the decision is made synchronously in the bridge
+        // (OctopusBridgeListener.resolveUrlStrategy), so this method is not reached there.
         public void OnNavigateToUrl(string url)
         {
             if (ResolveUrlStrategy(url) == UrlOpeningStrategy.HandledByOctopus)

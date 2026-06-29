@@ -23,16 +23,39 @@ private var logo: UIImage?
 private var appName: String?
 private var fonts: OctopusTheme.Fonts?
 
-private var octopusController: UIHostingController<AnyView>?
+private var octopusController: OctopusHostingController?
 // Tracks whether the retained controller currently hosts the main feed. Used to decide
 // whether an Open()/OpenPost("") (main-feed) request can reuse it or must rebuild.
 private var octopusControllerShowsMainFeed = false
 var notSeenNotifCancellable: AnyCancellable?
 var groupsCancellable: AnyCancellable?
+var eventsCancellable: AnyCancellable?
 
 // Toggled from C# (OctopusSdkSetUrlInterceptionEnabled). When false the SDK opens URLs
 // itself (in-app browser); when true taps are forwarded to Unity for the host to decide.
 private var urlInterceptionEnabled = false
+
+// MARK: - Loop-independent lane (reverse P/Invoke)
+// The Swift→C# direction. C# registers these once at Initialize; we call them directly (off the
+// Unity player loop) for events and the token request, so they work while the loop is paused.
+// Signatures must match OctopusSDK.IosBridgeCallbacks.cs (see plan Global Constraints ABI).
+// public (not private): these are parameter types of the public @_cdecl OctopusSdkSetBridgeCallbacks,
+// and Swift requires a public function's parameter types to be at least as accessible as the function.
+public typealias EventCallback = @convention(c) (UnsafePointer<CChar>?) -> Void
+public typealias TokenRequestCallback = @convention(c) () -> Void
+public typealias BridgeShareSignCallback = @convention(c) (UnsafePointer<CChar>?) -> Void
+private var eventCallback: EventCallback?
+private var tokenRequestCallback: TokenRequestCallback?
+private var bridgeShareSignCallback: BridgeShareSignCallback?
+private var bridgeShareSignContinuation: CheckedContinuation<String, Error>?
+private enum BridgeShareSignError: Error { case noCallback, superseded, hostFailed }
+
+@_cdecl("OctopusSdkSetBridgeCallbacks")
+public func OctopusSdkSetBridgeCallbacks(eventCb: EventCallback?, tokenCb: TokenRequestCallback?, signCb: BridgeShareSignCallback?) {
+    eventCallback = eventCb
+    tokenRequestCallback = tokenCb
+    bridgeShareSignCallback = signCb
+}
 
 // MARK: - Bridge Root View
 
@@ -63,20 +86,30 @@ private var pendingNotificationUserInfo: [AnyHashable: Any]?
 @_cdecl("OctopusSdkInitialize")
 public func OctopusSdkInitialize(
     apiKey: UnsafePointer<Int8>, connectionMode: UnsafePointer<Int8>,
-    appManagedFields: UnsafePointer<Int32>, appManagedFieldsCount: Int32
+    appManagedFields: UnsafePointer<Int32>, appManagedFieldsCount: Int32,
+    apiServerHost: UnsafePointer<Int8>, apiServerPort: Int32
 ) {
     let key = String(cString: apiKey)
     let connMode = parseConnectionMode(connectionMode, appManagedFields, appManagedFieldsCount)
+    let hostStr = String(cString: apiServerHost)
     do {
-        octopus = try OctopusSDK( apiKey: key, connectionMode: connMode)
+        // Custom server host (e.g. a staging endpoint) when provided; otherwise the SDK default (prod).
+        let configuration: OctopusSDK.Configuration =
+            hostStr.isEmpty ? .init()
+                            : .init(apiServer: try .init(host: hostStr, port: Int(apiServerPort)))
+        octopus = try OctopusSDK(apiKey: key, connectionMode: connMode, configuration: configuration)
         octopus?.set(onNavigateToURLCallback: { url in
             if urlInterceptionEnabled {
+                // Leave Octopus → dismiss (resumes the loop, flushing this message), then notify.
+                OctopusSdkClose(keepState: true)
                 sendUnityMessage("OctopusChannel", "OnNavigateToUrl", url.absoluteString)
                 return .handledByApp
             }
             return .handledByOctopus
         })
         octopus?.set(displayClientObjectCallback: { objectId in
+            // Always a "leave Octopus" action → dismiss (resumes the loop), then notify.
+            OctopusSdkClose(keepState: true)
             sendUnityMessage("OctopusChannel", "OnNavigateToClientObject", objectId)
         })
         // Unity's Bundle.main doesn't include .lproj folders for all languages,
@@ -89,6 +122,15 @@ public func OctopusSdkInitialize(
         }
         groupsCancellable = octopus?.$groups.sink { groups in
             sendUnityMessage("OctopusChannel", "OnGroupsChanged", groupsToJson(groups))
+        }
+        eventsCancellable = octopus?.eventPublisher.sink { event in
+            let json = eventToJson(event)
+            // Loop-independent lane: delivers even while the Octopus UI is up and the loop is paused.
+            if let cb = eventCallback {
+                json.withCString { cb($0) }
+            } else {
+                sendUnityMessage("OctopusChannel", "OnOctopusEventJson", json)
+            }
         }
     } catch {
         print("Octopus Init Error: \(error)")
@@ -169,16 +211,37 @@ public func OctopusSdkOpenPost(postId: UnsafePointer<Int8>) {
     presentHome(initialScreen: pid.isEmpty ? .mainFeed : .post(.init(postId: pid)), payloadJson: nil)
 }
 
+// Builds the bridge-share signing closure handed to OctopusPrefilledPost. Defined out-of-line so
+// its throwing async body isn't inside the Task { } closure (which otherwise makes Task-init
+// overload resolution ambiguous). The host signs on its backend; if it can't (no callback, or the
+// host signer throws / returns empty) we THROW so the SDK aborts the post with a clean error rather
+// than publishing an empty signature, which the server rejects and leaves the editor spinning.
+private func makeBridgeShareSignClosure() -> @Sendable (_ bridgeFingerprint: String) async throws -> String {
+    return { fingerprint in
+        guard let cb = bridgeShareSignCallback else { throw BridgeShareSignError.noCallback }
+        return try await withCheckedThrowingContinuation { continuation in
+            // Register the continuation BEFORE invoking C#. The C# callback can resolve synchronously
+            // (a host signer that throws or returns immediately runs entirely inside cb($0)), firing
+            // the reply right here — if we stored the continuation after cb(), that reply would
+            // resume a nil continuation (no-op) and this await would hang forever.
+            bridgeShareSignContinuation?.resume(throwing: BridgeShareSignError.superseded) // overlap guard
+            bridgeShareSignContinuation = continuation
+            fingerprint.withCString { cb($0) }
+        }
+    }
+}
+
 @_cdecl("OctopusSdkOpenCreatePost")
 public func OctopusSdkOpenCreatePost(
     text: UnsafePointer<Int8>, topicId: UnsafePointer<Int8>, imagePath: UnsafePointer<Int8>,
-    ctaLabel: UnsafePointer<Int8>, ctaUrl: UnsafePointer<Int8>
+    ctaLabel: UnsafePointer<Int8>, ctaUrl: UnsafePointer<Int8>, hasSigner: Int32
 ) {
     let textStr = String(cString: text)
     let topicStr = String(cString: topicId)
     let pathStr = String(cString: imagePath)
     let ctaLabelStr = String(cString: ctaLabel)
     let ctaUrlStr = String(cString: ctaUrl)
+    let wantsSigner = hasSigner != 0
     Task {
         let imageData = pathStr.isEmpty ? nil : await fetchImageData(fromPathOrUrl: pathStr)
 
@@ -192,6 +255,12 @@ public func OctopusSdkOpenCreatePost(
             }
         }
 
+        // Hand the SDK-computed fingerprint to C# over the loop-independent lane; await the JWT.
+        // The closure is built out-of-line (see makeBridgeShareSignClosure) to keep its throwing
+        // async body out of this Task { } closure.
+        let sign: (@Sendable (_ bridgeFingerprint: String) async throws -> String)? =
+            wantsSigner ? makeBridgeShareSignClosure() : nil
+
         // OctopusPrefilledPost.init throws unless text or image is provided, so a
         // blank (or topic-only) request opens the empty editor via prefilledPost: nil.
         let info: OctopusInitialScreen.CreatePostScreenInfo
@@ -203,7 +272,8 @@ public func OctopusSdkOpenCreatePost(
                     text: textStr.isEmpty ? nil : textStr,
                     image: imageData,
                     topicId: topicStr.isEmpty ? nil : topicStr,
-                    cta: cta
+                    cta: cta,
+                    sign: sign
                 )
                 info = .init(prefilledPost: prefilled)
             } catch {
@@ -287,7 +357,7 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
                     assets: .init(logo: logo)
                 )
             )
-            octopusController = UIHostingController(rootView: AnyView(root))
+            octopusController = OctopusHostingController(rootView: AnyView(root))
             octopusController?.modalPresentationStyle = .fullScreen
             octopusControllerShowsMainFeed = isMainFeed(effectiveScreen)
         }
@@ -336,9 +406,25 @@ public func OctopusSdkConnectUser(
                     )
                 ),
                 tokenProvider: {
-                    sendUnityMessage("OctopusChannel", "OnTokenRequested", "")
+                    // Loop-independent lane (matches Android requestToken): works during a mid-session
+                    // refresh while Octopus is open and the loop is paused. Reply arrives via
+                    // OctopusSdkSetUserToken, which resumes this continuation.
                     return await withCheckedContinuation { continuation in
+                        // Register the continuation BEFORE notifying C#. The C# token provider can
+                        // resolve synchronously (e.g. a cached token returned via Task.FromResult), so
+                        // OctopusSdkSetUserToken may fire within cb()/the message dispatch; storing the
+                        // continuation afterwards would resume nil and hang the connect.
+                        //
+                        // Overlap guard: the native SDK serializes token requests, but a mid-session
+                        // refresh raises the chance of overlap. Resume any stale continuation (empty
+                        // token = the superseded request fails gracefully) before storing the new one.
+                        tokenCheckedContinuation?.resume(returning: "")
                         tokenCheckedContinuation = continuation
+                        if let cb = tokenRequestCallback {
+                            cb()
+                        } else {
+                            sendUnityMessage("OctopusChannel", "OnTokenRequested", "")
+                        }
                     }
                 }
             )
@@ -363,6 +449,23 @@ public func OctopusSdkSetUserToken(token: UnsafePointer<Int8>) {
     let tokenStr = String(cString: token)
     tokenCheckedContinuation?.resume(returning: tokenStr)
     tokenCheckedContinuation = nil
+}
+
+@_cdecl("OctopusSdkSetBridgeShareSignature")
+public func OctopusSdkSetBridgeShareSignature(token: UnsafePointer<Int8>) {
+    // Success path only: C# routes empty/null/failed results through OctopusSdkFailBridgeShareSignature
+    // (which resumes throwing), so tokenStr is always a real JWT here.
+    let tokenStr = String(cString: token)
+    bridgeShareSignContinuation?.resume(returning: tokenStr)
+    bridgeShareSignContinuation = nil
+}
+
+@_cdecl("OctopusSdkFailBridgeShareSignature")
+public func OctopusSdkFailBridgeShareSignature() {
+    // Host couldn't sign -> throw into the SDK so it aborts the post with a clean error
+    // (rather than publishing an empty/invalid signature).
+    bridgeShareSignContinuation?.resume(throwing: BridgeShareSignError.hostFailed)
+    bridgeShareSignContinuation = nil
 }
 
 @_cdecl("OctopusSdkOverrideDefaultLocale")
@@ -395,6 +498,25 @@ private func topViewController(
         return topViewController(base: presented)
     }
     return base
+}
+
+// Native pause/resume helper (OctopusUnityPause.mm). Stops/starts the Unity player loop and fires
+// OnApplicationPause/OnApplicationFocus, matching Android backgrounding.
+@_silgen_name("OctopusUnityPause")  private func OctopusUnityPause()
+@_silgen_name("OctopusUnityResume") private func OctopusUnityResume()
+
+// Drives pause/resume from the view-controller lifecycle so it covers EVERY dismissal path,
+// including the SDK dismissing itself (OctopusHomeScreen calls presentationMode.dismiss()), which
+// never routes through OctopusSdkClose. viewDidAppear/viewDidDisappear fire once per present/dismiss.
+final class OctopusHostingController: UIHostingController<AnyView> {
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        OctopusUnityPause()
+    }
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        OctopusUnityResume()
+    }
 }
 
 // Declare the external Unity C API function so Swift can call it.
@@ -704,4 +826,249 @@ private func fontFrom(name: String, size: Float) -> Font? {
         return nil
     }
     return Font.custom(name, size: CGFloat(size))
+}
+
+// MARK: - Event serialization
+
+/// Maps an OctopusEvent to a flat JSON string with the same canonical field names and
+/// token values as the Android Bridge.eventToJson(). Both feeds the same C# parser.
+private func eventToJson(_ e: OctopusEvent) -> String {
+    var o: [String: Any] = [:]
+    switch e {
+
+    // --- Content creation ---
+    case .postCreated(let ctx):
+        o["type"] = "PostCreated"
+        o["postId"] = ctx.postId
+        o["groupId"] = ctx.groupId
+        o["textLength"] = String(ctx.textLength)
+        var parts: [String] = []
+        if ctx.content.contains(.text)  { parts.append("Text") }
+        if ctx.content.contains(.image) { parts.append("Image") }
+        if ctx.content.contains(.poll)  { parts.append("Poll") }
+        o["content"] = parts.joined(separator: ",")
+
+    case .commentCreated(let ctx):
+        o["type"] = "CommentCreated"
+        o["commentId"] = ctx.commentId
+        o["postId"] = ctx.postId
+        o["textLength"] = String(ctx.textLength)
+
+    case .replyCreated(let ctx):
+        o["type"] = "ReplyCreated"
+        o["replyId"] = ctx.replyId
+        o["commentId"] = ctx.commentId
+        o["textLength"] = String(ctx.textLength)
+
+    // --- Deletion (iOS has a unified contentDeleted, no parentId) ---
+    case .contentDeleted(let ctx):
+        o["type"] = "ContentDeleted"
+        o["contentId"] = ctx.contentId
+        o["contentKind"] = contentKindToken(ctx.kind)
+
+    // --- Reaction ---
+    case .reactionModified(let ctx):
+        o["type"] = "ReactionModified"
+        o["contentId"] = ctx.contentId
+        o["contentKind"] = contentKindToken(ctx.contentKind)
+        if let prev = reactionKindToken(ctx.previousReaction) { o["previousReaction"] = prev }
+        if let next = reactionKindToken(ctx.newReaction)      { o["newReaction"] = next }
+
+    // --- Poll ---
+    case .pollVoted(let ctx):
+        o["type"] = "PollVoted"
+        o["contentId"] = ctx.contentId
+        o["optionId"] = ctx.optionId
+
+    // --- Reporting ---
+    case .contentReported(let ctx):
+        o["type"] = "ContentReported"
+        o["contentId"] = ctx.contentId
+        // iOS ContentReportedContext has no contentKind field — omitted
+        o["reasons"] = ctx.reasons.map { reportReasonToken($0) }.joined(separator: ",")
+
+    // --- Group ---
+    case .groupFollowingChanged(let ctx):
+        o["type"] = "GroupFollowingChanged"
+        o["groupId"] = ctx.groupId
+        o["followed"] = ctx.followed
+
+    // --- Gamification ---
+    case .gamificationPointsGained(let ctx):
+        o["type"] = "GamificationPointsGained"
+        o["points"] = String(ctx.pointsGained)
+        o["action"] = gamificationGainedActionToken(ctx.action)
+
+    case .gamificationPointsRemoved(let ctx):
+        o["type"] = "GamificationPointsRemoved"
+        o["points"] = String(ctx.pointsRemoved)
+        o["action"] = gamificationRemovedActionToken(ctx.action)
+
+    // --- Screens ---
+    case .screenDisplayed(let ctx):
+        o["type"] = "ScreenDisplayed"
+        switch ctx.screen {
+        case .mainFeed(let s):
+            o["screen"] = "MainFeed"
+            o["feedId"] = s.feedId
+        case .postsFeed(let s):
+            o["screen"] = "PostsFeed"
+            o["feedId"] = s.feedId
+        case .postDetail(let s):
+            o["screen"] = "PostDetail"
+            o["postId"] = s.postId
+        case .commentDetail(let s):
+            o["screen"] = "CommentDetail"
+            o["commentId"] = s.commentId
+        case .groups:
+            o["screen"] = "Groups"
+        case .groupDetail(let s):
+            o["screen"] = "GroupDetail"
+            o["groupId"] = s.groupId
+            o["source"] = s.source == .clientApp ? "ClientApp" : "Community"
+        case .createPost:
+            o["screen"] = "CreatePost"
+        case .profile:
+            o["screen"] = "Profile"
+        case .otherUserProfile(let s):
+            o["screen"] = "OtherUserProfile"
+            o["profileId"] = s.profileId
+        case .editProfile:
+            o["screen"] = "EditProfile"
+        case .reportContent:
+            o["screen"] = "ReportContent"
+        case .reportProfile:
+            o["screen"] = "ReportProfile"
+        case .validateNickname:
+            o["screen"] = "ValidateNickname"
+        case .settingsList:
+            o["screen"] = "SettingsList"
+        case .settingsAccount:
+            o["screen"] = "SettingsAccount"
+        case .settingsAbout:
+            o["screen"] = "SettingsAbout"
+        case .reportExplanation:
+            o["screen"] = "ReportExplanation"
+        case .deleteAccount:
+            o["screen"] = "DeleteAccount"
+        @unknown default:
+            o["screen"] = "Unknown"
+        }
+
+    // --- Notification / clicks ---
+    case .notificationClicked(let ctx):
+        o["type"] = "NotificationClicked"
+        o["notificationId"] = ctx.notificationId
+        if let cid = ctx.contentId { o["contentId"] = cid }
+
+    case .postClicked(let ctx):
+        o["type"] = "PostClicked"
+        o["postId"] = ctx.postId
+        o["source"] = ctx.source == .feed ? "Feed" : "Profile"
+
+    case .translationButtonClicked(let ctx):
+        o["type"] = "TranslationButtonClicked"
+        o["contentId"] = ctx.contentId
+        o["viewTranslated"] = ctx.viewTranslated
+        o["contentKind"] = contentKindToken(ctx.contentKind)
+
+    case .commentButtonClicked(let ctx):
+        o["type"] = "CommentButtonClicked"
+        o["postId"] = ctx.postId
+
+    case .replyButtonClicked(let ctx):
+        o["type"] = "ReplyButtonClicked"
+        o["commentId"] = ctx.commentId
+
+    case .seeRepliesButtonClicked(let ctx):
+        o["type"] = "SeeRepliesButtonClicked"
+        o["commentId"] = ctx.commentId
+
+    // --- Profile modification ---
+    case .profileModified(let ctx):
+        o["type"] = "ProfileModified"
+        o["nicknameChanged"] = ctx.nickname.isUpdated
+        o["bioChanged"] = ctx.bio.isUpdated
+        o["pictureChanged"] = ctx.picture.isUpdated
+        if case .updated(let bioCtx) = ctx.bio {
+            o["bioLength"] = String(bioCtx.bioLength)
+        } else {
+            o["bioLength"] = "0"
+        }
+        if case .updated(let picCtx) = ctx.picture {
+            o["hasPicture"] = picCtx.hasPicture
+        } else {
+            o["hasPicture"] = false
+        }
+
+    // --- Sessions ---
+    case .sessionStarted(let ctx):
+        o["type"] = "SessionStarted"
+        o["sessionId"] = ctx.sessionId
+
+    case .sessionStopped(let ctx):
+        o["type"] = "SessionStopped"
+        o["sessionId"] = ctx.sessionId
+    }
+
+    guard let data = try? JSONSerialization.data(withJSONObject: o),
+          let s = String(data: data, encoding: .utf8) else { return "{}" }
+    return s
+}
+
+private func contentKindToken(_ k: OctopusEvent.ContentKind) -> String {
+    switch k {
+    case .post:    return "Post"
+    case .comment: return "Comment"
+    case .reply:   return "Reply"
+    }
+}
+
+private func reactionKindToken(_ k: OctopusEvent.ReactionKind?) -> String? {
+    guard let k else { return nil }
+    switch k {
+    case .heart:        return "Heart"
+    case .joy:          return "Joy"
+    case .mouthOpen:    return "MouthOpen"
+    case .clap:         return "Clap"
+    case .cry:          return "Cry"
+    case .rage:         return "Rage"
+    case .unknown:      return "Unknown"
+    }
+}
+
+private func reportReasonToken(_ r: OctopusEvent.ReportReason) -> String {
+    switch r {
+    case .hateSpeechOrDiscriminationOrHarassment: return "hateSpeechOrDiscriminationOrHarassment"
+    case .explicitOrInappropriateContent:         return "explicitOrInappropriateContent"
+    case .violenceAndTerrorism:                   return "violenceAndTerrorism"
+    case .spamAndScams:                           return "spamAndScams"
+    case .suicideAndSelfHarm:                     return "suicideAndSelfHarm"
+    case .fakeProfilesAndImpersonation:           return "fakeProfilesAndImpersonation"
+    case .childExploitationOrAbuse:               return "childExploitationOrAbuse"
+    case .intellectualPropertyViolation:          return "intellectualPropertyViolation"
+    case .other:                                  return "other"
+    }
+}
+
+private func gamificationGainedActionToken(_ a: OctopusEvent.GamificationPointsGainedAction) -> String {
+    switch a {
+    case .reaction:         return "Reaction"
+    case .comment:          return "Comment"
+    case .reply:            return "Reply"
+    case .post:             return "Post"
+    case .vote:             return "Vote"
+    case .postCommented:    return "PostCommented"
+    case .profileCompleted: return "ProfileCompleted"
+    case .dailySession:     return "DailySession"
+    }
+}
+
+private func gamificationRemovedActionToken(_ a: OctopusEvent.GamificationPointsRemovedAction) -> String {
+    switch a {
+    case .postDeleted:     return "Post"
+    case .commentDeleted:  return "Comment"
+    case .replyDeleted:    return "Reply"
+    case .reactionDeleted: return "Reaction"
+    }
 }

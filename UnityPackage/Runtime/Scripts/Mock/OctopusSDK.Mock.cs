@@ -55,6 +55,8 @@ public partial class OctopusSDK
             LastOpenedPost = null;
             LastPrefilledPost = null;
             LastTrackedEvent = null;
+            LastBridgeShareSignature = null;
+            LastBridgeShareSignatureFailed = false;
         }
 
         /// <summary>Most recent recorded call with the given method name, or null.</summary>
@@ -69,6 +71,13 @@ public partial class OctopusSDK
         public static string LastOpenedPost { get; set; }
         public static OctopusPrefilledPost LastPrefilledPost { get; set; }
         public static string LastTrackedEvent { get; set; }
+
+        /// <summary>The JWT the host signer returned for the last simulated signature request (null if it failed).</summary>
+        public static string LastBridgeShareSignature { get; private set; }
+        /// <summary>True if the last simulated signature request failed (no signer, host threw, or empty result).</summary>
+        public static bool LastBridgeShareSignatureFailed { get; private set; }
+        internal static void RecordBridgeShareSignature(string jwt) { LastBridgeShareSignature = jwt; LastBridgeShareSignatureFailed = false; }
+        internal static void RecordBridgeShareSignatureFailed() { LastBridgeShareSignature = null; LastBridgeShareSignatureFailed = true; }
 
         // Drivers below simulate native callbacks on demand. They fire unconditionally,
         // independent of Enabled — Enabled gates recording/overlay/auto-emit, but a driver
@@ -90,6 +99,17 @@ public partial class OctopusSDK
 
         /// <summary>Simulate the user editing a profile field inside Octopus.</summary>
         public static void EmitModifyUser(ProfileField? field) => OctopusSDK.TriggerOnModifyUser(field);
+
+        /// <summary>Simulate an Octopus event (analytics/gamification/navigation) from native.</summary>
+        public static void EmitOctopusEvent(OctopusEvent e) => OctopusSDK.TriggerOnOctopusEvent(e);
+
+        /// <summary>Simulate an Octopus event from its flat-JSON wire envelope.</summary>
+        public static void EmitOctopusEventJson(string json) => OctopusSDK.TriggerOnOctopusEvent(OctopusEventParsing.FromJson(json));
+
+        /// <summary>Simulate the SDK asking the host to sign a bridge-share image; runs the active
+        /// SignBridgeShare callback captured by the last OpenCreatePost and records its JWT.</summary>
+        public static void EmitBridgeShareSignatureRequest(string fingerprint) =>
+            OctopusSDK.TriggerBridgeShareSign(fingerprint);
     }
 }
 #endif

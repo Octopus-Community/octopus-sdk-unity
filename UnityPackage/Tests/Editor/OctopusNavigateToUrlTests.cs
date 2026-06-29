@@ -29,4 +29,25 @@ public class OctopusNavigateToUrlTests
         OctopusSDK.ResolveUrlStrategy("https://x.test/deep");
         Assert.AreEqual("https://x.test/deep", seen);
     }
+
+    [Test]
+    public void ResolveUrlStrategyCode_NoHandler_Returns1()
+    {
+        OctopusSDK.NavigateToUrlHandler = null;
+        Assert.AreEqual(1, OctopusSDK.ResolveUrlStrategyCode("https://x.test"));
+    }
+
+    [Test]
+    public void ResolveUrlStrategyCode_HandlerHandledByApp_Returns0()
+    {
+        OctopusSDK.NavigateToUrlHandler = _ => UrlOpeningStrategy.HandledByApp;
+        Assert.AreEqual(0, OctopusSDK.ResolveUrlStrategyCode("https://x.test"));
+    }
+
+    [Test]
+    public void ResolveUrlStrategyCode_HandlerHandledByOctopus_Returns1()
+    {
+        OctopusSDK.NavigateToUrlHandler = _ => UrlOpeningStrategy.HandledByOctopus;
+        Assert.AreEqual(1, OctopusSDK.ResolveUrlStrategyCode("https://x.test"));
+    }
 }

@@ -58,15 +58,18 @@ public partial class OctopusSDK
     {
         OctopusPrefilledPostMarshal.ToArgs(prefilled, out string text, out string topicId,
             out string imagePath, out string ctaLabel, out string ctaUrl);
+        StashActiveBridgeShareSigner(prefilled);
 #if UNITY_EDITOR
         MockBackend.OpenCreatePost(prefilled);
 #elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
-            plugin.CallStatic("openCreatePost", text, topicId, imagePath, ctaLabel, ctaUrl);
+            plugin.CallStatic("openCreatePost", text, topicId, imagePath, ctaLabel, ctaUrl,
+                prefilled?.SignBridgeShare != null);
         }
 #elif UNITY_IOS
-        OctopusSdkOpenCreatePost(text, topicId, imagePath, ctaLabel, ctaUrl);
+        OctopusSdkOpenCreatePost(text, topicId, imagePath, ctaLabel, ctaUrl,
+            prefilled?.SignBridgeShare != null ? 1 : 0);
 #endif
     }
 
@@ -82,6 +85,6 @@ public partial class OctopusSDK
 
     [DllImport("__Internal")]
     private static extern void OctopusSdkOpenCreatePost(
-        string text, string topicId, string imagePath, string ctaLabel, string ctaUrl);
+        string text, string topicId, string imagePath, string ctaLabel, string ctaUrl, int hasSigner);
 #endif
 }

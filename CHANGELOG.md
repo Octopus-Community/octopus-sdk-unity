@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.12.2 — 2026-06-29
+
+### Added
+- Upgraded the underlying native SDKs to Android 1.12.1 / iOS 1.12.4.
+- `OctopusSDK.Initialize` now accepts an optional custom gRPC server host/port (`apiServerHost`, `apiServerPort`) to target a non-production endpoint (e.g. staging); omit them to use the default production endpoint. Mirrors the native `ApiServer` configuration on both platforms; traffic is always over TLS.
+- Bridge Share image signing: `OctopusPrefilledPost.SignBridgeShare` — a callback that authorises a prefilled-share **image** in a community that restricts member pictures. The SDK computes a content fingerprint and calls your callback; your backend returns a short-lived HS256 JWT (`bridge_fingerprint` claim). It fires only when the share carries an image and the community gates pictures, on **both iOS and Android**, over the loop-independent native channel — so it runs on a **background thread** while the Octopus UI is open: use loop-independent I/O and never ship your signing secret in the app.
+- iOS: the Unity game loop is now suspended while the Octopus UI is open (matching Android), firing `OnApplicationPause`/`OnApplicationFocus`. Octopus events and mid-session token refresh keep working via a loop-independent native channel.
+- Android: fixed a mid-session token-refresh stall when the Octopus UI was open (token request now uses the loop-independent lane).
+- `OctopusSDK.OnOctopusEvent` — a real-time stream of Octopus community events (post/comment/reply created, content deleted, reaction modified, poll voted, group follow changed, gamification points gained/removed, screen displayed, post/comment/translation clicks, profile modified, session start/stop) for analytics, gamification, or backend sync, on **both iOS and Android**. See `OctopusEvent` for the typed catalogue. Handlers fire on a **background thread**, in order — uniform on both platforms — so do thread-safe/backend work directly and use `OctopusMainThread.Post(...)` for Unity-side work. Android-only fields (the iOS SDK lacks them): `ProfileReportedEvent`, `ContentDeletedEvent.ParentId`, `ContentReportedEvent.ContentKind`; report `Reasons` are raw platform tokens.
+
+### Changed
+- Android: URL interception (`NavigateToUrlHandler`) is now resolved **synchronously** over a loop-independent native channel, the moment a URL is tapped. Returning `HandledByOctopus` opens the system browser while **keeping the Octopus community screen open**; only `HandledByApp` brings your app to the foreground. The handler runs off Unity's main thread — keep it to a fast routing decision and do Unity-side work after your app regains focus.
+
+### Fixed
+- iOS: bumped the native SDK to 1.12.4, which restores compilation under Xcode 27 / Swift 6.4 (`Sendable` closure in `Compat.ScrollView`). No API or behavior change.
+- Android: reusing the Octopus screen for a follow-up `Open*` call now re-reads the requested destination (via `onNewIntent`) instead of briefly showing the previous screen.
+
 ## 1.12.1 — 2026-06-10
 
 ### Added

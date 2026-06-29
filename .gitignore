@@ -11,3 +11,9 @@
 *.pem
 *.key
 local.properties
+# Local-only developer scratch files (not part of the SDK)
+UnityExample/Assets/Scripts/OctopusTestHarness.cs
+UnityExample/Assets/Scripts/OctopusTestHarness.cs.meta
+
+# Unity test-run artifacts
+UnityExample/TestResults-*.xml
