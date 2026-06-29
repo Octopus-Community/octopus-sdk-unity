@@ -44,17 +44,22 @@ private var urlInterceptionEnabled = false
 public typealias EventCallback = @convention(c) (UnsafePointer<CChar>?) -> Void
 public typealias TokenRequestCallback = @convention(c) () -> Void
 public typealias BridgeShareSignCallback = @convention(c) (UnsafePointer<CChar>?) -> Void
+// Synchronous (returns a value): resolves the host's URL-interception strategy off the player loop.
+// 0 = HandledByApp, 1 = HandledByOctopus. Mirrors Android's loop-independent resolveUrlStrategy.
+public typealias UrlStrategyCallback = @convention(c) (UnsafePointer<CChar>?) -> Int32
 private var eventCallback: EventCallback?
 private var tokenRequestCallback: TokenRequestCallback?
 private var bridgeShareSignCallback: BridgeShareSignCallback?
+private var urlStrategyCallback: UrlStrategyCallback?
 private var bridgeShareSignContinuation: CheckedContinuation<String, Error>?
 private enum BridgeShareSignError: Error { case noCallback, superseded, hostFailed }
 
 @_cdecl("OctopusSdkSetBridgeCallbacks")
-public func OctopusSdkSetBridgeCallbacks(eventCb: EventCallback?, tokenCb: TokenRequestCallback?, signCb: BridgeShareSignCallback?) {
+public func OctopusSdkSetBridgeCallbacks(eventCb: EventCallback?, tokenCb: TokenRequestCallback?, signCb: BridgeShareSignCallback?, urlStrategyCb: UrlStrategyCallback?) {
     eventCallback = eventCb
     tokenRequestCallback = tokenCb
     bridgeShareSignCallback = signCb
+    urlStrategyCallback = urlStrategyCb
 }
 
 // MARK: - Bridge Root View
@@ -99,13 +104,25 @@ public func OctopusSdkInitialize(
                             : .init(apiServer: try .init(host: hostStr, port: Int(apiServerPort)))
         octopus = try OctopusSDK(apiKey: key, connectionMode: connMode, configuration: configuration)
         octopus?.set(onNavigateToURLCallback: { url in
-            if urlInterceptionEnabled {
-                // Leave Octopus → dismiss (resumes the loop, flushing this message), then notify.
-                OctopusSdkClose(keepState: true)
-                sendUnityMessage("OctopusChannel", "OnNavigateToUrl", url.absoluteString)
-                return .handledByApp
+            // Resolve the strategy SYNCHRONOUSLY over the loop-independent lane (mirrors Android's
+            // resolveUrlStrategy): the host's NavigateToUrlHandler runs in C# off the player loop, so
+            // it works while Octopus is shown and the loop is paused — no UnitySendMessage round-trip,
+            // no tearing down the UI to flush it. Codes match UrlOpeningStrategy.
+            guard urlInterceptionEnabled, let resolve = urlStrategyCallback else {
+                return .handledByOctopus
             }
-            return .handledByOctopus
+            let urlString = url.absoluteString
+            let strategy = urlString.withCString { resolve($0) }
+            if strategy == 0 {
+                // HandledByApp → the host takes over: leave the community (dismiss resumes the loop).
+                OctopusSdkClose(keepState: true)
+            } else {
+                // HandledByOctopus → open the device's system browser; the community STAYS open
+                // (matches Android's openUrlInOctopus). Return .handledByApp below so the SDK does not
+                // also open its own in-app browser.
+                urlString.withCString { OctopusSdkOpenUrlInOctopus(url: $0) }
+            }
+            return .handledByApp
         })
         octopus?.set(displayClientObjectCallback: { objectId in
             // Always a "leave Octopus" action → dismiss (resumes the loop), then notify.
