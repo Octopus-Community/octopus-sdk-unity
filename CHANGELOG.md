@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.12.2 — 2026-06-29
+## 1.12.2 — 2026-06-25
 
 ### Added
 - Upgraded the underlying native SDKs to Android 1.12.1 / iOS 1.12.4.
@@ -11,7 +11,7 @@
 - `OctopusSDK.OnOctopusEvent` — a real-time stream of Octopus community events (post/comment/reply created, content deleted, reaction modified, poll voted, group follow changed, gamification points gained/removed, screen displayed, post/comment/translation clicks, profile modified, session start/stop) for analytics, gamification, or backend sync, on **both iOS and Android**. See `OctopusEvent` for the typed catalogue. Handlers fire on a **background thread**, in order — uniform on both platforms — so do thread-safe/backend work directly and use `OctopusMainThread.Post(...)` for Unity-side work. Android-only fields (the iOS SDK lacks them): `ProfileReportedEvent`, `ContentDeletedEvent.ParentId`, `ContentReportedEvent.ContentKind`; report `Reasons` are raw platform tokens.
 
 ### Changed
-- Android: URL interception (`NavigateToUrlHandler`) is now resolved **synchronously** over a loop-independent native channel, the moment a URL is tapped. Returning `HandledByOctopus` opens the system browser while **keeping the Octopus community screen open**; only `HandledByApp` brings your app to the foreground. The handler runs off Unity's main thread — keep it to a fast routing decision and do Unity-side work after your app regains focus.
+- iOS & Android: URL interception (`NavigateToUrlHandler`) is now resolved **synchronously** over a loop-independent native channel, the moment a URL is tapped — uniform across both platforms. Returning `HandledByOctopus` opens the system browser while **keeping the Octopus community screen open**; only `HandledByApp` brings your app to the foreground. The handler runs off Unity's main thread — keep it to a fast routing decision and do Unity-side work after your app regains focus.
 
 ### Fixed
 - iOS: bumped the native SDK to 1.12.4, which restores compilation under Xcode 27 / Swift 6.4 (`Sendable` closure in `Compat.ScrollView`). No API or behavior change.
