@@ -1,0 +1,74 @@
+name: Bug report
+description: Report a problem with the Octopus SDK for Unity
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill in as much as you can — a minimal repro is the fastest path to a fix.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, ordered steps. A code snippet or a link to a repro project is ideal.
+      placeholder: |
+        1. Initialize the SDK with '...'
+        2. Call '...'
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include the full error message / stack trace if any.
+    validations:
+      required: true
+  - type: input
+    id: sdk-version
+    attributes:
+      label: SDK package version
+      description: The `com.octopuscommunity.octopus_sdk_for_unity` version from your `Packages/manifest.json` (or the imported .unitypackage version).
+      placeholder: "1.12.2"
+    validations:
+      required: true
+  - type: input
+    id: unity-version
+    attributes:
+      label: Unity version
+      description: The exact Unity Editor version (Help > About Unity).
+      placeholder: "2022.3.45f1"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform(s)
+      multiple: true
+      options:
+        - Android
+        - iOS
+        - Unity Editor
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Device / OS version, installation method (UPM git URL or .unitypackage), and any relevant Player Settings.
+      render: shell
+    validations:
+      required: false
