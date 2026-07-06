@@ -16,13 +16,14 @@ version before reporting.
 **Please do not report security vulnerabilities through public GitHub issues,
 pull requests, or discussions.**
 
-Instead, report them privately by email to **support@octopuscommunity.com**
+Instead, report them privately by email to **security@octopuscommunity.com**
 with a subject line that starts with `[SECURITY]` so we can prioritize it.
 
 To help us triage quickly, please include where you can:
 
 - A description of the vulnerability and its potential impact.
-- The affected SDK version(s), Unity version, and platform(s) (Android / iOS).
+- The affected SDK package version(s), Unity version, and platform(s)
+  (Android / iOS).
 - Step-by-step instructions to reproduce, including a minimal proof of concept.
 - Any logs, stack traces, or screenshots that help us understand the issue.
 
