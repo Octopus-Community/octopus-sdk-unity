@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://doc.octopuscommunity.com
+    about: Integration guides, API reference, and troubleshooting.
+  - name: Octopus Community
+    url: https://www.octopuscommunity.com
+    about: Product information and commercial / support enquiries.
