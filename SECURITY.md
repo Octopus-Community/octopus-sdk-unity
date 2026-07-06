@@ -16,7 +16,7 @@ version before reporting.
 **Please do not report security vulnerabilities through public GitHub issues,
 pull requests, or discussions.**
 
-Instead, report them privately by email to **security@octopuscommunity.com**
+Instead, report them privately by email to **contact@octopuscommunity.com**
 with a subject line that starts with `[SECURITY]` so we can prioritize it.
 
 To help us triage quickly, please include where you can:
