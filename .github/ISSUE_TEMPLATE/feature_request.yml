@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest an improvement or a new capability for the SDK
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What are you trying to achieve? Describe the problem, not just the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-api
+    attributes:
+      label: Proposed API / solution
+      description: How would you like this to work? A C# snippet of the call site you'd want helps a lot.
+      render: csharp
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you've tried, or other approaches you weighed.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+    validations:
+      required: false
