@@ -38,19 +38,19 @@ body:
     validations:
       required: true
   - type: input
-    id: sdk-version
-    attributes:
-      label: SDK package version
-      description: The `com.octopuscommunity.octopus_sdk_for_unity` version from your `Packages/manifest.json` (or the imported .unitypackage version).
-      placeholder: "1.12.2"
-    validations:
-      required: true
-  - type: input
     id: unity-version
     attributes:
       label: Unity version
-      description: The exact Unity Editor version (Help > About Unity).
+      description: The Unity Editor version you build with.
       placeholder: "2022.3.45f1"
+    validations:
+      required: true
+  - type: input
+    id: sdk-version
+    attributes:
+      label: SDK package version
+      description: The `com.octopuscommunity.octopus_sdk_for_unity` version from your `Packages/manifest.json` (or the imported `.unitypackage` version).
+      placeholder: "1.12.2"
     validations:
       required: true
   - type: dropdown
@@ -61,14 +61,14 @@ body:
       options:
         - Android
         - iOS
-        - Unity Editor
+        - Unity Editor (Mock Mode)
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
       label: Environment
-      description: Device / OS version, installation method (UPM git URL or .unitypackage), and any relevant Player Settings.
+      description: Device / OS version, install method (UPM git URL or legacy .unitypackage), and External Dependency Manager version.
       render: shell
     validations:
       required: false

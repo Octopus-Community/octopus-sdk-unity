@@ -1,6 +1,6 @@
 {
     "name": "com.octopuscommunity.octopus_sdk_for_unity",
-    "version": "1.12.3",
+    "version": "1.12.4",
     "displayName": "Octopus SDK for Unity",
     "description": "Unity wrapper for the Octopus SDK Android and iOS libraries.",
     "unity": "2019.4",

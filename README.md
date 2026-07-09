@@ -1,9 +1,5 @@
 # Octopus SDK for Unity
 
-[![Release](https://img.shields.io/github/v/release/Octopus-Community/octopus-sdk-unity)](https://github.com/Octopus-Community/octopus-sdk-unity/releases)
-[![Unity](https://img.shields.io/badge/Unity-2019.4%2B-222c37?logo=unity)](https://unity.com)
-[![Platforms](https://img.shields.io/badge/platforms-Android%20%7C%20iOS-blue)](https://doc.octopuscommunity.com)
-
 Octopus is an SDK that enables you to **integrate a fully customizable social network** into your Unity app, perfectly **aligned with your branding**.
 
 **Minimum Unity version:** 2019.4
