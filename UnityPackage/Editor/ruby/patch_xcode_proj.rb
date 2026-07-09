@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-PACKAGE_VERSION = '1.12.5'
+PACKAGE_VERSION = '1.12.6'
 PACKAGE_URL     = 'https://github.com/Octopus-Community/octopus-sdk-swift.git'
 PRODUCTS        = ['Octopus', 'OctopusUI']
 
