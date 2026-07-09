@@ -8,6 +8,15 @@ section when a release is cut (format inspired by
 
 _Nothing yet._
 
+## 1.12.4 — 2026-07-09
+
+### Added
+- iOS: bumped the native SDK to 1.12.6, Android pin (1.12.1) unchanged — already the latest release.
+
+### Fixed
+- `OctopusSDK.ConnectUser` now accepts `null` for `nickname`, `bio`, and `picture` (each is optional). Previously passing `null` crashed on iOS (null `char*` into `String(cString:)`) and hung the awaited connect on Android (non-null Kotlin bridge params); `null` is now coalesced to empty, matching the native SDKs' optional-profile semantics. A blank picture means no avatar.
+- Android: the Octopus UI now renders edge-to-edge and draws under the display cutout in every orientation, matching the native Android SDK's host activity. Games running in landscape on notch/punch-hole devices no longer get a black bar pushed away from the camera cutout, and the stray top inset when opening Octopus is gone. The Octopus screens already apply their own safe-area (`safeDrawing`) insets, so content stays clear of the cutout and system bars. No API change.
+
 ## 1.12.3 — 2026-07-06
 
 ### Fixed

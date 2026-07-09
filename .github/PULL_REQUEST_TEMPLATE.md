@@ -8,9 +8,10 @@
 
 <!-- How did you verify this? Check what applies. -->
 
-- [ ] Project compiles in the Unity Editor without errors or new warnings
-- [ ] EditMode tests pass (`UnityPackage/Tests`)
-- [ ] Tested on an Android device / emulator (if behaviour changed)
-- [ ] Tested on an iOS device / simulator (if behaviour changed)
+- [ ] EditMode tests pass (Unity Test Runner)
+- [ ] `AndroidBridge` compiles (`./gradlew :bridge:assembleRelease`)
+- [ ] Tested on a device (Android / iOS) if behaviour changed
+- [ ] `UnityExample` still runs (if the sample is affected)
+- [ ] `CHANGELOG.md` updated under `## Unreleased` (if user-visible)
 
 Refs #

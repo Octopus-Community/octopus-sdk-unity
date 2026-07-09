@@ -10,7 +10,8 @@ public partial class OctopusSDK
     private static TaskCompletionSource<bool> ConnectUserTaskCompleter;
     /// <summary>
     /// Connects a user. <paramref name="tokenProvider"/> mints a fresh client token on demand from
-    /// your backend.
+    /// your backend. <paramref name="nickname"/>, <paramref name="bio"/> and <paramref name="picture"/>
+    /// are optional — pass null (or "") for any you don't have.
     ///
     /// IMPORTANT: it may be invoked on a BACKGROUND THREAD while the game loop is suspended (the
     /// Octopus UI is treated like backgrounding the game, and the SDK re-pulls the token mid-session
@@ -20,6 +21,15 @@ public partial class OctopusSDK
     /// </summary>
     public static async Task ConnectUser(string userId, string nickname, string bio, string picture, Func<Task<string>> tokenProvider)
     {
+        // The native SDKs model nickname/bio/picture as optional (nullable), but the bridge transports
+        // below do NOT tolerate a null: iOS marshals to a null char* and crashes in String(cString:),
+        // and the Android bridge's non-null Kotlin params throw and hang the awaited connect. Coalesce
+        // to empty here so callers may pass null for "no value". Empty picture => no avatar (both
+        // bridges treat blank as no image).
+        nickname = nickname ?? "";
+        bio = bio ?? "";
+        picture = picture ?? "";
+
         TokenProvider = tokenProvider;
         ConnectUserTaskCompleter = new TaskCompletionSource<bool>();
 #if UNITY_EDITOR
