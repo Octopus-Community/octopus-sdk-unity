@@ -49,15 +49,23 @@ public class OctopusMockPassthroughTests
     }
 
     [Test]
+    public void SetForcedOrientation_Records()
+    {
+        OctopusSDK.SetForcedOrientation((int)OctopusThemeSettings.ForcedOrientationType.Portrait);
+        Assert.AreEqual(1, OctopusSDK.Mock.LastCall("SetForcedOrientation").Value.Args[0]);
+    }
+
+    [Test]
     public void SetUnityTheme_CascadesThroughRoutedSetters()
     {
         // SetUnityTheme runs in the Editor now (it only calls the routed public setters).
-        // With a settings asset present it always applies nav-bar + color-scheme type,
-        // so those should appear in the recorded calls — matching device behavior.
+        // With a settings asset present it always applies nav-bar + color-scheme type + forced
+        // orientation, so those should appear in the recorded calls — matching device behavior.
         OctopusThemeSettings.GetOrCreateSettings();
         OctopusSDK.Mock.Reset();
         OctopusSDK.SetUnityTheme();
         Assert.IsTrue(OctopusSDK.Mock.LastCall("SetColorSchemeType").HasValue);
         Assert.IsTrue(OctopusSDK.Mock.LastCall("SetNavBarUsesPrimaryColor").HasValue);
+        Assert.IsTrue(OctopusSDK.Mock.LastCall("SetForcedOrientation").HasValue);
     }
 }
