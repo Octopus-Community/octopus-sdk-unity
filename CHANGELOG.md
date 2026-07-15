@@ -8,6 +8,11 @@ section when a release is cut (format inspired by
 
 _Nothing yet._
 
+## 1.12.5 — 2026-07-15
+
+### Added
+- **Forced community orientation.** New `OctopusThemeSettings.ForcedOrientation` (`None` / `Portrait` / `Landscape`), also exposed under a **Behavior** tab in *Octopus SDK > Theme Configuration*. Locks the native Octopus community UI to a fixed orientation independent of the game — e.g. a portrait community inside a landscape game — and restores the game's orientation when the community closes. Defaults to `None` (follows the game/device). Fully contained in the Unity bridge; no upstream native SDK change. On iOS the app-level orientation mask is widened only while the community is shown; on Android the community activity's orientation is set. Platform notes: iOS requires **iOS 16+** (uses the public `requestGeometryUpdate` API — no private-API rotation hacks; ignored below 16, community follows the game). Android 8.0 / API 26 cannot lock a translucent activity, so it opens unlocked on that version only.
+
 ## 1.12.4 — 2026-07-09
 
 ### Added

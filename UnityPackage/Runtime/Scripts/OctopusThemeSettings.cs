@@ -26,6 +26,19 @@ public class OctopusThemeSettings : ScriptableObject
     }
 
     /// <summary>
+    /// Orientation to force on the native Octopus community UI, independent of the game's own
+    /// orientation. <see cref="None"/> leaves the community following the game/device (default).
+    /// Values must stay in sync with the native bridges (Android Bridge.setForcedOrientation,
+    /// iOS OctopusSdkSetForcedOrientation).
+    /// </summary>
+    public enum ForcedOrientationType
+    {
+        None = 0,
+        Portrait = 1,
+        Landscape = 2
+    }
+
+    /// <summary>
     /// Font style types matching native SDK font configuration.
     /// </summary>
     public enum FontStyleType
@@ -117,6 +130,9 @@ public class OctopusThemeSettings : ScriptableObject
     [SerializeField]
     private ColorSchemeType colorScheme = ColorSchemeType.System;
 
+    [SerializeField]
+    private ForcedOrientationType forcedOrientation = ForcedOrientationType.None;
+
     // Font style configurations (runtime accessible)
     [SerializeField]
     private FontStyleConfig[] fontStyles = new FontStyleConfig[7];
@@ -191,6 +207,16 @@ public class OctopusThemeSettings : ScriptableObject
     {
         get => colorScheme;
         set => colorScheme = value;
+    }
+
+    /// <summary>
+    /// Orientation forced on the native Octopus community UI. Defaults to
+    /// <see cref="ForcedOrientationType.None"/> (follows the game/device).
+    /// </summary>
+    public ForcedOrientationType ForcedOrientation
+    {
+        get => forcedOrientation;
+        set => forcedOrientation = value;
     }
 
     /// <summary>

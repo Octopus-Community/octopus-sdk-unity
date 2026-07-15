@@ -135,6 +135,24 @@ public partial class OctopusSDK
 #endif
     }
 
+    /// <summary>
+    /// Forces the native Octopus community UI to a fixed orientation, independent of the game.
+    /// 0 = None (follow the game/device), 1 = Portrait, 2 = Landscape.
+    /// </summary>
+    public static void SetForcedOrientation(int forcedOrientation)
+    {
+#if UNITY_EDITOR
+        MockBackend.SetForcedOrientation(forcedOrientation);
+#elif UNITY_ANDROID
+        using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
+        {
+            plugin.CallStatic("setForcedOrientation", forcedOrientation);
+        }
+#elif UNITY_IOS
+        OctopusSdkSetForcedOrientation(forcedOrientation);
+#endif
+    }
+
     public static void SetFonts(OctopusFonts fonts = null)
     {
 #if UNITY_EDITOR
@@ -206,6 +224,9 @@ public partial class OctopusSDK
 
     [DllImport("__Internal")]
     private static extern void OctopusSdkSetColorSchemeType(int colorSchemeType);
+
+    [DllImport("__Internal")]
+    private static extern void OctopusSdkSetForcedOrientation(int forcedOrientation);
 
     [DllImport("__Internal")]
     private static extern void OctopusSdkSetFonts(
