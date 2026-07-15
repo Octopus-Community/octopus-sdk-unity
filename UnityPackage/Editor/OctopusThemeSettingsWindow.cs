@@ -17,7 +17,7 @@ public class OctopusThemeSettingsWindow : EditorWindow
 
     // Tab selection
     private int selectedTab = 0;
-    private static readonly string[] TabNames = { "Top Bar", "Fonts", "Colors" };
+    private static readonly string[] TabNames = { "Top Bar", "Fonts", "Colors", "Behavior" };
 
     // Colors sub-tab selection
     private int selectedColorTab = 0;
@@ -119,6 +119,9 @@ public class OctopusThemeSettingsWindow : EditorWindow
             case 2:
                 DrawColorsTab();
                 break;
+            case 3:
+                DrawBehaviorTab();
+                break;
         }
 
         EditorGUILayout.EndScrollView();
@@ -138,6 +141,33 @@ public class OctopusThemeSettingsWindow : EditorWindow
 
         DrawNavBarColorOption();
 
+        EditorGUILayout.EndVertical();
+    }
+
+    private void DrawBehaviorTab()
+    {
+        GUIStyle headerStyle = new GUIStyle(EditorStyles.label);
+        headerStyle.fixedHeight = 20;
+        headerStyle.fontStyle = FontStyle.Bold;
+
+        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+        EditorGUILayout.LabelField("Community Orientation", headerStyle);
+        EditorGUILayout.HelpBox(
+            "Force the Octopus community UI to a fixed orientation, independent of your game — e.g. a " +
+            "portrait community inside a landscape game. 'None' follows the game/device.",
+            MessageType.None);
+        GUILayout.Space(2);
+
+        EditorGUI.BeginChangeCheck();
+        var newOrientation = (OctopusThemeSettings.ForcedOrientationType)EditorGUILayout.EnumPopup(
+            "Forced Orientation", settings.ForcedOrientation);
+        if (EditorGUI.EndChangeCheck())
+        {
+            Undo.RecordObject(settings, "Update Octopus Forced Orientation");
+            settings.ForcedOrientation = newOrientation;
+            EditorUtility.SetDirty(settings);
+            AssetDatabase.SaveAssets();
+        }
         EditorGUILayout.EndVertical();
     }
 
