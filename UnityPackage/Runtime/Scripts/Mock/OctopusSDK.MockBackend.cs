@@ -109,6 +109,7 @@ public partial class OctopusSDK
         internal static void SetAppName(string appName) => Mock.Record("SetAppName", appName ?? "");
         internal static void SetNavBarUsesPrimaryColor(bool usesPrimary) => Mock.Record("SetNavBarUsesPrimaryColor", usesPrimary);
         internal static void SetColorSchemeType(int colorSchemeType) => Mock.Record("SetColorSchemeType", colorSchemeType);
+        internal static void SetForcedOrientation(int forcedOrientation) => Mock.Record("SetForcedOrientation", forcedOrientation);
         internal static void SetFonts() => Mock.Record("SetFonts");
 
         internal static void SyncFollowGroups(

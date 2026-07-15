@@ -23,6 +23,17 @@ private var logo: UIImage?
 private var appName: String?
 private var fonts: OctopusTheme.Fonts?
 
+// Orientation forced on the Octopus UI. 0 = None (follow the game/device), 1 = Portrait, 2 = Landscape.
+// Mirrors OctopusThemeSettings.ForcedOrientationType. Read by OctopusHostingController on present.
+private var forcedOrientation: Int32 = 0
+// Records that we actually armed the forced orientation for the CURRENT presentation. The dismiss-time
+// cleanup keys off this, NOT off the mutable forcedOrientation global — otherwise a mid-session change
+// to forcedOrientation would skip the cleanup and leave the app mask stuck widened (game never restored).
+private var didForceOrientation = false
+// The window's interface orientation captured just before forcing, so we can restore the game's own
+// orientation on dismiss — correct whether the game is landscape or portrait.
+private var preForcedInterfaceOrientation: UIInterfaceOrientation = .unknown
+
 private var octopusController: OctopusHostingController?
 // Tracks whether the retained controller currently hosts the main feed. Used to decide
 // whether an Open()/OpenPost("") (main-feed) request can reuse it or must rebuild.
@@ -380,6 +391,15 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
         }
 
         if octopusController?.presentingViewController == nil {
+            // Force orientation (if configured) BEFORE presenting, so UIKit's presentation-time
+            // orientation query already sees the widened app mask (avoids the shouldAutorotate
+            // assert). Capture the game's current orientation first, to restore it on dismiss.
+            if let mask = forcedOrientationMask() {
+                preForcedInterfaceOrientation =
+                    presentingVC.view.window?.windowScene?.interfaceOrientation ?? .unknown
+                didForceOrientation = true
+                OctopusSetForcedOrientationMask(UInt(mask.rawValue))
+            }
             presentingVC.present(octopusController!, animated: true)
         }
     }
@@ -521,18 +541,93 @@ private func topViewController(
 // OnApplicationPause/OnApplicationFocus, matching Android backgrounding.
 @_silgen_name("OctopusUnityPause")  private func OctopusUnityPause()
 @_silgen_name("OctopusUnityResume") private func OctopusUnityResume()
+// Widens Unity's app-level supported-orientation mask while the Octopus UI is shown (see the swizzle
+// in OctopusUnityPause.mm). Pass a UIInterfaceOrientationMask.rawValue, or 0 to stop forcing.
+@_silgen_name("OctopusSetForcedOrientationMask") private func OctopusSetForcedOrientationMask(_ mask: UInt)
+
+// MARK: - Forced orientation helpers
+
+// Maps the configured forcedOrientation (0/1/2) to a mask, or nil when not forcing.
+// Orientation forcing relies on UIWindowScene.requestGeometryUpdate (iOS 16+). We deliberately do NOT
+// use the private-API `UIDevice.setValue(_:forKey:"orientation")` rotation hack on older versions —
+// it's an App Store review risk — so the feature is a no-op below iOS 16 (the community follows the
+// game/device there, i.e. unchanged from before this feature). This is the single gate: returning nil
+// makes every downstream path (VC overrides, arming, apply, restore) inert on iOS < 16.
+private func forcedOrientationMask() -> UIInterfaceOrientationMask? {
+    guard #available(iOS 16.0, *) else { return nil }
+    switch forcedOrientation {
+    case 1:  return .portrait
+    case 2:  return .landscape
+    default: return nil
+    }
+}
+
+private func octopusForegroundWindowScene() -> UIWindowScene? {
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    return scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+}
+
+private func orientationMask(from o: UIInterfaceOrientation) -> UIInterfaceOrientationMask {
+    switch o {
+    case .portrait:           return .portrait
+    case .portraitUpsideDown: return .portraitUpsideDown
+    case .landscapeLeft:      return .landscapeLeft
+    case .landscapeRight:     return .landscapeRight
+    default:                  return .all
+    }
+}
 
 // Drives pause/resume from the view-controller lifecycle so it covers EVERY dismissal path,
 // including the SDK dismissing itself (OctopusHomeScreen calls presentationMode.dismiss()), which
 // never routes through OctopusSdkClose. viewDidAppear/viewDidDisappear fire once per present/dismiss.
 final class OctopusHostingController: UIHostingController<AnyView> {
+    // Constrain the community to the forced orientation, if any. When not forcing, defer to the
+    // default so behaviour is unchanged. This is the VC half of UIKit's orientation intersection;
+    // the app-level half is widened by the swizzle in OctopusUnityPause.mm.
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        forcedOrientationMask() ?? super.supportedInterfaceOrientations
+    }
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation {
+        // forcedOrientationMask() is nil when not forcing OR below iOS 16, so this defers to the
+        // default there and only pins an orientation when forcing is actually active.
+        guard forcedOrientationMask() != nil else { return super.preferredInterfaceOrientationForPresentation }
+        return forcedOrientation == 2 ? .landscapeRight : .portrait
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        applyForcedOrientationIfNeeded()
         OctopusUnityPause()
     }
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        restoreOrientationIfNeeded()
         OctopusUnityResume()
+    }
+
+    // Actively rotate to the forced orientation even if the device is currently held the other way.
+    // iOS 16+ only (forcedOrientationMask() is nil below 16); requestGeometryUpdate is public API.
+    private func applyForcedOrientationIfNeeded() {
+        guard #available(iOS 16.0, *), let mask = forcedOrientationMask() else { return }
+        setNeedsUpdateOfSupportedInterfaceOrientations()
+        view.window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+    }
+
+    // Stop forcing and restore the game's own orientation (captured at present time), so this works
+    // whether the game is landscape or portrait. Keyed off didForceOrientation — the actual
+    // present-time action — not the mutable forcedOrientation global, so a mid-session change to the
+    // setting can't skip the cleanup and strand the app mask widened.
+    private func restoreOrientationIfNeeded() {
+        guard didForceOrientation else { return }
+        didForceOrientation = false
+        // Always undo the app-mask widening, even if we couldn't capture an orientation to rotate back to.
+        OctopusSetForcedOrientationMask(0)
+        defer { preForcedInterfaceOrientation = .unknown }
+        // didForceOrientation is only ever set on iOS 16+ (forcing is gated there), so restoration is
+        // reached only on 16+; requestGeometryUpdate is public API. No pre-16 private-API fallback.
+        guard #available(iOS 16.0, *), preForcedInterfaceOrientation != .unknown else { return }
+        octopusForegroundWindowScene()?.requestGeometryUpdate(
+            .iOS(interfaceOrientations: orientationMask(from: preForcedInterfaceOrientation)))
     }
 }
 
@@ -653,6 +748,11 @@ public func OctopusSdkSetNavBarUsesPrimaryColor(usesPrimary: Bool) {
 public func OctopusSdkSetColorSchemeType(schemeType: Int32) {
     OctopusSdkClose(keepState: false)
     colorSchemeType = schemeType
+}
+
+@_cdecl("OctopusSdkSetForcedOrientation")
+public func OctopusSdkSetForcedOrientation(orientation: Int32) {
+    forcedOrientation = orientation
 }
 
 func colorFrom(rgba: Int32) -> Color {

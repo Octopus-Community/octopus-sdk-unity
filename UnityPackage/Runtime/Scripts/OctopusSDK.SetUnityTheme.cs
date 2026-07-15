@@ -22,6 +22,8 @@ public partial class OctopusSDK
 
         SetColorSchemeType((int)settings.ColorScheme);
 
+        SetForcedOrientation((int)settings.ForcedOrientation);
+
         ApplyColorSchemeSettings(settings);
 
         if (!string.IsNullOrEmpty(settings.AppName))
