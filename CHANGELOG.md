@@ -8,6 +8,15 @@ section when a release is cut (format inspired by
 
 _Nothing yet._
 
+## 1.12.6 — 2026-07-22
+
+### Added
+- **Community access control (Octopus A/B testing).** Two new APIs surface the native `hasAccessToCommunity` / `overrideCommunityAccess` features (iOS 1.12.6, Android 1.12.1 — both already pinned, no native version bump):
+  - `OctopusSDK.HasAccessToCommunity` (read-only, cached) plus the `OctopusSDK.OnHasAccessToCommunityChanged` event report whether the current user can access community features, reflecting Octopus' internal A/B test configuration and any override you set. Pushed from native (iOS `@Published`, Android `Flow`) and raised on the Unity main thread.
+  - `OctopusSDK.OverrideCommunityAccess(bool, onCompleted, onError)` lets your app grant or block community access directly. It takes **full precedence** over both the internal A/B test config and the analytics-only `TrackAccessToCommunity` signal; the resulting value flows back through `HasAccessToCommunity` / `OnHasAccessToCommunityChanged`.
+
+  Editor mock support (`Mock.EmitHasAccessToCommunity`, faithful `OverrideCommunityAccess` recording) is included. The Android bridge AAR was rebuilt.
+
 ## 1.12.5 — 2026-07-15
 
 ### Added
