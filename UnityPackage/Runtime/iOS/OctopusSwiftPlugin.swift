@@ -41,6 +41,7 @@ private var octopusControllerShowsMainFeed = false
 var notSeenNotifCancellable: AnyCancellable?
 var groupsCancellable: AnyCancellable?
 var eventsCancellable: AnyCancellable?
+var communityAccessCancellable: AnyCancellable?
 
 // Toggled from C# (OctopusSdkSetUrlInterceptionEnabled). When false the SDK opens URLs
 // itself (in-app browser); when true taps are forwarded to Unity for the host to decide.
@@ -150,6 +151,9 @@ public func OctopusSdkInitialize(
         }
         groupsCancellable = octopus?.$groups.sink { groups in
             sendUnityMessage("OctopusChannel", "OnGroupsChanged", groupsToJson(groups))
+        }
+        communityAccessCancellable = octopus?.$hasAccessToCommunity.sink { hasAccess in
+            sendUnityMessage("OctopusChannel", "OnHasAccessToCommunity", hasAccess ? "true" : "false")
         }
         eventsCancellable = octopus?.eventPublisher.sink { event in
             let json = eventToJson(event)
@@ -866,6 +870,20 @@ private func groupsToJson(_ groups: [OctopusGroup]) -> String {
 @_cdecl("OctopusSdkTrackAccessToCommunity")
 public func OctopusSdkTrackAccessToCommunity(hasAccess :  Bool) {
     octopus?.track(hasAccessToCommunity: hasAccess)
+}
+
+@_cdecl("OctopusSdkOverrideCommunityAccess")
+public func OctopusSdkOverrideCommunityAccess(requestId: Int32, hasAccess: Bool) {
+    Task {
+        do {
+            try await octopus?.overrideCommunityAccess(hasAccess)
+            // Success carries no data; the new access value flows back via the
+            // $hasAccessToCommunity subscription (OnHasAccessToCommunity).
+            sendUnityMessage("OctopusChannel", "OnOverrideCommunityAccessResult", "\(requestId)\n")
+        } catch {
+            sendUnityMessage("OctopusChannel", "OnOverrideCommunityAccessError", "\(requestId)\n\(String(describing: error))")
+        }
+    }
 }
 
 @_cdecl("OctopusSdkTrack")

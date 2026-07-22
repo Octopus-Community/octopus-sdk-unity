@@ -32,7 +32,7 @@ internal class OctopusMockOverlay : MonoBehaviour
         // Lazy-init here: GUI.skin is only valid inside an OnGUI call.
         _titleStyle ??= new GUIStyle(GUI.skin.label) { richText = true };
         const int w = 280, pad = 8;
-        var rect = new Rect(Screen.width - w - pad, pad, w, 230);
+        var rect = new Rect(Screen.width - w - pad, pad, w, 260);
         GUILayout.BeginArea(rect, GUI.skin.box);
         GUILayout.Label("<b>Octopus SDK — Mock Mode</b>", _titleStyle);
         GUILayout.Label($"Screen: {OctopusSDK.Mock.CurrentScreen ?? "(none)"}");
@@ -46,6 +46,8 @@ internal class OctopusMockOverlay : MonoBehaviour
             OctopusSDK.Mock.EmitNavigateToClientObject("demo");
         if (GUILayout.Button("Emit groups changed (empty)"))
             OctopusSDK.Mock.EmitGroupsChanged(new List<OctopusGroup>());
+        if (GUILayout.Button($"Toggle community access (now: {OctopusSDK.HasAccessToCommunity})"))
+            OctopusSDK.Mock.EmitHasAccessToCommunity(!OctopusSDK.HasAccessToCommunity);
         GUILayout.EndArea();
     }
 }

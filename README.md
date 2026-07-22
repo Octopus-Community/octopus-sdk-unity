@@ -317,6 +317,22 @@ If only a subset of your users can access the community, inform the SDK so analy
 OctopusSDK.TrackAccessToCommunity(true);
 ```
 
+### Community Access Control (Octopus A/B testing)
+
+`TrackAccessToCommunity` above is analytics-only. To actually control and observe access:
+
+```csharp
+// Observe whether the current user can access community features
+// (respects Octopus' A/B config and any override you set).
+OctopusSDK.OnHasAccessToCommunityChanged += hasAccess => communityButton.SetActive(hasAccess);
+bool current = OctopusSDK.HasAccessToCommunity;
+
+// Let Octopus control access directly — takes full precedence over A/B config and TrackAccessToCommunity.
+OctopusSDK.OverrideCommunityAccess(true,
+    onCompleted: () => Debug.Log("granted"),
+    onError: err => Debug.LogWarning(err));
+```
+
 ## Sample
 
 The package includes a sample project. Import it from the Unity Package Manager window under **Octopus SDK for Unity > Samples**.

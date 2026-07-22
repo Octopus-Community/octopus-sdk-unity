@@ -91,6 +91,15 @@ public partial class OctopusSDK
         internal static void TrackAccessToCommunity(bool hasAccess) =>
             Mock.Record("TrackAccessToCommunity", hasAccess);
 
+        internal static void OverrideCommunityAccess(bool hasAccess, Action onCompleted)
+        {
+            Mock.Record("OverrideCommunityAccess", hasAccess);
+            // On device, overriding access changes the reactive value; mirror that so the
+            // in-Editor HasAccessToCommunity property and OnHasAccessToCommunityChanged behave faithfully.
+            TriggerOnHasAccessToCommunity(hasAccess);
+            onCompleted?.Invoke();
+        }
+
         internal static void OverrideDefaultLocale(string languageCode) =>
             Mock.Record("OverrideDefaultLocale", languageCode ?? "");
 

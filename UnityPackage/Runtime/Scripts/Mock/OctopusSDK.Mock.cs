@@ -90,6 +90,10 @@ public partial class OctopusSDK
         public static void EmitGroupsChanged(IList<OctopusGroup> groups) =>
             OctopusSDK.TriggerOnGroupsChanged(groups);
 
+        /// <summary>Simulate a community-access change from native (A/B config or override).</summary>
+        public static void EmitHasAccessToCommunity(bool hasAccess) =>
+            OctopusSDK.TriggerOnHasAccessToCommunity(hasAccess);
+
         /// <summary>Simulate the SDK requesting login.</summary>
         public static void EmitLoginRequired() => OctopusSDK.TriggerOnLoginRequired();
 
