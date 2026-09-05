@@ -24,7 +24,7 @@ public partial class OctopusSDK
         if (colorScheme != null)
         {
 #if UNITY_ANDROID
-            using (AndroidJavaClass plugin = new ("com.octopuscommunity.bridge.Bridge"))
+            using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
             {
                 plugin.CallStatic(
                     "setLightColorScheme",
@@ -54,7 +54,7 @@ public partial class OctopusSDK
         if (colorScheme != null)
         {
 #if UNITY_ANDROID
-            using (AndroidJavaClass plugin = new ("com.octopuscommunity.bridge.Bridge"))
+            using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
             {
                 plugin.CallStatic(
                     "setDarkColorScheme",

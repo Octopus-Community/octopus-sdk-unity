@@ -30,7 +30,7 @@ internal class OctopusMockOverlay : MonoBehaviour
     {
         if (!OctopusSDK.Mock.ShowOverlay) return;
         // Lazy-init here: GUI.skin is only valid inside an OnGUI call.
-        _titleStyle ??= new GUIStyle(GUI.skin.label) { richText = true };
+        if (_titleStyle == null) _titleStyle = new GUIStyle(GUI.skin.label) { richText = true };
         const int w = 280, pad = 8;
         var rect = new Rect(Screen.width - w - pad, pad, w, 260);
         GUILayout.BeginArea(rect, GUI.skin.box);

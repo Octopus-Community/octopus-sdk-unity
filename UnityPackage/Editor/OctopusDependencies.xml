@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <dependencies>
   <androidPackages>
-    <androidPackage spec="com.octopuscommunity:octopus-sdk:1.12.1" />
-    <androidPackage spec="com.octopuscommunity:octopus-sdk-ui:1.12.1" />
+    <androidPackage spec="com.octopuscommunity:octopus-sdk:1.13.4" />
+    <androidPackage spec="com.octopuscommunity:octopus-sdk-ui:1.13.4" />
   </androidPackages>
 </dependencies>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Registers the sample's native FirebaseMessagingService (OctopusMessagingService.java, next to
+  this folder). Unity merges this library manifest into the exported project's manifest.
+
+  android:priority: the Firebase Unity plugin registers its own MESSAGING_EVENT service with the
+  default priority (0). FCM hands each message to the highest-priority match, so this one wins.
+  OctopusMessagingService extends the plugin's ListenerService and calls super.onMessageReceived /
+  super.onNewToken, so the C# FirebaseMessaging events keep firing as before.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          package="com.octopuscommunity.unitysample.push"
+          android:versionCode="1"
+          android:versionName="1.0">
+    <application>
+        <service
+            android:name="com.octopuscommunity.unitysample.push.OctopusMessagingService"
+            android:exported="false">
+            <intent-filter android:priority="1">
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
