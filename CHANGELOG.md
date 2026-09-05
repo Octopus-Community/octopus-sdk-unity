@@ -6,7 +6,26 @@ section when a release is cut (format inspired by
 
 ## Unreleased
 
-_Nothing yet._
+## 1.12.7 — 2026-09-04
+
+Legacy `OctopusCommunitySDK.unitypackage` for this version is **machine-generated from the package tree by an internal script** and **not import-tested**: no Unity Editor was available when it was built. UPM is the reference install path for this release.
+
+### Changed
+- **Android native SDK pin raised from 1.12.1 to 1.13.4** (EDM4U resolver and bridge compile classpath, both). It carries the native side of the two crash fixes below — the community screen no longer crashes when composed before `OctopusSDK.Initialize`, and the Android SDK's own consumer R8 rules now keep Guava for gRPC — plus everything released in Android 1.13.0–1.13.3 (see the [Android changelog](https://github.com/Octopus-Community/octopus-sdk-android/blob/main/CHANGELOG.md)). The iOS pin stays at 1.12.6: this release ships the Android crash fixes only, and the iOS move to 1.13 is a separate port. The Android bridge AAR was rebuilt against 1.13.4.
+- **Android no longer emits `OctopusScreen.SettingsAbout`.** The native "About the community" screen was removed in Android 1.13.0. The enum member is kept: iOS 1.12.6 still reports it.
+
+### Added
+- `OctopusScreen.OtherUserPosts` (with `ScreenDisplayedEvent.ProfileId`) and `OctopusScreen.Activity`, reported by Android 1.13+ when another member's posts list or the connected user's community activity screen (the unified profile's replacement for `Profile`, distinct from the notification center) is displayed. Before this change those screens parsed as `OctopusScreen.Unknown`.
+- **Push Notifications sample: Android notifications are now displayed out of the box.** Octopus push messages reach Android as data-only FCM messages, which neither the OS nor Firebase renders; the sample used to leave that step to the integrator, with a Kotlin README snippet that did not build as-is in a Unity Gradle project.
+  - Ships `Plugins/Android/OctopusMessagingService.java`: extends the Firebase Unity plugin's own service (`com.google.firebase.messaging.cpp.ListenerService`), posts Octopus messages on an `octopus-sdk` channel with the app icon, attaches the FCM payload to the tap intent, and calls `super` so `FirebaseMessaging.MessageReceived` / `TokenReceived` keep firing in C#. Framework APIs only, compiled by Unity's exported Gradle project without extra wiring.
+  - Ships `Plugins/Android/OctopusPushSample.androidlib`: registers that service on `MESSAGING_EVENT` with a higher priority than the plugin's default one.
+  - The C# sample reads the tap from the launch intent (cold start and resume) as well as from `MessageReceived(NotificationOpened)`, dedupes the two by message id, and registers the token from `GetTokenAsync()` on every launch.
+  - README *Android — Notification Handling* rewritten around the shipped files.
+
+### Fixed
+- **Android: opening the community no longer crashes when Android restores it in a fresh process.** When the OS recreated `OctopusUIActivity` after the game's process had been killed in the background, before the game had called `OctopusSDK.Initialize` again, the native UI read the SDK's dependency container before it existed and the app died with `UninitializedPropertyAccessException: lateinit property koinApp has not been initialized`. The activity now detects the uninitialized SDK, logs an `OctopusForUnity` warning, hands the user back to the game's launcher activity and finishes. The Android bridge AAR was rebuilt.
+- **Android: Guava is now kept by the bridge's consumer ProGuard/R8 rules in minified (`minifyEnabled true`) host apps.** gRPC reaches `com.google.common.**` at runtime; a minified Unity host crashed at `OctopusSDK.Initialize` with `NoSuchMethodError: Strings.isNullOrEmpty` (`GrpcUtil.getFlag`) followed by `NoClassDefFoundError: io.grpc.LoadBalancerRegistry`. With the new rules Guava's fate no longer depends on the host's shrinker configuration or tracing order. The rules ship in the AAR, so every Unity host picks them up through the normal Gradle merge — nothing to add on the app side. If the host also bundles a second, older Guava (another SDK's repackaged copy), that classpath conflict still has to be resolved on the app side; keep rules cannot fix it.
+- The package could not build on any Unity version below 2021.2, despite `package.json` declaring a 2019.4 floor. Two Android `SetTheme` call sites used C# 9 target-typed `new (...)` (2021.2+ only), and the editor-only mock overlay used C# 8 `??=` (2020.2+ only). Both rewritten to C# 7.3-compatible syntax; no behavior change. The CI compile gate now pins `LangVersion` to the declared floor (7.3) so a future regression fails the build instead of shipping silently.
 
 ## 1.12.6 — 2026-07-22
 

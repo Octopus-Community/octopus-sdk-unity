@@ -85,6 +85,10 @@ public enum OctopusScreen
     SettingsAbout,
     ReportExplanation,
     DeleteAccount,
+    /// <summary>Another user's posts list (native SDK 1.13+; Android emits it, iOS follows its own pin).</summary>
+    OtherUserPosts,
+    /// <summary>The connected user's community activity screen, shown under the unified profile instead of <see cref="Profile"/> (native SDK 1.13+). Distinct from the notification center.</summary>
+    Activity,
     Unknown
 }
 
