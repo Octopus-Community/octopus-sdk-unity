@@ -131,7 +131,7 @@ The native Octopus SDK expects a raw device token — APNs on iOS, FCM on Androi
 OctopusSDK.RegisterNotificationsToken(deviceToken);
 ```
 
-> As of 1.12, push handling is **data-driven and identical on iOS and Android** — there is no native `.mm` file to add and no `OnNotificationTapped` event. On both platforms you detect the tap, read its payload, and pass it to the SDK:
+> As of 1.12, **tap** handling is data-driven and identical on iOS and Android — there is no `OnNotificationTapped` event. On both platforms you detect the tap, read its payload, and pass it to the SDK. **Displaying** the notification differs: on iOS the OS renders the alert for you, while on Android Octopus messages are **data-only** and your app must post the notification itself (see [Android — Notification Handling](#android--notification-handling)).
 >
 > ```csharp
 > if (OctopusSDK.IsOctopusNotification(payload))
@@ -190,19 +190,33 @@ Add a `google-services.json` for your Firebase project to `Assets/` in your Unit
 
 ### Android — Notification Handling
 
-On Android, use Firebase Messaging (or your push provider) to detect notification taps and pass the deep link to the SDK:
+Unlike iOS, Octopus push notifications reach Android as **data-only** FCM messages: neither the OS nor Firebase displays them for you, even with the app in the background. Your app is responsible for **displaying** the notification, then for handling the **tap**. Unity's C# code is paused while the app is backgrounded, so the display step must run natively.
+
+The **Push Notifications Example** sample ships both halves ready to use — import it via Unity Package Manager and keep the two Android files (they land in the host project, not in the package, so you can edit them freely):
+
+| File | Role |
+|---|---|
+| `Plugins/Android/OctopusMessagingService.java` | Extends the Firebase Unity plugin's own messaging service (`com.google.firebase.messaging.cpp.ListenerService`, shipped in `firebase-messaging-cpp.aar`). It posts the notification on an `octopus-sdk` channel (app icon, `title`/`body` from the payload), attaches the FCM data map to the tap intent, then calls `super` so `FirebaseMessaging.MessageReceived` / `TokenReceived` keep firing in C#. Framework APIs only — no Kotlin, no androidx, no extra Gradle dependency. |
+| `Plugins/Android/OctopusPushSample.androidlib/` | Registers that service in the merged manifest on `com.google.firebase.MESSAGING_EVENT` with `android:priority="1"` (the Firebase Unity plugin's own service sits at 0), so ours is the one FCM binds. |
+
+**1. Display (background included).** Nothing to write: the service handles messages carrying the `is_octopus_notification` marker and ignores your own payloads (add your handling next to `showOctopusNotification` if you want it to display them too). Two things worth adjusting for production:
+
+- **Small icon.** The service uses the app icon (`getApplicationInfo().icon`); an adaptive launcher icon renders as a grey square in the status bar. Ship a monochrome `drawable` and reference it in `showOctopusNotification`.
+- **Placement.** Unity only recognises `.androidlib` folders under `Assets/**/Plugins/Android/`. The sample imports there by default; if the manifest is not merged (the service never receives messages), move `OctopusPushSample.androidlib` and the `.java` file to `Assets/Plugins/Android/`.
+
+**2. Tap.** A tap launches (or resumes) your activity with the payload in the intent extras. `PushNotificationsExample.cs` reads the launch intent in `Start()` and `OnApplicationFocus()`, so the payload reaches `HandleTappedPayload` whether the app was cold-started or resumed; it also still listens to `FirebaseMessaging.MessageReceived` with `NotificationOpened == true`, which the Firebase Unity plugin raises for the same tap, and dedupes the two by message id:
 
 ```csharp
-if (OctopusSDK.IsOctopusNotification(e.Message.Data) && e.Message.NotificationOpened)
-{
-    var notification = OctopusSDK.GetOctopusNotification(e.Message.Data);
-    OctopusSDK.Open(notification);
-}
+IDictionary<string, string> payload = ReadLaunchIntentExtras(); // see HandleAndroidLaunchIntent in the sample
+if (OctopusSDK.IsOctopusNotification(payload))
+    OctopusSDK.Open(OctopusSDK.GetOctopusNotification(payload));
 ```
 
-No additional native file is needed on Android.
+Read the extras from whichever scene loads **first** (or a persistent object) — if your app launches into a menu, handle it there, not only inside the community screen.
 
-> As on iOS, attach the `MessageReceived` listener from whichever scene loads **first** (or a persistent object) so a tap that launches a closed app is handled — not only after the user navigates into the community screen. The sample's `PushNotificationLauncher` reads the launch intent's extras and routes a tap to the example scene to cover this.
+**Writing your own service instead.** If you already have a native `FirebaseMessagingService`, keep it and drop the sample's two Android files; the [native Android sample's MessagingService](https://github.com/Octopus-Community/octopus-sdk-android/blob/main/samples/src/main/java/com/octopuscommunity/sample/messaging/MessagingService.kt) is the Kotlin reference. Two Unity-specific points: Unity's exported Gradle project has no Kotlin plugin by default (Java, or a prebuilt AAR), and only one service receives `MESSAGING_EVENT` — so extend `com.google.firebase.messaging.cpp.ListenerService` and call `super.onMessageReceived` / `super.onNewToken` if you still want Firebase's C# events. Forwarding the intent with `startService()` does **not** work: `FirebaseMessagingService` ignores the delivered intent.
+
+**Foreground messages.** When a message arrives while the app is in the foreground, the service displays it the same way (there is no foreground check — add one in `onMessageReceived` if you prefer in-app UI), and `Firebase.Messaging.FirebaseMessaging.MessageReceived` still fires in C# thanks to the `super` call — `OctopusSDK.GetOctopusNotification(e.Message.Data)` gives you the title and body.
 
 ## Groups
 

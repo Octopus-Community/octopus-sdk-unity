@@ -3,10 +3,12 @@ using UnityEngine.SceneManagement;
 
 public class MainMenu : MonoBehaviour
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
-        
+        // The QA-scenarios entry is built here rather than added to MainMenu.unity: the scene's
+        // buttons are serialized YAML, and an entry point that exists only in code is one a
+        // reviewer can actually read in a diff. It also keeps this change to two script files.
+        OctopusScenariosListView.InstallEntryButton();
     }
 
     public void OpenOctopusAuthExample()

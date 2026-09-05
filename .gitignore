@@ -1,7 +1,13 @@
 .DS_Store
 .idea/
 .vscode/
-.claude/
+
+# Claude Code harness. The project-shared files under .claude/ (commands, agents,
+# rules) are TRACKED — they are repo process docs, versioned like docs/ is.
+# Only genuinely machine-local state stays ignored below.
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+.claude/agent-memory/
 
 # Secrets and credentials
 .env
