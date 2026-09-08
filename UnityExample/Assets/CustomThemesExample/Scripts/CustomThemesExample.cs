@@ -41,6 +41,8 @@ public class CustomThemesExample : MonoBehaviour
         OctopusSDK.Open();
     }
 
+    // link and background are optional: omit one (or pass Color.clear) and the native SDK keeps
+    // its own default for that slot. Here both are set, on a single scheme used in light and dark.
     public void Custom1()
     {
         OctopusSDK.SetTheme(
@@ -48,7 +50,9 @@ public class CustomThemesExample : MonoBehaviour
                 primary: new Color32(255, 69, 0, 255),
                 primaryLow: new Color32(255, 198, 179, 255),
                 primaryHigh: new Color32(255, 140, 100, 255),
-                onPrimary: new Color32(255, 255, 255, 255)
+                onPrimary: new Color32(255, 255, 255, 255),
+                link: new Color32(190, 45, 0, 255),
+                background: new Color32(255, 247, 240, 255)
             ),
             logo: new OctopusLogo(
                 androidDrawableName: "theme_orange_logo",
@@ -58,14 +62,26 @@ public class CustomThemesExample : MonoBehaviour
         OctopusSDK.Open();
     }
 
+    // Same two colors, but given a value per mode: light and dark are separate schemes, so the
+    // background in particular can follow the system appearance.
     public void Custom2()
     {
         OctopusSDK.SetTheme(
-            colorScheme: new OctopusColorScheme(
+            lightColorScheme: new OctopusColorScheme(
                 primary: new Color32(24, 119, 242, 255),
                 primaryLow: new Color32(185, 213, 248, 255),
                 primaryHigh: new Color32(110, 170, 255, 255),
-                onPrimary: new Color32(255, 255, 255, 255)
+                onPrimary: new Color32(255, 255, 255, 255),
+                link: new Color32(24, 119, 242, 255),
+                background: new Color32(245, 249, 255, 255)
+            ),
+            darkColorScheme: new OctopusColorScheme(
+                primary: new Color32(110, 170, 255, 255),
+                primaryLow: new Color32(30, 45, 70, 255),
+                primaryHigh: new Color32(185, 213, 248, 255),
+                onPrimary: new Color32(10, 20, 35, 255),
+                link: new Color32(130, 190, 255, 255),
+                background: new Color32(10, 16, 26, 255)
             ),
             logo: new OctopusLogo(
                 androidDrawableName: "theme_blueberry_logo",

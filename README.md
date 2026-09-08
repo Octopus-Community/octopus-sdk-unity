@@ -24,6 +24,12 @@ Add the Octopus SDK and the External Dependency Manager to your `Packages/manife
 }
 ```
 
+The URL above tracks `main`. For reproducible builds and controlled upgrades, prefer a released tag by replacing the SDK URL with the following (replace `X.Y.Z` with the release version):
+
+```text
+https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#vX.Y.Z
+```
+
 ### Option 2 — Legacy .unitypackage
 
 1. Download the [External Dependency Manager](https://github.com/googlesamples/unity-jar-resolver/blob/master/external-dependency-manager-latest.unitypackage).
@@ -180,7 +186,7 @@ void OnApplicationFocus(bool hasFocus) { if (hasFocus) HandleRespondedNotificati
 iOSNotificationCenter.OnRemoteNotificationReceived += n => HandleTappedPayload(n.UserInfo);
 ```
 
-> The responded notification must be read from whichever scene loads first — if your app launches into a menu, handle it there (or in a persistent object), not only inside the community screen. The sample includes a small `PushNotificationLauncher` that routes a tap to the example scene for exactly this reason.
+> The responded notification must be read from whichever scene loads first — if your app launches into a menu, handle it there (or in a persistent object), not only inside the community screen.
 
 A ready-to-use version of this flow is available in the **Push Notifications Example** sample (importable via Unity Package Manager).
 
@@ -199,12 +205,14 @@ The **Push Notifications Example** sample ships both halves ready to use — imp
 | `Plugins/Android/OctopusMessagingService.java` | Extends the Firebase Unity plugin's own messaging service (`com.google.firebase.messaging.cpp.ListenerService`, shipped in `firebase-messaging-cpp.aar`). It posts the notification on an `octopus-sdk` channel (app icon, `title`/`body` from the payload), attaches the FCM data map to the tap intent, then calls `super` so `FirebaseMessaging.MessageReceived` / `TokenReceived` keep firing in C#. Framework APIs only — no Kotlin, no androidx, no extra Gradle dependency. |
 | `Plugins/Android/OctopusPushSample.androidlib/` | Registers that service in the merged manifest on `com.google.firebase.MESSAGING_EVENT` with `android:priority="1"` (the Firebase Unity plugin's own service sits at 0), so ours is the one FCM binds. |
 
+> ⚠️ **Firebase Unity SDK version.** The service was verified against **Firebase Unity SDK 13.8.0** (`com.google.firebase:firebase-messaging-unity:13.8.0`, resolving `com.google.firebase:firebase-messaging:25.0.1`). It compile-depends on `com.google.firebase.messaging.cpp.ListenerService`, which is an **internal** class of that plugin, not part of Firebase's public API. If a later Firebase Unity SDK renames or removes it, the Android Gradle build fails on that symbol — pin the plugin, or switch the service's superclass to `com.google.firebase.messaging.FirebaseMessagingService` and accept that `FirebaseMessaging.MessageReceived` / `TokenReceived` stop firing in C#.
+
 **1. Display (background included).** Nothing to write: the service handles messages carrying the `is_octopus_notification` marker and ignores your own payloads (add your handling next to `showOctopusNotification` if you want it to display them too). Two things worth adjusting for production:
 
 - **Small icon.** The service uses the app icon (`getApplicationInfo().icon`); an adaptive launcher icon renders as a grey square in the status bar. Ship a monochrome `drawable` and reference it in `showOctopusNotification`.
-- **Placement.** Unity only recognises `.androidlib` folders under `Assets/**/Plugins/Android/`. The sample imports there by default; if the manifest is not merged (the service never receives messages), move `OctopusPushSample.androidlib` and the `.java` file to `Assets/Plugins/Android/`.
+- **Placement.** Unity's manual only requires an Android library plug-in to be copied *"to the **Assets** folder of your Unity Project"* — `Assets/**/Plugins/Android/` is the conventional home, not a documented constraint. The sample imports there by default; if the manifest turns out not to be merged (the service never receives messages), move `OctopusPushSample.androidlib` and the `.java` file to `Assets/Plugins/Android/`.
 
-**2. Tap.** A tap launches (or resumes) your activity with the payload in the intent extras. `PushNotificationsExample.cs` reads the launch intent in `Start()` and `OnApplicationFocus()`, so the payload reaches `HandleTappedPayload` whether the app was cold-started or resumed; it also still listens to `FirebaseMessaging.MessageReceived` with `NotificationOpened == true`, which the Firebase Unity plugin raises for the same tap, and dedupes the two by message id:
+**2. Tap.** A tap launches (or resumes) your activity with the payload in the intent extras. `PushNotificationsExample.cs` reads the launch intent in `Start()` and `OnApplicationFocus()`, so the payload reaches `HandleTappedPayload` whether the app was cold-started or resumed; it also still listens to `FirebaseMessaging.MessageReceived` with `NotificationOpened == true`, which the Firebase Unity plugin raises for the same tap, and dedupes the two by message id (`google.message_id`, falling back to `message_id`):
 
 ```csharp
 IDictionary<string, string> payload = ReadLaunchIntentExtras(); // see HandleAndroidLaunchIntent in the sample
@@ -214,7 +222,7 @@ if (OctopusSDK.IsOctopusNotification(payload))
 
 Read the extras from whichever scene loads **first** (or a persistent object) — if your app launches into a menu, handle it there, not only inside the community screen.
 
-**Writing your own service instead.** If you already have a native `FirebaseMessagingService`, keep it and drop the sample's two Android files; the [native Android sample's MessagingService](https://github.com/Octopus-Community/octopus-sdk-android/blob/main/samples/src/main/java/com/octopuscommunity/sample/messaging/MessagingService.kt) is the Kotlin reference. Two Unity-specific points: Unity's exported Gradle project has no Kotlin plugin by default (Java, or a prebuilt AAR), and only one service receives `MESSAGING_EVENT` — so extend `com.google.firebase.messaging.cpp.ListenerService` and call `super.onMessageReceived` / `super.onNewToken` if you still want Firebase's C# events. Forwarding the intent with `startService()` does **not** work: `FirebaseMessagingService` ignores the delivered intent.
+**Writing your own service instead.** If you already have a native `FirebaseMessagingService`, keep it and drop the sample's two Android files; the [native Android sample's MessagingService](https://github.com/Octopus-Community/octopus-sdk-android/blob/main/samples/src/main/java/com/octopuscommunity/sample/messaging/MessagingService.kt) is the Kotlin reference. Two Unity-specific points: Unity's exported Gradle project has no Kotlin plugin by default — the Editor's `baseProjectTemplate.gradle` declares only `com.android.application` and `com.android.library`, so write Java or ship a prebuilt AAR — and only one service receives `MESSAGING_EVENT` — so extend `com.google.firebase.messaging.cpp.ListenerService` and call `super.onMessageReceived` / `super.onNewToken` if you still want Firebase's C# events. Forwarding the intent with `startService()` does **not** work: `FirebaseMessagingService` ignores the delivered intent.
 
 **Foreground messages.** When a message arrives while the app is in the foreground, the service displays it the same way (there is no foreground check — add one in `onMessageReceived` if you prefer in-app UI), and `Firebase.Messaging.FirebaseMessaging.MessageReceived` still fires in C# thanks to the `super` call — `OctopusSDK.GetOctopusNotification(e.Message.Data)` gives you the title and body.
 
@@ -287,7 +295,10 @@ OctopusSDK.SetTheme(
         primary:     new Color32(255, 0, 0, 255),
         primaryLow:  new Color32(255, 179, 179, 255),
         primaryHigh: new Color32(204, 0, 0, 255),
-        onPrimary:   new Color32(255, 255, 255, 255)
+        onPrimary:   new Color32(255, 255, 255, 255),
+        // Optional: omit either one to keep the native default.
+        link:        new Color32(29, 155, 209, 255),
+        background:  new Color32(255, 247, 240, 255)
     ),
     logo: new OctopusLogo(
         androidDrawableName: "my_logo",

@@ -99,6 +99,18 @@ public class OctopusEventParsingTests
         Assert.AreEqual(OctopusScreen.MainFeed, e.Screen); Assert.AreEqual("f1", e.FeedId);
     }
 
+    [Test] public void ScreenDisplayed_otherUserPosts()
+    {
+        var e = (ScreenDisplayedEvent)Parse("{\"type\":\"ScreenDisplayed\",\"screen\":\"OtherUserPosts\",\"profileId\":\"u1\"}");
+        Assert.AreEqual(OctopusScreen.OtherUserPosts, e.Screen); Assert.AreEqual("u1", e.ProfileId);
+    }
+
+    [Test] public void ScreenDisplayed_activity()
+    {
+        var e = (ScreenDisplayedEvent)Parse("{\"type\":\"ScreenDisplayed\",\"screen\":\"Activity\"}");
+        Assert.AreEqual(OctopusScreen.Activity, e.Screen);
+    }
+
     [Test] public void NotificationClicked_optionalContentIdAbsent()
     {
         var e = (NotificationClickedEvent)Parse("{\"type\":\"NotificationClicked\",\"notificationId\":\"n1\"}");
@@ -164,6 +176,15 @@ public class OctopusEventParsingTests
     [Test] public void UnrecognisedEnumToken_fallsBackToUnknown()
     {
         var e = (ScreenDisplayedEvent)Parse("{\"type\":\"ScreenDisplayed\",\"screen\":\"FancyNewScreen\"}");
+        Assert.AreEqual(OctopusScreen.Unknown, e.Screen);
+    }
+
+    // Legacy token from a native build older than 1.13: OctopusScreen.SettingsAbout was removed,
+    // so the wire token must now take the unknown-token fallback rather than throw.
+    [Test] public void ScreenDisplayed_legacySettingsAboutToken_fallsBackToUnknown()
+    {
+        var e = (ScreenDisplayedEvent)Parse("{\"type\":\"ScreenDisplayed\",\"screen\":\"SettingsAbout\"}");
+        Assert.AreEqual(OctopusEventKind.ScreenDisplayed, e.Kind);
         Assert.AreEqual(OctopusScreen.Unknown, e.Screen);
     }
 }

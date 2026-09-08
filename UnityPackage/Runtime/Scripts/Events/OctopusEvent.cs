@@ -82,12 +82,11 @@ public enum OctopusScreen
     ValidateNickname,
     SettingsList,
     SettingsAccount,
-    SettingsAbout,
     ReportExplanation,
     DeleteAccount,
-    /// <summary>Another user's posts list (native SDK 1.13+; Android emits it, iOS follows its own pin).</summary>
+    /// <summary>Another user's posts list (native SDK 1.13+). Emitted by both Android and iOS.</summary>
     OtherUserPosts,
-    /// <summary>The connected user's community activity screen, shown under the unified profile instead of <see cref="Profile"/> (native SDK 1.13+). Distinct from the notification center.</summary>
+    /// <summary>The connected user's community activity screen, shown under the unified profile instead of <see cref="Profile"/> (native SDK 1.13+). Distinct from the notification center. Android only for now — the iOS SDK has no matching screen event on 1.13.2.</summary>
     Activity,
     Unknown
 }

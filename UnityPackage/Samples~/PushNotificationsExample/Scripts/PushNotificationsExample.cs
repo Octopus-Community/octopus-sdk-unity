@@ -194,7 +194,11 @@ public class PushNotificationsExample : MonoBehaviour
                             }
                         }
                     }
-                    messageId = extras.Call<string>("getString", "google.message_id");
+                    // Legacy payloads carry the bare "message_id" instead of the "google."-prefixed
+                    // key; without the fallback the dedupe key is null and every focus regain
+                    // re-handles the same tap.
+                    messageId = extras.Call<string>("getString", "google.message_id")
+                                ?? extras.Call<string>("getString", "message_id");
                 }
             }
         }

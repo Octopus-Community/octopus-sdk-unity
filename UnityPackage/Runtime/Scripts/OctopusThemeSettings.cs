@@ -71,13 +71,50 @@ public class OctopusThemeSettings : ScriptableObject
         public bool onPrimaryEnabled = false;
         public Color onPrimary = Color.white;
 
+        // Optional, independent of the primary set above: each keeps the native default when
+        // left disabled. Appended rather than inserted — Unity keys the host's saved asset by
+        // field name, and these are new names, so an existing asset deserializes unchanged.
+        // The color values below are the picker's starting swatches, like the four above; they
+        // are not the native defaults and are only sent when the matching toggle is on.
+
+        /// <summary>
+        /// Whether <see cref="link"/> is sent to the native SDK. Off leaves the native default.
+        /// </summary>
+        public bool linkEnabled = false;
+
+        /// <summary>
+        /// Color of links (URLs displayed in posts and comments). Only applied when
+        /// <see cref="linkEnabled"/> is on; the value is the color picker's starting swatch
+        /// otherwise, not the native default.
+        /// </summary>
+        public Color link = new Color(0.1f, 0.6f, 0.8f, 1f);
+
+        /// <summary>
+        /// Whether <see cref="background"/> is sent to the native SDK. Off leaves the native
+        /// default.
+        /// </summary>
+        public bool backgroundEnabled = false;
+
+        /// <summary>
+        /// Background color of the community screens. Only applied when
+        /// <see cref="backgroundEnabled"/> is on; the value is the color picker's starting swatch
+        /// otherwise, not the native default.
+        /// </summary>
+        public Color background = Color.white;
+
         /// <summary>
         /// Returns true if any color is enabled.
         /// </summary>
-        public bool HasAnyEnabled => primaryEnabled || primaryLowEnabled || primaryHighEnabled || onPrimaryEnabled;
+        public bool HasAnyEnabled => HasAnyPrimaryEnabled || linkEnabled || backgroundEnabled;
 
         /// <summary>
-        /// Returns true if all required colors are enabled for a complete color scheme.
+        /// Returns true if at least one color of the primary set is enabled.
+        /// </summary>
+        public bool HasAnyPrimaryEnabled => primaryEnabled || primaryLowEnabled || primaryHighEnabled || onPrimaryEnabled;
+
+        /// <summary>
+        /// Returns true if all four colors of the primary set are enabled. <c>link</c> and
+        /// <c>background</c> are optional and are deliberately not part of this check.
         /// </summary>
         public bool IsComplete => primaryEnabled && primaryLowEnabled && primaryHighEnabled && onPrimaryEnabled;
     }
