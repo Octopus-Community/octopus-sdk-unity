@@ -1,32 +1,69 @@
 // Pauses/resumes the Unity player loop the same way Unity's own trampoline does when the app
-// backgrounds (UnityAppController.mm: UnityWillPause -> repaint -> UnityPause(1)), so the game
-// receives OnApplicationPause(true/false) and OnApplicationFocus — matching Android, where opening
-// the Octopus Activity backgrounds Unity. Idempotent. Driven by the Octopus view controller's
-// appear/disappear lifecycle (see OctopusHostingController in OctopusSwiftPlugin.swift).
+// backgrounds (UnityAppController.mm, applicationWillResignActive / applicationDidBecomeActive), so
+// the game receives OnApplicationPause(true/false) and OnApplicationFocus — matching Android, where
+// opening the Octopus Activity backgrounds Unity. Idempotent. Driven by the Octopus view
+// controller's appear/disappear lifecycle (see OctopusHostingController in OctopusSwiftPlugin.swift).
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "UnityAppController.h"
 #import "UnityAppController+Rendering.h"  // declares -[UnityAppController repaint]
 #import "UnityInterface.h"
 
+// Unity 6000.5 moved the pause entry points out of UnityInterface.h: UnityWillPause(),
+// UnityWillResume() and UnityIsPaused() are no longer declared there, UnityPause(int) is deprecated,
+// and the trampoline drives everything through UnitySetPlayerPause(mode, flags), declared in
+// UnityInternalInterface.h — a header that did not exist before 6000.5. The generated Xcode project
+// exposes no editor-version macro to plugin sources, so the presence of that header is the feature
+// test (both spellings, since Classes/ and Classes/Unity/ are both on the header search path).
+#if __has_include("UnityInternalInterface.h")
+#import "UnityInternalInterface.h"
+#define OCTOPUS_UNITY_HAS_SET_PLAYER_PAUSE 1
+#elif __has_include("Unity/UnityInternalInterface.h")
+#import "Unity/UnityInternalInterface.h"
+#define OCTOPUS_UNITY_HAS_SET_PLAYER_PAUSE 1
+#else
+#define OCTOPUS_UNITY_HAS_SET_PLAYER_PAUSE 0
+#endif
+
 extern "C" {
 
 void OctopusUnityPause(void) {
     if (UnityIsPaused()) return;                       // idempotent
-    UnityWillPause();                                  // schedule OnApplicationPause(true)
     UnityAppController *controller = GetAppController();
-    // Flush the scheduled message through one player-loop tick before stopping the loop. Guard the
-    // Metal-display-link case exactly as the trampoline does (it cannot repaint without a drawable).
-    if (controller != nil && ![controller unityUsesMetalDisplayLink]) {
+    // Flush the scheduled OnApplicationPause(true) through one player-loop tick before stopping the
+    // loop. Guard the Metal-display-link case exactly as the trampoline does (it cannot repaint
+    // without a drawable).
+    BOOL canRepaint = controller != nil && ![controller unityUsesMetalDisplayLink];
+#if OCTOPUS_UNITY_HAS_SET_PLAYER_PAUSE
+    if (canRepaint) {
+        // Schedule the message, deliver it inside the repaint, then stop the loop — the 6000.5
+        // trampoline's own sequence in applicationWillResignActive.
+        UnitySetPlayerPause(kUnityPauseModePause, kPauseFlagSchedulePauseMessage);
+        [controller repaint];
+        UnitySetPlayerPause(kUnityPauseModePause, kPauseFlagSetEngineRunState);
+    } else {
+        // No tick available to carry a scheduled message: send it right away, as the trampoline does.
+        UnitySetPlayerPause(kUnityPauseModePause, kPauseFlagSetEngineRunState | kPauseFlagSendPauseMessage);
+    }
+#else
+    UnityWillPause();                                  // schedule OnApplicationPause(true)
+    if (canRepaint) {
         [controller repaint];
     }
     UnityPause(1);                                     // stop the loop
+#endif
 }
 
 void OctopusUnityResume(void) {
     if (!UnityIsPaused()) return;                      // idempotent
+#if OCTOPUS_UNITY_HAS_SET_PLAYER_PAUSE
+    // Resume the loop with OnApplicationPause(false) scheduled for the next tick — what the 6000.5
+    // trampoline does in applicationDidBecomeActive.
+    UnitySetPlayerPause(kUnityPauseModeResume, kPauseFlagSetEngineRunState | kPauseFlagSchedulePauseMessage);
+#else
     UnityWillResume();                                 // schedule OnApplicationPause(false)
     UnityPause(0);                                     // resume; the message delivers on the next tick
+#endif
 }
 
 // Orientation forcing (set from Swift around present/dismiss of the Octopus UI). 0 = not forcing;

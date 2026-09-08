@@ -69,9 +69,10 @@ public partial class OctopusSDK
 
     public partial class OctopusChannel : MonoBehaviour
     {
-        // iOS / Lane-B path: native forwards a tapped URL here via UnitySendMessage while
-        // interception is enabled. On Android the decision is made synchronously in the bridge
-        // (OctopusBridgeListener.resolveUrlStrategy), so this method is not reached there.
+        // Android fallback lane: the Kotlin bridge forwards a tapped URL here via UnitySendMessage
+        // (Bridge.onNavigateToUrl) when no listener resolved it. iOS never sends this message — the
+        // Swift plugin resolves the strategy synchronously through urlStrategyCallback — which is
+        // the `swift:OnNavigateToUrl` entry in ci/bridge-contract/check-bridge-contract.sh.
         public void OnNavigateToUrl(string url)
         {
             if (ResolveUrlStrategy(url) == UrlOpeningStrategy.HandledByOctopus)

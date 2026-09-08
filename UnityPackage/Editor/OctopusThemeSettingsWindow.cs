@@ -247,6 +247,15 @@ public class OctopusThemeSettingsWindow : EditorWindow
         // On Primary
         changed |= DrawColorField(config, "On Primary", ref config.onPrimaryEnabled, ref config.onPrimary);
 
+        GUILayout.Space(5);
+        EditorGUILayout.LabelField("Optional", EditorStyles.miniBoldLabel);
+
+        // Link — color of URLs rendered in posts and comments
+        changed |= DrawColorField(config, "Link", ref config.linkEnabled, ref config.link);
+
+        // Background — background of the community screens
+        changed |= DrawColorField(config, "Background", ref config.backgroundEnabled, ref config.background);
+
         if (changed)
         {
             Undo.RecordObject(settings, $"Update {schemeName} Color Scheme");
@@ -255,7 +264,7 @@ public class OctopusThemeSettingsWindow : EditorWindow
         }
 
         // Validation message
-        if (config.HasAnyEnabled && !config.IsComplete)
+        if (config.HasAnyPrimaryEnabled && !config.IsComplete)
         {
             EditorGUILayout.Space(5);
             EditorGUILayout.HelpBox("For best results, enable all four colors. Partially configured schemes may produce unexpected results.", MessageType.Warning);

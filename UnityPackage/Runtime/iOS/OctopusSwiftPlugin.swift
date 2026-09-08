@@ -293,10 +293,18 @@ public func OctopusSdkOpenCreatePost(
         let sign: (@Sendable (_ bridgeFingerprint: String) async throws -> String)? =
             wantsSigner ? makeBridgeShareSignClosure() : nil
 
-        // OctopusPrefilledPost.init throws unless text or image is provided, so a
-        // blank (or topic-only) request opens the empty editor via prefilledPost: nil.
+        // Since iOS 1.13.0 text and image are both optional, so a topic-only (or CTA-only)
+        // request builds a real payload instead of being downgraded to the empty editor —
+        // same shape as the Kotlin bridge's openCreatePost. init still throws on content
+        // that fails the editor's publish-time validation; that falls back to nil.
+        //
+        // A fully empty request (OpenCreatePost() with no prefill) must stay `nil`: iOS
+        // records the post's creationSource from the presence of the prefilled object
+        // (nil → user, non-nil → prefilledFromClient), whereas Android derives it from the
+        // content — so a non-nil empty prefill would make a blank editor report
+        // prefilledFromClient on iOS only.
         let info: OctopusInitialScreen.CreatePostScreenInfo
-        if textStr.isEmpty && imageData == nil {
+        if textStr.isEmpty, imageData == nil, topicStr.isEmpty, cta == nil {
             info = .init(prefilledPost: nil)
         } else {
             do {
@@ -690,31 +698,56 @@ func fetchData(fromLocalPath path: String) -> Data? {
 
 @_cdecl("OctopusSdkSetLightColorScheme")
 public func OctopusSdkSetLightColorScheme(
-    primary: Int32, primaryLow: Int32, primaryHigh: Int32, onPrimary: Int32
+    primary: Int32, primaryLow: Int32, primaryHigh: Int32, onPrimary: Int32,
+    link: Int32, background: Int32
 ) {
     OctopusSdkClose(keepState: false)
-    lightColorScheme = OctopusTheme.Colors(
-        primarySet: OctopusTheme.Colors.ColorSet(
-            main: colorFrom(rgba: primary),
-            lowContrast: colorFrom(rgba: primaryLow),
-            highContrast: colorFrom(rgba: primaryHigh)
-        ),
-        onPrimary: colorFrom(rgba: onPrimary)
+    lightColorScheme = colorsFrom(
+        primary: primary, primaryLow: primaryLow, primaryHigh: primaryHigh,
+        onPrimary: onPrimary, link: link, background: background
     )
 }
 
 @_cdecl("OctopusSdkSetDarkColorScheme")
 public func OctopusSdkSetDarkColorScheme(
-    primary: Int32, primaryLow: Int32, primaryHigh: Int32, onPrimary: Int32
+    primary: Int32, primaryLow: Int32, primaryHigh: Int32, onPrimary: Int32,
+    link: Int32, background: Int32
 ) {
     OctopusSdkClose(keepState: false)
-    darkColorScheme = OctopusTheme.Colors(
-        primarySet: OctopusTheme.Colors.ColorSet(
-            main: colorFrom(rgba: primary),
-            lowContrast: colorFrom(rgba: primaryLow),
-            highContrast: colorFrom(rgba: primaryHigh)
-        ),
-        onPrimary: colorFrom(rgba: onPrimary)
+    darkColorScheme = colorsFrom(
+        primary: primary, primaryLow: primaryLow, primaryHigh: primaryHigh,
+        onPrimary: onPrimary, link: link, background: background
+    )
+}
+
+/// Builds a theme color set from the six packed RGBA ints the C# side sends.
+///
+/// Every slot is optional, per channel: 0 (fully transparent) means the host left that color
+/// disabled, and the pinned SDK default must stand. `OctopusTheme.Colors.init` takes
+/// `primarySet`/`onPrimary`/`link`/`background` as optionals defaulting to nil (checked in
+/// `Sources/OctopusUI/Theme/Theme.swift` at Octopus iOS 1.13.2), so nil is how a slot is left
+/// alone. `ColorSet` itself has three non-optional members, so a partially set primary set is
+/// filled from a default-constructed `Colors` — the SDK's own values, never a copy of them here.
+private func colorsFrom(
+    primary: Int32, primaryLow: Int32, primaryHigh: Int32, onPrimary: Int32,
+    link: Int32, background: Int32
+) -> OctopusTheme.Colors {
+    let defaults = OctopusTheme.Colors()
+    let primarySet: OctopusTheme.Colors.ColorSet?
+    if primary == 0 && primaryLow == 0 && primaryHigh == 0 {
+        primarySet = nil
+    } else {
+        primarySet = OctopusTheme.Colors.ColorSet(
+            main: primary == 0 ? defaults.primary : colorFrom(rgba: primary),
+            lowContrast: primaryLow == 0 ? defaults.primaryLowContrast : colorFrom(rgba: primaryLow),
+            highContrast: primaryHigh == 0 ? defaults.primaryHighContrast : colorFrom(rgba: primaryHigh)
+        )
+    }
+    return OctopusTheme.Colors(
+        primarySet: primarySet,
+        onPrimary: optionalColorFrom(rgba: onPrimary),
+        link: optionalColorFrom(rgba: link),
+        background: optionalColorFrom(rgba: background)
     )
 }
 
@@ -757,6 +790,12 @@ public func OctopusSdkSetColorSchemeType(schemeType: Int32) {
 @_cdecl("OctopusSdkSetForcedOrientation")
 public func OctopusSdkSetForcedOrientation(orientation: Int32) {
     forcedOrientation = orientation
+}
+
+/// Every theme color slot travels as 0 — fully transparent — when the host left it unset.
+/// Mapping that to nil is what makes the native default apply.
+func optionalColorFrom(rgba: Int32) -> Color? {
+    return rgba == 0 ? nil : colorFrom(rgba: rgba)
 }
 
 func colorFrom(rgba: Int32) -> Color {
@@ -847,6 +886,8 @@ private func syncStatusToWire(_ s: OctopusSyncFollowGroup.Status) -> String {
     case .notUnfollowable: return "notUnfollowable"
     case .alreadyFollowed: return "alreadyFollowed"
     case .alreadyUnfollowed: return "alreadyUnfollowed"
+    // Added by iOS 1.13.0. Same wire token the Kotlin bridge's `else` branch produces.
+    case .unknownError: return "unknownError"
     @unknown default: return "unknownError"
     }
 }
@@ -1068,6 +1109,9 @@ private func eventToJson(_ e: OctopusEvent) -> String {
         case .otherUserProfile(let s):
             o["screen"] = "OtherUserProfile"
             o["profileId"] = s.profileId
+        case .otherUserPosts(let s):
+            o["screen"] = "OtherUserPosts"
+            o["profileId"] = s.profileId
         case .editProfile:
             o["screen"] = "EditProfile"
         case .reportContent:
@@ -1080,8 +1124,6 @@ private func eventToJson(_ e: OctopusEvent) -> String {
             o["screen"] = "SettingsList"
         case .settingsAccount:
             o["screen"] = "SettingsAccount"
-        case .settingsAbout:
-            o["screen"] = "SettingsAbout"
         case .reportExplanation:
             o["screen"] = "ReportExplanation"
         case .deleteAccount:

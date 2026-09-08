@@ -112,8 +112,30 @@ public partial class OctopusSDK
         // Theme setters — recorded as pass-throughs (no overlay effect).
         // Note: the color-scheme setters record unconditionally; on device a null
         // colorScheme is a no-op, so the mock over-records that (null-arg) case.
-        internal static void SetLightColorScheme() => Mock.Record("SetLightColorScheme");
-        internal static void SetDarkColorScheme() => Mock.Record("SetDarkColorScheme");
+        internal static void SetLightColorScheme(OctopusColorScheme colorScheme) =>
+            Mock.Record("SetLightColorScheme", PackedChannels(colorScheme));
+        internal static void SetDarkColorScheme(OctopusColorScheme colorScheme) =>
+            Mock.Record("SetDarkColorScheme", PackedChannels(colorScheme));
+
+        /// <summary>
+        /// The six packed RGBA ints that would cross the bridge, in bridge argument order
+        /// (primary, primaryLow, primaryHigh, onPrimary, link, background). A slot the host left
+        /// unset is 0, which both natives read as "keep your default". Empty for a null scheme,
+        /// the case a device build turns into a no-op.
+        /// </summary>
+        private static object[] PackedChannels(OctopusColorScheme colorScheme)
+        {
+            if (colorScheme == null) return new object[0];
+            return new object[]
+            {
+                ColorToInt(colorScheme.Primary),
+                ColorToInt(colorScheme.PrimaryLow),
+                ColorToInt(colorScheme.PrimaryHigh),
+                ColorToInt(colorScheme.OnPrimary),
+                ColorToInt(colorScheme.Link),
+                ColorToInt(colorScheme.Background)
+            };
+        }
         internal static void SetLogo() => Mock.Record("SetLogo");
         internal static void SetAppName(string appName) => Mock.Record("SetAppName", appName ?? "");
         internal static void SetNavBarUsesPrimaryColor(bool usesPrimary) => Mock.Record("SetNavBarUsesPrimaryColor", usesPrimary);

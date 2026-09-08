@@ -19,7 +19,7 @@ public partial class OctopusSDK
     public static void SetLightColorScheme(OctopusColorScheme colorScheme)
     {
 #if UNITY_EDITOR
-        MockBackend.SetLightColorScheme();
+        MockBackend.SetLightColorScheme(colorScheme);
 #else
         if (colorScheme != null)
         {
@@ -31,7 +31,9 @@ public partial class OctopusSDK
                     ColorToInt(colorScheme.Primary),
                     ColorToInt(colorScheme.PrimaryLow),
                     ColorToInt(colorScheme.PrimaryHigh),
-                    ColorToInt(colorScheme.OnPrimary)
+                    ColorToInt(colorScheme.OnPrimary),
+                    ColorToInt(colorScheme.Link),
+                    ColorToInt(colorScheme.Background)
                 );
             }
 #elif UNITY_IOS
@@ -39,7 +41,9 @@ public partial class OctopusSDK
                 ColorToInt(colorScheme.Primary),
                 ColorToInt(colorScheme.PrimaryLow),
                 ColorToInt(colorScheme.PrimaryHigh),
-                ColorToInt(colorScheme.OnPrimary)
+                ColorToInt(colorScheme.OnPrimary),
+                ColorToInt(colorScheme.Link),
+                ColorToInt(colorScheme.Background)
             );
 #endif
         }
@@ -49,7 +53,7 @@ public partial class OctopusSDK
     public static void SetDarkColorScheme(OctopusColorScheme colorScheme)
     {
 #if UNITY_EDITOR
-        MockBackend.SetDarkColorScheme();
+        MockBackend.SetDarkColorScheme(colorScheme);
 #else
         if (colorScheme != null)
         {
@@ -61,7 +65,9 @@ public partial class OctopusSDK
                     ColorToInt(colorScheme.Primary),
                     ColorToInt(colorScheme.PrimaryLow),
                     ColorToInt(colorScheme.PrimaryHigh),
-                    ColorToInt(colorScheme.OnPrimary)
+                    ColorToInt(colorScheme.OnPrimary),
+                    ColorToInt(colorScheme.Link),
+                    ColorToInt(colorScheme.Background)
                 );
             }
 #elif UNITY_IOS
@@ -69,7 +75,9 @@ public partial class OctopusSDK
                 ColorToInt(colorScheme.Primary),
                 ColorToInt(colorScheme.PrimaryLow),
                 ColorToInt(colorScheme.PrimaryHigh),
-                ColorToInt(colorScheme.OnPrimary)
+                ColorToInt(colorScheme.OnPrimary),
+                ColorToInt(colorScheme.Link),
+                ColorToInt(colorScheme.Background)
             );
 #endif
         }
@@ -207,11 +215,13 @@ public partial class OctopusSDK
     }
 
 #if UNITY_IOS && !UNITY_EDITOR
+    // Any of the six carries 0 (fully transparent) when the host left it unset; the Swift side
+    // maps that to nil so the native default applies.
     [DllImport("__Internal")]
-    private static extern void OctopusSdkSetLightColorScheme(int primary, int primaryLow, int primaryHigh, int onPrimary);
+    private static extern void OctopusSdkSetLightColorScheme(int primary, int primaryLow, int primaryHigh, int onPrimary, int link, int background);
 
     [DllImport("__Internal")]
-    private static extern void OctopusSdkSetDarkColorScheme(int primary, int primaryLow, int primaryHigh, int onPrimary);
+    private static extern void OctopusSdkSetDarkColorScheme(int primary, int primaryLow, int primaryHigh, int onPrimary, int link, int background);
 
     [DllImport("__Internal")]
     private static extern void OctopusSdkSetLogo(string logo);
@@ -241,24 +251,90 @@ public partial class OctopusSDK
 #endif 
 }
 
+/// <summary>
+/// Colors applied to the native Octopus community UI.
+/// </summary>
+/// <remarks>
+/// <see cref="Link"/> and <see cref="Background"/> are optional: leaving one at
+/// <c>Color.clear</c> (fully transparent, the value the constructors default to) means
+/// "not set", and the native SDK keeps its own default for that slot. No default value is
+/// duplicated on the C# side.
+/// </remarks>
 public class OctopusColorScheme
 {
+    // Every color below is applied on its own: Color.clear (the packed int 0) crosses the bridge
+    // as "not set" and the native SDK keeps its own default for that slot.
+
+    /// <summary>Primary brand color. <c>Color.clear</c> keeps the native default.</summary>
     public readonly Color Primary;
+
+    /// <summary>
+    /// Low contrast variant of the primary color. <c>Color.clear</c> keeps the native default.
+    /// </summary>
     public readonly Color PrimaryLow;
+
+    /// <summary>
+    /// High contrast variant of the primary color. <c>Color.clear</c> keeps the native default.
+    /// </summary>
     public readonly Color PrimaryHigh;
+
+    /// <summary>
+    /// Color of the content displayed over a surface painted with the primary color.
+    /// <c>Color.clear</c> keeps the native default.
+    /// </summary>
     public readonly Color OnPrimary;
 
+    /// <summary>
+    /// Color of links (URLs displayed in posts and comments).
+    /// <c>Color.clear</c> keeps the native default.
+    /// </summary>
+    public readonly Color Link;
+
+    /// <summary>
+    /// Background color of the community screens.
+    /// <c>Color.clear</c> keeps the native default (the system background on iOS, the
+    /// scheme's <c>gray100</c> on Android).
+    /// </summary>
+    public readonly Color Background;
+
+    /// <summary>
+    /// Creates a color scheme that customizes the primary color set only; the native SDK keeps
+    /// its own defaults for <see cref="Link"/> and <see cref="Background"/>.
+    /// </summary>
+    /// <remarks>
+    /// Kept as its own constructor rather than folded into the one below: an assembly compiled
+    /// against an earlier version of this package binds to this exact four-argument signature.
+    /// </remarks>
     public OctopusColorScheme(
         Color primary,
         Color primaryLow,
         Color primaryHigh,
         Color onPrimary
+    ) : this(primary, primaryLow, primaryHigh, onPrimary, Color.clear, Color.clear)
+    {
+    }
+
+    /// <summary>
+    /// Creates a color scheme. <paramref name="link"/> and <paramref name="background"/> are
+    /// optional — omit one, or pass <c>Color.clear</c>, to keep the native default. The same
+    /// applies to the four colors of the primary set: each one passed as <c>Color.clear</c> is
+    /// left to the native SDK rather than painted transparent.
+    /// </summary>
+    public OctopusColorScheme(
+        Color primary,
+        Color primaryLow,
+        Color primaryHigh,
+        Color onPrimary,
+        Color link = default(Color),
+        Color background = default(Color)
     )
     {
         this.Primary = primary;
         this.PrimaryLow = primaryLow;
         this.PrimaryHigh = primaryHigh;
         this.OnPrimary = onPrimary;
+        this.Link = link;
+        this.Background = background;
     }
 }
 

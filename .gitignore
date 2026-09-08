@@ -23,3 +23,7 @@ UnityExample/Assets/Scripts/OctopusTestHarness.cs.meta
 
 # Unity test-run artifacts
 UnityExample/TestResults-*.xml
+
+# Scratch file of Scripts/build_legacy_package_nounity.py. The script already removes it
+# on failure and renames it into place on success; this is belt and braces, not the fix.
+.*.unitypackage.*.tmp

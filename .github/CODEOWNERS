@@ -1,0 +1,3 @@
+# Default owner for everything in this repo.
+# CODEOWNERS uses GitHub login handles.
+* @ThomasGorisse

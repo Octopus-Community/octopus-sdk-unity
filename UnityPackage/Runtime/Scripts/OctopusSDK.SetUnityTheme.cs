@@ -36,7 +36,10 @@ public partial class OctopusSDK
     }
 
 #if UNITY_ANDROID || UNITY_IOS || UNITY_EDITOR
-    private static void ApplyColorSchemeSettings(OctopusThemeSettings settings)
+    // internal rather than private so the EditMode tests can drive it with a settings object they
+    // built themselves (SetUnityTheme reads the shared Resources asset, which a test must not
+    // mutate). InternalsVisibleTo("OctopusSDK.Tests.Editor") is what makes that reachable.
+    internal static void ApplyColorSchemeSettings(OctopusThemeSettings settings)
     {
         // Apply light color scheme if any colors are enabled
         var lightConfig = settings.LightColorSchemeConfig;
@@ -46,7 +49,9 @@ public partial class OctopusSDK
                 lightConfig.primaryEnabled ? lightConfig.primary : Color.clear,
                 lightConfig.primaryLowEnabled ? lightConfig.primaryLow : Color.clear,
                 lightConfig.primaryHighEnabled ? lightConfig.primaryHigh : Color.clear,
-                lightConfig.onPrimaryEnabled ? lightConfig.onPrimary : Color.clear
+                lightConfig.onPrimaryEnabled ? lightConfig.onPrimary : Color.clear,
+                lightConfig.linkEnabled ? lightConfig.link : Color.clear,
+                lightConfig.backgroundEnabled ? lightConfig.background : Color.clear
             ));
         }
 
@@ -58,7 +63,9 @@ public partial class OctopusSDK
                 darkConfig.primaryEnabled ? darkConfig.primary : Color.clear,
                 darkConfig.primaryLowEnabled ? darkConfig.primaryLow : Color.clear,
                 darkConfig.primaryHighEnabled ? darkConfig.primaryHigh : Color.clear,
-                darkConfig.onPrimaryEnabled ? darkConfig.onPrimary : Color.clear
+                darkConfig.onPrimaryEnabled ? darkConfig.onPrimary : Color.clear,
+                darkConfig.linkEnabled ? darkConfig.link : Color.clear,
+                darkConfig.backgroundEnabled ? darkConfig.background : Color.clear
             ));
         }
     }
