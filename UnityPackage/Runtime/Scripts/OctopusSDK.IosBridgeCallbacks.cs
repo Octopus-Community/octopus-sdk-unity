@@ -30,14 +30,14 @@ public partial class OctopusSDK
             string json = Marshal.PtrToStringUTF8(utf8Json);
             if (!string.IsNullOrEmpty(json)) OctopusEventDispatcher.Enqueue(json);
         }
-        catch (Exception e) { Debug.LogException(e); }
+        catch (Exception e) { UnityEngine.Debug.LogException(e); }
     }
 
     [MonoPInvokeCallback(typeof(TokenRequestCallbackDelegate))]
     private static void OnTokenRequestFromNative()
     {
         try { TriggerOnTokenRequested(); }
-        catch (Exception e) { Debug.LogException(e); }
+        catch (Exception e) { UnityEngine.Debug.LogException(e); }
     }
 
     [MonoPInvokeCallback(typeof(SignRequestCallbackDelegate))]
@@ -48,7 +48,7 @@ public partial class OctopusSDK
             string fingerprint = Marshal.PtrToStringUTF8(utf8Fingerprint);
             TriggerBridgeShareSign(fingerprint ?? "");
         }
-        catch (Exception e) { Debug.LogException(e); }
+        catch (Exception e) { UnityEngine.Debug.LogException(e); }
     }
 
     // Synchronous, loop-independent URL-strategy decision (mirrors Android's resolveUrlStrategy):
@@ -65,7 +65,7 @@ public partial class OctopusSDK
         }
         catch (Exception e)
         {
-            Debug.LogException(e);
+            UnityEngine.Debug.LogException(e);
             return (int)UrlOpeningStrategy.HandledByOctopus; // safe default: keep the user in Octopus
         }
     }

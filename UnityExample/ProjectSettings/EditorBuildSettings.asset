@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/OctopusSample/OctopusSample.unity
+    guid: 61c124a92a56d4b5e86850faf028743a
+  - enabled: 1
     path: Assets/MainMenu/MainMenu.unity
     guid: b5c4a40837d438e45a6aa07c29325263
   - enabled: 1

@@ -9,7 +9,7 @@ public partial class OctopusSDK
     /// Editor-only stand-in for the native bridge. Every wrapper routes here in-Editor.
     /// Records calls, drives the overlay, and resolves async operations so nothing hangs.
     /// </summary>
-    internal static class MockBackend
+    internal static partial class MockBackend
     {
         internal static void Initialize(string apiKey, ConnectionMode mode)
         {
@@ -24,33 +24,35 @@ public partial class OctopusSDK
             }
             // Note: when Enabled is false, Record() suppresses, so this Initialize
             // call won't appear in Mock.Calls — intentional (mirrors a no-op SDK).
+            LifecycleInitialized = true;
             Mock.Record("Initialize", apiKey, mode.Mode);
+            InitializeProfileMock(mode);
             // Create the overlay whenever mock is on; ShowOverlay (checked in OnGUI) governs
             // whether it actually draws, so it can be toggled live during Play.
             if (Mock.Enabled) OctopusMockOverlay.EnsureExists();
         }
 
-        internal static void Open(OctopusNotification notification)
+        internal static void Open(OctopusNotification notification, OctopusNavigationMode? navigationMode)
         {
-            Mock.Record("Open", notification?.DeepLink ?? "");
+            Mock.Record("Open", notification?.DeepLink ?? "", navigationMode);
             if (Mock.Enabled) Mock.CurrentScreen = "Main feed";
         }
 
-        internal static void OpenGroup(string groupId)
+        internal static void OpenGroup(string groupId, OctopusNavigationMode? navigationMode)
         {
-            Mock.Record("OpenGroup", groupId ?? "");
+            Mock.Record("OpenGroup", groupId ?? "", navigationMode);
             if (Mock.Enabled) Mock.CurrentScreen = $"Group {groupId}";
         }
 
-        internal static void OpenPost(string postId)
+        internal static void OpenPost(string postId, OctopusNavigationMode? navigationMode)
         {
-            Mock.Record("OpenPost", postId ?? "");
+            Mock.Record("OpenPost", postId ?? "", navigationMode);
             if (Mock.Enabled) { Mock.LastOpenedPost = postId; Mock.CurrentScreen = $"Post {postId}"; }
         }
 
-        internal static void OpenCreatePost(OctopusPrefilledPost prefilled)
+        internal static void OpenCreatePost(OctopusPrefilledPost prefilled, OctopusNavigationMode? navigationMode)
         {
-            Mock.Record("OpenCreatePost", prefilled?.Text ?? "", prefilled?.TopicId ?? "");
+            Mock.Record("OpenCreatePost", prefilled?.Text ?? "", prefilled?.TopicId ?? "", navigationMode);
             if (Mock.Enabled) { Mock.LastPrefilledPost = prefilled; Mock.CurrentScreen = "Create post"; }
         }
 
@@ -61,14 +63,16 @@ public partial class OctopusSDK
             if (TokenProvider != null)
             {
                 try { await TokenProvider.Invoke(); }
-                catch (Exception e) { Debug.LogError($"[Octopus Mock] tokenProvider threw: {e}"); }
+                catch (Exception e) { UnityEngine.Debug.LogError($"[Octopus Mock] tokenProvider threw: {e}"); }
             }
+            if (Mock.Enabled) Mock.EmitProfileChanged(new OctopusProfile(clientUserId: userId));
             TriggerOnConnectUserCompleted();
         }
 
         internal static void DisconnectUser()
         {
             Mock.Record("DisconnectUser");
+            if (Mock.Enabled) Mock.EmitProfileChanged(null);
             TriggerOnDisconnectUserCompleted();
         }
 
@@ -141,7 +145,7 @@ public partial class OctopusSDK
         internal static void SetNavBarUsesPrimaryColor(bool usesPrimary) => Mock.Record("SetNavBarUsesPrimaryColor", usesPrimary);
         internal static void SetColorSchemeType(int colorSchemeType) => Mock.Record("SetColorSchemeType", colorSchemeType);
         internal static void SetForcedOrientation(int forcedOrientation) => Mock.Record("SetForcedOrientation", forcedOrientation);
-        internal static void SetFonts() => Mock.Record("SetFonts");
+        internal static void SetFonts(OctopusFonts fonts) => Mock.Record("SetFonts", fonts);
 
         internal static void SyncFollowGroups(
             IList<OctopusSyncFollowGroupAction> actions,
@@ -163,6 +167,7 @@ public partial class OctopusSDK
         }
 
         static IList<OctopusGroup> SeedGroups() =>
+            _groupFollowingGroups != null ? new List<OctopusGroup>(_groupFollowingGroups) :
             OctopusMockSettings.Instance == null
                 ? new List<OctopusGroup>()
                 : new List<OctopusGroup>(OctopusMockSettings.Instance.SeedGroups);

@@ -18,6 +18,7 @@ MonoBehaviour:
   appName: 
   navBarUsesPrimaryColor: 0
   colorScheme: 0
+  forcedOrientation: 0
   fontStyles:
   - enabled: 0
     fontIndex: -1
@@ -50,6 +51,10 @@ MonoBehaviour:
     primaryHigh: {r: 0.1, g: 0.3, b: 0.7, a: 1}
     onPrimaryEnabled: 0
     onPrimary: {r: 1, g: 1, b: 1, a: 1}
+    linkEnabled: 0
+    link: {r: 0.1, g: 0.6, b: 0.8, a: 1}
+    backgroundEnabled: 0
+    background: {r: 1, g: 1, b: 1, a: 1}
   darkColorSchemeConfig:
     primaryEnabled: 0
     primary: {r: 0.2, g: 0.4, b: 0.8, a: 1}
@@ -59,3 +64,7 @@ MonoBehaviour:
     primaryHigh: {r: 0.1, g: 0.3, b: 0.7, a: 1}
     onPrimaryEnabled: 0
     onPrimary: {r: 1, g: 1, b: 1, a: 1}
+    linkEnabled: 0
+    link: {r: 0.1, g: 0.6, b: 0.8, a: 1}
+    backgroundEnabled: 0
+    background: {r: 1, g: 1, b: 1, a: 1}

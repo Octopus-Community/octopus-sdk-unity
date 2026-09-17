@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEngine;
 
 // Batchmode entry points for a future store-publishing CI pipeline; all inputs arrive via
@@ -18,6 +19,10 @@ using UnityEngine;
 //         -executeMethod BuildScript.BuildAndroid -logFile -
 //   Unity -batchmode -quit -projectPath UnityExample \
 //         -executeMethod BuildScript.BuildIOS -logFile -
+//   Unity -batchmode -nographics -projectPath UnityExample \
+//         -executeMethod BuildScript.BuildAndroidDebug -logFile -      (QA debug APK, no secrets)
+//   Unity -batchmode -nographics -quit -projectPath UnityExample \
+//         -executeMethod BuildScript.BuildIOSSimulator -logFile -
 //
 // Every build input arrives through an environment variable, never a command-line argument
 // that would show up in a process listing or a log grep. A required variable that is missing
@@ -25,18 +30,21 @@ using UnityEngine;
 // falls back to a debug signing config the way local `flutter run --release` is allowed to.
 //
 // NOTE: BuildAndroid writes the keystore/key passwords into PlayerSettings.Android, which Unity
-// serialises into ProjectSettings/ProjectSettings.asset. Any CI runner invoking this on a
-// persistent (non-ephemeral) machine must restore that file afterwards (e.g.
-// `git checkout -- UnityExample/ProjectSettings/ProjectSettings.asset` in an `if: always()`
-// cleanup step) so the plaintext passwords do not linger in the working tree between runs.
+// serialises into ProjectSettings/ProjectSettings.asset. Whoever invokes this must put that
+// tracked file back afterwards so the plaintext passwords do not linger in the working tree.
+// `Scripts/store/publish-android.sh` does it from a snapshot taken before the build, on every
+// exit path — a snapshot rather than a checkout, because these builds now run on a developer's
+// own machine, where that file may carry legitimate uncommitted edits.
 public static class BuildScript
 {
     // ===== Android =====
     //
-    // Produces a signed .aab (Play requires App Bundles for new apps). Reuses the same
-    // KEYSTORE_* secret names as this org's other sample-app CI pipelines, so the workflow
-    // template stays identical across repos (Play App Signing re-signs the upload key anyway,
-    // so only the secret *names* need to match — not the underlying keystore values).
+    // Produces a signed .aab (Play requires App Bundles for new apps). Driven by
+    // `Scripts/store/publish-android.sh`; there is no CI equivalent, because a store build
+    // needs a licensed Unity Editor and no runner has one (issue #28). The KEYSTORE_* names
+    // are kept identical to this org's other sample apps so the same keystore.properties can
+    // be reused verbatim (Play App Signing re-signs the upload key anyway, so only the *names*
+    // need to match — not the underlying keystore values).
     public static void BuildAndroid()
     {
         try
@@ -61,7 +69,20 @@ public static class BuildScript
             // BuildPipeline.BuildPlayer time.
             EditorUserBuildSettings.buildAppBundle = true;
 
-            var report = BuildPipeline.BuildPlayer(BuildPlayerOptionsFor(BuildTarget.Android, outputPath));
+            var target = NamedBuildTarget.Android;
+            var previousDefines = PlayerSettings.GetScriptingDefineSymbols(target);
+            UnityEditor.Build.Reporting.BuildReport report;
+            try
+            {
+                PlayerSettings.SetScriptingDefineSymbols(target, WithInternalDefine(
+                    previousDefines, Environment.GetEnvironmentVariable("OCTOPUS_INTERNAL")));
+                report = BuildPipeline.BuildPlayer(BuildPlayerOptionsFor(BuildTarget.Android, outputPath));
+            }
+            finally
+            {
+                // Restore before ExitOnResult exits the Editor, including when BuildPlayer throws.
+                PlayerSettings.SetScriptingDefineSymbols(target, previousDefines);
+            }
             ExitOnResult(report);
         }
         catch (Exception e)
@@ -69,6 +90,70 @@ public static class BuildScript
             Debug.LogError($"[BuildScript] BuildAndroid failed: {e}");
             EditorApplication.Exit(1);
         }
+    }
+
+    // Unsigned debug APK for on-device QA (pm-tools `qa/qa.sh unity build`, which invokes
+    // `-executeMethod BuildScript.BuildAndroidDebug` from the repo root and then installs
+    // UnityExample/build/android/UnityExample.apk). No keystore, no version code, no secret:
+    // the debug keystore Unity ships is used and restored afterwards, so this never leaves the
+    // custom-keystore flag flipped in ProjectSettings.asset on a persistent machine.
+    //
+    //   Unity -batchmode -nographics -projectPath UnityExample \
+    //         -executeMethod BuildScript.BuildAndroidDebug -logFile -
+    //
+    // OUTPUT_PATH is optional (default build/android/UnityExample.apk, relative to the project);
+    // OCTOPUS_INTERNAL=true adds the internal define exactly like BuildAndroid.
+    public static void BuildAndroidDebug()
+    {
+        var useCustomKeystore = PlayerSettings.Android.useCustomKeystore;
+        var buildAppBundle = EditorUserBuildSettings.buildAppBundle;
+        var target = NamedBuildTarget.Android;
+        var previousDefines = PlayerSettings.GetScriptingDefineSymbols(target);
+        try
+        {
+            var outputPath = Environment.GetEnvironmentVariable("OUTPUT_PATH");
+            if (string.IsNullOrEmpty(outputPath)) outputPath = "build/android/UnityExample.apk";
+
+            PlayerSettings.Android.useCustomKeystore = false;
+            EditorUserBuildSettings.buildAppBundle = false;
+            PlayerSettings.SetScriptingDefineSymbols(target, WithInternalDefine(
+                previousDefines, Environment.GetEnvironmentVariable("OCTOPUS_INTERNAL")));
+
+            var options = BuildPlayerOptionsFor(BuildTarget.Android, outputPath);
+            options.options = BuildOptions.Development;
+            var report = BuildPipeline.BuildPlayer(options);
+
+            RestoreAndroidDebugSettings(useCustomKeystore, buildAppBundle, previousDefines);
+            ExitOnResult(report);
+        }
+        catch (Exception e)
+        {
+            RestoreAndroidDebugSettings(useCustomKeystore, buildAppBundle, previousDefines);
+            Debug.LogError($"[BuildScript] BuildAndroidDebug failed: {e}");
+            EditorApplication.Exit(1);
+        }
+    }
+
+    private static void RestoreAndroidDebugSettings(bool useCustomKeystore, bool buildAppBundle, string defines)
+    {
+        PlayerSettings.Android.useCustomKeystore = useCustomKeystore;
+        EditorUserBuildSettings.buildAppBundle = buildAppBundle;
+        PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.Android, defines);
+    }
+
+    // Pure so EditMode tests can check both directions without changing PlayerSettings.
+    public static string WithInternalDefine(string defines, string environmentValue)
+    {
+        const string internalDefine = "OCTOPUS_INTERNAL";
+        var symbols = (defines ?? string.Empty).Split(';')
+            .Select(symbol => symbol.Trim())
+            .Where(symbol => symbol.Length != 0 && symbol != internalDefine)
+            .ToList();
+        if (string.Equals(environmentValue, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            symbols.Add(internalDefine);
+        }
+        return string.Join(";", symbols);
     }
 
     // ===== iOS =====
@@ -96,6 +181,44 @@ public static class BuildScript
         catch (Exception e)
         {
             Debug.LogError($"[BuildScript] BuildIOS failed: {e}");
+            EditorApplication.Exit(1);
+        }
+    }
+
+    // Exports an iOS Simulator Xcode project for local QA. OUTPUT_PATH is optional
+    // (default build/ios-sim, relative to the Unity project), like BuildAndroidDebug.
+    // Build and install the exported workspace separately with signing disabled.
+    public static void BuildIOSSimulator()
+    {
+        try
+        {
+            var outputPath = Environment.GetEnvironmentVariable("OUTPUT_PATH");
+            if (string.IsNullOrEmpty(outputPath)) outputPath = "build/ios-sim";
+
+            var previousSdk = PlayerSettings.iOS.sdkVersion;
+            var previousSimulatorArch = PlayerSettings.iOS.simulatorSdkArchitecture;
+            UnityEditor.Build.Reporting.BuildReport report;
+            try
+            {
+                PlayerSettings.iOS.sdkVersion = iOSSdkVersion.SimulatorSDK;
+                // The project default is x86_64, which Xcode refuses as a destination on an
+                // Apple Silicon simulator. Match the host so the exported libraries are usable.
+                PlayerSettings.iOS.simulatorSdkArchitecture = AppleMobileArchitectureSimulator.ARM64;
+                var options = BuildPlayerOptionsFor(BuildTarget.iOS, outputPath);
+                options.options = BuildOptions.Development;
+                report = BuildPipeline.BuildPlayer(options);
+            }
+            finally
+            {
+                // Restore before ExitOnResult exits the Editor, including on build failure.
+                PlayerSettings.iOS.sdkVersion = previousSdk;
+                PlayerSettings.iOS.simulatorSdkArchitecture = previousSimulatorArch;
+            }
+            ExitOnResult(report);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[BuildScript] BuildIOSSimulator failed: {e}");
             EditorApplication.Exit(1);
         }
     }

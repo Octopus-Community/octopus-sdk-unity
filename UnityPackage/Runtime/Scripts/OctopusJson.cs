@@ -4,7 +4,7 @@ using System.Text;
 // Minimal, dependency-free JSON for the SDK's wire formats only:
 // a flat object {string: string|bool|number}, and arrays of such objects.
 // Not a general-purpose JSON parser.
-internal static class OctopusJson
+internal static partial class OctopusJson
 {
     public static Dictionary<string, string> ParseObject(string json)
     {

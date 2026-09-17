@@ -9,7 +9,7 @@ public partial class OctopusSDK
     // Held in a static field so the proxy target is not garbage-collected.
     private static OctopusBridgeListenerProxy _bridgeListener;
 
-    private class OctopusBridgeListenerProxy : AndroidJavaProxy
+    private partial class OctopusBridgeListenerProxy : AndroidJavaProxy
     {
         public OctopusBridgeListenerProxy() : base("com.octopuscommunity.bridge.OctopusBridgeListener") { }
 
@@ -24,10 +24,13 @@ public partial class OctopusSDK
             }
             catch (System.Exception e)
             {
-                Debug.LogException(e);
+                UnityEngine.Debug.LogException(e);
                 return (int)UrlOpeningStrategy.HandledByOctopus;
             }
         }
+
+        /// <summary>Queue a native profile-tap payload for Unity main-thread delivery.</summary>
+        public void onNavigateToProfile(string payload) => ReceiveNavigateToProfile(payload);
 
         // Octopus Event (flat JSON envelope) — enqueue to the shared dispatcher (parsed + raised
         // on its background consumer), so delivery matches iOS and the customer handler doesn't
@@ -46,7 +49,7 @@ public partial class OctopusSDK
             }
             catch (System.Exception e)
             {
-                Debug.LogException(e);
+                UnityEngine.Debug.LogException(e);
             }
         }
 
@@ -61,7 +64,7 @@ public partial class OctopusSDK
             }
             catch (System.Exception e)
             {
-                Debug.LogException(e);
+                UnityEngine.Debug.LogException(e);
             }
         }
     }
