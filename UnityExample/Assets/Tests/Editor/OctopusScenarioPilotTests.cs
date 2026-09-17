@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using NUnit.Framework;
 
 /// <summary>
-/// Guards the three scenario pilots against the two ways they could quietly stop being QA-usable:
+/// Guards the scenario pilots against the two ways they could quietly stop being QA-usable:
 /// a preset id or label that drifts from `pm-tools/shared/config/scenarios-catalog.yaml`, and a
 /// preset that leaves a field for the Tester to fill in by hand (SDK_STANDARDS §5.2).
 ///
@@ -44,9 +44,9 @@ public class OctopusScenarioPilotTests
     }
 
     [Test]
-    public void PilotsCoverExactlyTheThreeScenariosTheSampleDrives()
+    public void PilotsCoverExactlyTheScenariosTheSampleDrives()
     {
-        CollectionAssert.AreEqual(new[] { "connection", "customEvents", "locale" },
+        CollectionAssert.AreEqual(new[] { "connection", "customEvents", "locale", "theme", "refreshEntitlements", "termsAcceptance", "profileFieldsLock", "communityData", "groups", "syncFollowGroups", "groupAccessDenied", "communityAccess", "contentOptions", "reactions", "bridge", "createPost", "events", "trackABTests", "forceOctopusABTests", "lifecycle", "notSeenNotifications", "pushNotifications", "initialScreen" },
                                   OctopusScenarioPilots.Ids);
     }
 
@@ -58,14 +58,14 @@ public class OctopusScenarioPilotTests
         Assert.IsTrue(OctopusScenarioPilots.Has("locale"));
 
         // A catalogue scenario this sample has NOT built, and a plain typo.
-        Assert.IsFalse(OctopusScenarioPilots.Has("groups"));
+        Assert.IsFalse(OctopusScenarioPilots.Has("fullscreen"));
         Assert.IsFalse(OctopusScenarioPilots.Has("Connection"));
     }
 
     [Test]
     public void CreateReturnsNullForAScenarioThisSampleDoesNotDrive()
     {
-        Assert.IsNull(OctopusScenarioPilots.Create("groups"));
+        Assert.IsNull(OctopusScenarioPilots.Create("fullscreen"));
     }
 
     [Test]
@@ -101,7 +101,17 @@ public class OctopusScenarioPilotTests
         {
             for (var i = 0; i < pilot.Presets.Count; i++)
             {
+                if (pilot.Presets[i].TestId.EndsWith("-clear"))
+                {
+                    Assert.AreEqual("Clear override (backend default)", pilot.Presets[i].Label);
+                    continue;
+                }
                 // "Preset N · ", with U+00B7 MIDDLE DOT — the QA Tester matches on visible text.
+                if (pilot.Presets[i].TestId.EndsWith("-clear"))
+                {
+                    Assert.AreEqual("Clear override (backend default)", pilot.Presets[i].Label);
+                    continue;
+                }
                 var expectedPrefix = "Preset " + (i + 1) + " · ";
                 Assert.IsTrue(pilot.Presets[i].Label.StartsWith(expectedPrefix),
                     "Scenario '" + pilot.Id + "' preset #" + (i + 1) + " is labelled '" +
@@ -196,16 +206,16 @@ public class OctopusScenarioPilotTests
     [Test]
     public void SdkOperationsAreSerialisedProcessWide()
     {
-        OctopusScenarioSdk.EndOperation();
+        OctopusScenarioSdk.ResetOperationSlot();
         string busy;
         Assert.IsTrue(OctopusScenarioSdk.TryBeginOperation("ConnectUser", out busy));
         Assert.IsNull(busy);
         Assert.IsFalse(OctopusScenarioSdk.TryBeginOperation("DisconnectUser", out busy));
         StringAssert.Contains("ConnectUser", busy);
         StringAssert.Contains("DisconnectUser", busy);
-        OctopusScenarioSdk.EndOperation();
+        OctopusScenarioSdk.EndOperation(OctopusScenarioSdk.OperationToken);
         Assert.IsTrue(OctopusScenarioSdk.TryBeginOperation("DisconnectUser", out busy));
-        OctopusScenarioSdk.EndOperation();
+        OctopusScenarioSdk.ResetOperationSlot();
     }
 
     [Test]
@@ -249,6 +259,14 @@ public class OctopusScenarioPilotTests
         public void LogApiCall(string method, string detail = null)
         {
             Methods.Add(method);
+        }
+
+        public readonly List<(string headline, string detail)> StateChanges =
+            new List<(string, string)>();
+
+        public void LogStateChange(string headline, string detail = null)
+        {
+            StateChanges.Add((headline, detail));
         }
     }
 }

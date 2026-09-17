@@ -14,6 +14,19 @@ public interface IOctopusSampleLog
     /// <param name="method">The method name, e.g. "OctopusSDK.Open".</param>
     /// <param name="detail">Optional human-readable argument summary.</param>
     void LogApiCall(string method, string detail = null);
+
+    /// <summary>
+    /// Records one change to the sample's own configuration — a feature toggle moving, not a call
+    /// into the SDK.
+    ///
+    /// Kept apart from <see cref="LogApiCall"/> because the console labels the two differently and
+    /// a reader uses that label to answer "did the sample call the SDK, or did I just change a
+    /// setting?". Logging a flip as an API call would answer it wrongly. Android draws the same
+    /// line with its own `DebugEntry.Category.STATE`.
+    /// </summary>
+    /// <param name="headline">What happened, e.g. "feature toggled → SDK config rebuilt".</param>
+    /// <param name="detail">Optional detail: the switch, its new position, its effect.</param>
+    void LogStateChange(string headline, string detail = null);
 }
 
 /// <summary>
@@ -40,5 +53,7 @@ public static class OctopusSampleLog
     private sealed class NoopSampleLog : IOctopusSampleLog
     {
         public void LogApiCall(string method, string detail = null) { }
+
+        public void LogStateChange(string headline, string detail = null) { }
     }
 }

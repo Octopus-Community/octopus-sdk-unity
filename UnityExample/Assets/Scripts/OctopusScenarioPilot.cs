@@ -4,8 +4,8 @@ using System.Collections.Generic;
 /// <summary>
 /// One named parameter of a scenario, as the scenario screen shows it.
 ///
-/// Fields are not how a scenario is driven — presets are (SDK_STANDARDS §5.2). A field exists so
-/// a human reader can see what a preset put in, and so nothing on the screen is ever blank.
+/// Presets drive QA (SDK_STANDARDS §5.2). Fields show their values, and an editable pilot can
+/// opt into Customize so a human can run values outside those presets.
 /// </summary>
 public sealed class OctopusScenarioField
 {
@@ -15,13 +15,17 @@ public sealed class OctopusScenarioField
     /// <summary>Human-readable caption shown above the input.</summary>
     public readonly string Label;
 
+    /// <summary>Informative context only; never offered as a custom action parameter.</summary>
+    public readonly bool IsInformational;
+
     /// <summary>Current value. Written by a preset, and by a human typing into the input.</summary>
     public string Value { get; set; }
 
-    public OctopusScenarioField(string key, string label)
+    public OctopusScenarioField(string key, string label, bool isInformational = false)
     {
         Key = key;
         Label = label;
+        IsInformational = isInformational;
         Value = string.Empty;
     }
 }
@@ -95,7 +99,7 @@ public sealed class OctopusScenarioPreset
     /// <summary>The catalogue's `presets[].test_id`, verbatim. Also the button's GameObject name.</summary>
     public readonly string TestId;
 
-    /// <summary>The catalogue's preset label, verbatim. Always starts with "Preset N · ".</summary>
+    /// <summary>The preset label, including the catalogue's unnumbered clear-override label.</summary>
     public readonly string Label;
 
     public OctopusScenarioPreset(string testId, string label,
@@ -130,11 +134,11 @@ public sealed class OctopusScenarioPreset
 /// test guarding it — rather than the same string typed into a pilot, a screen and a test.
 ///
 /// Nothing in a pilot's construction reaches the SDK. The SDK is touched from
-/// <see cref="OctopusScenarioPreset.Run"/> only, i.e. only after a tap, and every such call is
+/// preset Run or custom Run only, i.e. only after a tap, and every such call is
 /// announced through <see cref="OctopusSampleLog"/> first — which is what lets a test prove the
 /// "no mutation on entry" half of SDK_STANDARDS §5.2 instead of asserting it in prose.
 /// </summary>
-public abstract class OctopusScenarioPilot
+public abstract class OctopusScenarioPilot : IDisposable
 {
     private readonly OctopusScenario _row;
 
@@ -161,7 +165,25 @@ public abstract class OctopusScenarioPilot
     public string Title { get { return _row.Title; } }
 
     /// <summary>The catalogue's (abridged) capability line.</summary>
-    public string Capability { get { return _row.Capability; } }
+    public virtual string Capability { get { return _row.Capability; } }
+
+    private static readonly string[] NoApiSymbols = new string[0];
+
+    /// <summary>SDK entry points demonstrated by this pilot.</summary>
+    public virtual IReadOnlyList<string> ApiSymbols { get { return NoApiSymbols; } }
+
+    /// <summary>Explains limits of illustrative or read-only parameters.</summary>
+    public virtual string ParameterNotice { get { return string.Empty; } }
+
+    public string YouWillSee
+    {
+        get
+        {
+            return string.IsNullOrWhiteSpace(_row.YouWillSee)
+                ? "the outcome of the selected action in the result area."
+                : _row.YouWillSee;
+        }
+    }
 
     /// <summary>The catalogue's `result_test_id`, verbatim. The result panel's GameObject name.</summary>
     public string ResultTestId { get { return _row.ResultTestId; } }
@@ -172,11 +194,80 @@ public abstract class OctopusScenarioPilot
     /// <summary>The preset buttons, in catalogue order.</summary>
     public abstract IReadOnlyList<OctopusScenarioPreset> Presets { get; }
 
+    /// <summary>
+    /// Whether the pilot consumes custom values. Informational fields remain read-only and
+    /// separate from the parameters of that action.
+    /// Override this together with RunCustom to opt a pilot into the generic Customize screen.
+    /// </summary>
+    public virtual bool CanCustomize { get { return false; } }
+
+    /// <summary>Runs the current fields without filling a preset. Only called on a custom Run tap.</summary>
+    public virtual void RunCustom()
+    {
+        throw new InvalidOperationException("This scenario has no custom action.");
+    }
+
+    // Managed observation only: no SDK calls or strong references from the session to a view.
+    internal virtual void ObservationsChanged() { }
+
     /// <summary>The live result line, mirrored into the result panel.</summary>
     public string Result { get; private set; }
 
-    /// <summary>Raised whenever <see cref="Result"/> changes, on the Unity main thread.</summary>
-    public event Action<string> ResultChanged;
+    public bool IsRunning { get; private set; }
+
+    // One entry point for view-driven presets and custom runs. Async pilots publish progress
+    // with ReportRunning and finish with Report; synchronous failures also leave Running.
+    public void Execute(Action action)
+    {
+        if (IsRunning) return;
+        ReportRunning(Result);
+        try
+        {
+            action();
+        }
+        catch (Exception exception)
+        {
+            Report("Run failed: " + exception.Message);
+        }
+    }
+
+    protected void ReportRunning(string line)
+    {
+        IsRunning = true;
+        Publish(line);
+    }
+
+    private Action<string> _resultChanged;
+
+    /// <summary>Raised whenever <see cref="Result"/> or its running state changes, on the Unity main thread.</summary>
+    public event Action<string> ResultChanged
+    {
+        add { _resultChanged += value; }
+        remove
+        {
+            _resultChanged -= value;
+            // The existing renderer unsubscribes on destruction. Future renderers can also
+            // dispose explicitly: native observations belong to this visit, not the process.
+            if (_resultChanged == null) Dispose();
+        }
+    }
+
+    public virtual void Dispose() { IsRunning = false; }
+
+    /// <summary>Latest requested host profile destination; null before its preset runs.</summary>
+    public OctopusScenarioHostProfile HostProfile { get; protected set; }
+
+    /// <summary>A renderer may handle this to present a host-owned profile page.</summary>
+    public event Action<OctopusScenarioHostProfile> HostProfileRequested;
+
+    protected bool RequestHostProfile(OctopusScenarioHostProfile profile)
+    {
+        HostProfile = profile;
+        var handler = HostProfileRequested;
+        if (handler == null) return false;
+        handler(profile);
+        return true;
+    }
 
     /// <summary>The catalogue's nth preset test id, 1-based, exactly as pm-tools spells it.</summary>
     protected string PresetTestId(int oneBasedIndex)
@@ -204,8 +295,14 @@ public abstract class OctopusScenarioPilot
     /// <summary>Publishes a new result line.</summary>
     protected void Report(string line)
     {
+        IsRunning = false;
+        Publish(line);
+    }
+
+    private void Publish(string line)
+    {
         Result = line;
-        var handler = ResultChanged;
+        var handler = _resultChanged;
         if (handler != null) handler(line);
     }
 }
@@ -225,6 +322,26 @@ public static class OctopusScenarioPilots
         "connection",
         "customEvents",
         "locale",
+        "theme",
+        "refreshEntitlements",
+        "termsAcceptance",
+        "profileFieldsLock",
+        "communityData",
+        "groups",
+        "syncFollowGroups",
+        "groupAccessDenied",
+        "communityAccess",
+        "contentOptions",
+        "reactions",
+        "bridge",
+        "createPost",
+        "events",
+        "trackABTests",
+        "forceOctopusABTests",
+        "lifecycle",
+        "notSeenNotifications",
+        "pushNotifications",
+        "initialScreen",
     };
 
     /// <summary>Whether <paramref name="scenarioId"/> has a scenario screen in this sample.</summary>
@@ -245,10 +362,58 @@ public static class OctopusScenarioPilots
     {
         switch (scenarioId)
         {
+            case "initialScreen": return new InitialScreenScenario();
             case "connection": return new ConnectionScenario();
             case "customEvents": return new CustomEventsScenario();
             case "locale": return new LocaleScenario();
+            case "communityData": return new CommunityDataScenario();
+            case "profileFieldsLock": return new ProfileFieldsLockScenario();
+            case "termsAcceptance": return new TermsAcceptanceScenario();
+            case "refreshEntitlements": return new RefreshEntitlementsScenario();
+            case "theme": return new ThemeScenario();
+            case "groups": return new GroupsScenario();
+            case "syncFollowGroups": return new SyncFollowGroupsScenario();
+            case "groupAccessDenied": return new GroupAccessDeniedScenario();
+            case "communityAccess": return new CommunityAccessScenario();
+            case "contentOptions": return new ContentOptionsScenario();
+            case "reactions": return new ReactionsScenario();
+            case "bridge": return new BridgeScenario();
+            case "createPost": return new CreatePostScenario();
+            case "events": return new EventsScenario();
+            case "trackABTests": return new TrackABTestsScenario();
+            case "forceOctopusABTests": return new ForceOctopusABTestsScenario();
+            case "lifecycle": return new LifecycleScenario();
+            case "notSeenNotifications": return new NotSeenNotificationsScenario();
+            case "pushNotifications": return new PushNotificationsScenario();
             default: return null;
         }
+    }
+}
+
+/// <summary>View-agnostic destination data for the catalogue's host-rendered profile preset.</summary>
+public sealed class OctopusScenarioHostProfile
+{
+    public string ClientUserId { get; private set; }
+    public OctopusCommunityData Data { get; private set; }
+    public string Error { get; private set; }
+    public bool IsLoading { get; private set; }
+    public string ResultTestId
+    {
+        get { return Error != null ? "clientProfile-error" : Data == null ? "clientProfile-unknown" : "clientProfile-data"; }
+    }
+    public event Action Changed;
+
+    public OctopusScenarioHostProfile(string clientUserId)
+    {
+        ClientUserId = clientUserId;
+        IsLoading = true;
+    }
+
+    public void Complete(OctopusCommunityData data, string error = null)
+    {
+        Data = data;
+        Error = error;
+        IsLoading = false;
+        if (Changed != null) Changed();
     }
 }

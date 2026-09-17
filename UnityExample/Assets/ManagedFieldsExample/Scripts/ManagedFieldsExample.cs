@@ -89,6 +89,14 @@ public class ManagedFieldsExample : MonoBehaviour
     public async void OpenOctopus()
     {
         if (IsLoading) return;
+        string reason;
+        if (!OctopusSampleTokenProvider.CanConnect(config, out reason))
+        {
+            MessageContent = reason;
+            UpdateUI();
+            OctopusSampleLog.Current.LogStateChange("[OctopusQA] scene=ManagedFields state=refused", reason);
+            return;
+        }
         if(NicknameInput.text.Length == 0)
         {
             MessageContent = "Missing Nickname";
@@ -123,7 +131,9 @@ public class ManagedFieldsExample : MonoBehaviour
 
     public async Task<string> GetToken()
     {
+        var profile = config;
+        var provider = new OctopusSampleTokenProvider(profile);
         await Task.Delay(1);
-        return config.authToken;
+        return provider.GetToken(profile.userId, profile.entitlements);
     }
 }

@@ -29,7 +29,7 @@ UnityPackage/                 the published UPM package — the ONLY thing integ
 UnityExample/                 demo Unity project, references UnityPackage via a local path
 AndroidBridge/                Gradle project producing octopus-bridge.aar (private only)
 ci/                           local + CI gates (compile-check, native-pins, bridge-contract, mirror-export-guard)
-Scripts/                      release tooling, incl. the mirror push
+Scripts/                      release tooling, local Unity gates and CI attestation checker (private only)
 ```
 
 Full architecture, module boundaries and API-stability rules: [CLAUDE.md](CLAUDE.md).
@@ -45,8 +45,10 @@ Full architecture, module boundaries and API-stability rules: [CLAUDE.md](CLAUDE
 | `actionlint` | linting `.github/workflows/*.yml` | Installed via Homebrew (`brew install actionlint`) or the pinned release CI downloads (see `workflow-lint` job in `pr.yml`) |
 
 No Unity licence is required for the compile gate, the native-pin check, the bridge-contract
-check or the mirror-export guard — only for actually opening `UnityExample/` or running the
-EditMode tests.
+check or the mirror-export guard — only for actually opening `UnityExample/`, running the
+EditMode tests, or building a player. The Editor never runs in CI by decision of 2026-09-16;
+no licensed Unity Editor is provisioned for CI. Contributors run the Editor locally and
+paste the local-gates attestation in the PR body; CI validates that report.
 
 ## Local gates, in the order `pr.yml` runs them
 
@@ -84,21 +86,47 @@ permutations, native-pins and bridge-contract were both coherent, mirror-export 
 export clean (no known secret name or credential-shaped string — the file count it prints
 moves with every commit, so quote the one you see), and `actionlint` reported nothing.
 
-**EditMode tests are not part of any of the gates above and are not run by CI** — no runner in
-this org has a licensed Unity Editor. Run them yourself before touching logic they cover:
+### Unity local gates (every contributor)
+
+Run from your locally licensed Unity installation before opening a PR:
 
 ```bash
-/Applications/Unity/Hub/Editor/<version-from-ProjectVersion.txt>/Unity.app/Contents/MacOS/Unity \
-  -batchmode -nographics \
-  -projectPath UnityExample \
-  -runTests -testPlatform EditMode \
-  -testResults UnityExample/TestResults-EditMode.xml \
-  -logFile -
+Scripts/unity-local-gates.sh
+# Include the sample Android debug build when verifying Android changes:
+Scripts/unity-local-gates.sh --android
 ```
 
-Do not add `-quit` — Unity exits on its own after `-runTests`, and combining the two can
-truncate the run before results are written. State whether you ran them in the PR's test plan;
-silence there reads as "verified" and is not.
+The script resolves the Editor from `UnityExample/ProjectSettings/ProjectVersion.txt` under
+Unity Hub on macOS; contributors on other platforms or with a non-Hub installation must set
+`UNITY_EDITOR` to the executable for that version. Python 3 is
+required to parse the NUnit XML. It runs the compile gate when `dotnet` is on PATH (otherwise
+warns, since CI always runs it), then EditMode without `-quit`. Results XML is temporary;
+`UnityExample/Logs/local-gates-editmode.log` is retained. A missing Editor, failing step,
+zero tests or any result other than all tests passed prevents an attestation. Before the
+Editor runs, it requires a clean `UnityPackage/` and `UnityExample/` (ignored logs and builds
+are excluded); commit or discard existing changes and rerun. After EditMode and the optional
+Android build, including failed invocations, it restores and lists tracked files changed by
+Unity serialization, saving their diffs before restoration to the gitignored
+`UnityExample/Logs/local-gates-restored.diff` (reset at the start of each run). Untracked files
+and staged changes created by the run are listed and left for inspection, and prevent an
+attestation. Failed steps report their log path before these diagnostics. A final clean-tree
+check guards any remaining changes.
+
+`--android` requires Android Build Support and the sample's local demo Firebase configuration.
+It invokes `BuildScript.BuildAndroidDebug` with `OCTOPUS_INTERNAL=true`, uses debug signing,
+and reports `UnityExample/build/android/UnityExample.apk`. The build log is retained at
+`UnityExample/Logs/local-gates-android.log`; no store signing credentials are required.
+
+Paste the single emitted attestation line under **`### Unity local gates`** in the PR body.
+For PRs touching neither `UnityPackage/` nor `UnityExample/`, write `not needed: <reason>`.
+The `Unity local gates` workflow (`unity-gates-guard.yml`), job `Unity local gates (attestation)`,
+checks changed paths, counts, Editor version and commit ancestry. It fails if Unity files
+changed without valid evidence; `not needed:` cannot bypass this. Body edits re-trigger only
+this validation, not `pr.yml`. An earlier PR commit is accepted with a notice only if no
+Unity files changed since that commit; otherwise rerun the local gates.
+
+This is a contributor attestation, not an independently executed test result. The check is
+initially non-required in branch protection; promotion follows observed green and red runs.
 
 ### If you touched `AndroidBridge/`
 

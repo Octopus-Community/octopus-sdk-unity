@@ -1,5 +1,6 @@
 import Foundation
-import Octopus
+@_spi(OctopusInternalTesting) import Octopus
+import OctopusCore
 import OctopusUI
 import SwiftUI
 import UIKit
@@ -12,6 +13,7 @@ private let PROFILE_FIELD_BIO: Int32 = 1
 private let PROFILE_FIELD_PICTURE: Int32 = 2
 
 private var octopus: OctopusSDK?
+private var lifecycleUsesSSO = false
 private weak var presentedViewController: UIViewController?
 private var tokenCheckedContinuation: CheckedContinuation<String, Never>?
 private var lightColorScheme: OctopusTheme.Colors?
@@ -40,12 +42,46 @@ private var octopusController: OctopusHostingController?
 private var octopusControllerShowsMainFeed = false
 var notSeenNotifCancellable: AnyCancellable?
 var groupsCancellable: AnyCancellable?
+private var profileCancellable: AnyCancellable?
 var eventsCancellable: AnyCancellable?
 var communityAccessCancellable: AnyCancellable?
 
 // Toggled from C# (OctopusSdkSetUrlInterceptionEnabled). When false the SDK opens URLs
 // itself (in-app browser); when true taps are forwarded to Unity for the host to decide.
 private var urlInterceptionEnabled = false
+private var profileInterceptionEnabled = false
+private var octopusControllerNavigationMode: Int32 = -1
+
+@_cdecl("OctopusSdkSetProfileInterceptionEnabled")
+public func OctopusSdkSetProfileInterceptionEnabled(enabled: Int32) {
+    DispatchQueue.main.async {
+        profileInterceptionEnabled = enabled != 0
+        configureProfileInterception()
+    }
+}
+
+private func configureProfileInterception() {
+    guard profileInterceptionEnabled else {
+        octopus?.set(onNavigateToProfileCallback: nil)
+        return
+    }
+    octopus?.set(onNavigateToProfileCallback: { clientUserId in
+        // Dismiss completely so Unity's player loop is resumed before delivering the tap.
+        Task { @MainActor in
+            await discardLifecycleUI()
+            let data = try? JSONSerialization.data(withJSONObject: ["clientUserId": clientUserId])
+            if let data, let json = String(data: data, encoding: .utf8) {
+                sendUnityMessage("OctopusChannel", "OnNavigateToProfile", json)
+            }
+        }
+    })
+}
+
+private func decodeNavigationMode(_ code: Int32, profile: Bool = false) -> OctopusNavigationMode {
+    // -1 preserves each screen's own default. Unity `Automatic` names the automatic container, `NavigationStack` the navigationStack one.
+    if code == 0 || (code == -1 && profile) { return .navigationStack }
+    return .automatic
+}
 
 // MARK: - Loop-independent lane (reverse P/Invoke)
 // The Swift→C# direction. C# registers these once at Initialize; we call them directly (off the
@@ -81,6 +117,7 @@ private struct OctopusBridgeRootView: View {
     let navBarTitle: OctopusMainFeedTitle?
     let coloredNavBar: Bool
     let initialScreen: OctopusInitialScreen
+    let navigationMode: OctopusNavigationMode
     @Binding var notificationUserInfo: [AnyHashable: Any]?
     let theme: OctopusTheme
 
@@ -90,6 +127,7 @@ private struct OctopusBridgeRootView: View {
             mainFeedNavBarTitle: navBarTitle,
             mainFeedColoredNavBar: coloredNavBar,
             initialScreen: initialScreen,
+            navigationMode: navigationMode,
             notificationUserInfo: $notificationUserInfo
         )
         .environment(\.octopusTheme, theme)
@@ -114,71 +152,87 @@ public func OctopusSdkInitialize(
         let configuration: OctopusSDK.Configuration =
             hostStr.isEmpty ? .init()
                             : .init(apiServer: try .init(host: hostStr, port: Int(apiServerPort)))
+        communityDataCancellable = nil
         octopus = try OctopusSDK(apiKey: key, connectionMode: connMode, configuration: configuration)
-        octopus?.set(onNavigateToURLCallback: { url in
-            // Resolve the strategy SYNCHRONOUSLY over the loop-independent lane (mirrors Android's
-            // resolveUrlStrategy): the host's NavigateToUrlHandler runs in C# off the player loop, so
-            // it works while Octopus is shown and the loop is paused — no UnitySendMessage round-trip,
-            // no tearing down the UI to flush it. Codes match UrlOpeningStrategy.
-            guard urlInterceptionEnabled, let resolve = urlStrategyCallback else {
-                return .handledByOctopus
-            }
-            let urlString = url.absoluteString
-            let strategy = urlString.withCString { resolve($0) }
-            if strategy == 0 {
-                // HandledByApp → the host takes over: leave the community (dismiss resumes the loop).
-                OctopusSdkClose(keepState: true)
-            } else {
-                // HandledByOctopus → open the device's system browser; the community STAYS open
-                // (matches Android's openUrlInOctopus). Return .handledByApp below so the SDK does not
-                // also open its own in-app browser.
-                urlString.withCString { OctopusSdkOpenUrlInOctopus(url: $0) }
-            }
-            return .handledByApp
-        })
-        octopus?.set(displayClientObjectCallback: { objectId in
-            // Always a "leave Octopus" action → dismiss (resumes the loop), then notify.
-            OctopusSdkClose(keepState: true)
-            sendUnityMessage("OctopusChannel", "OnNavigateToClientObject", objectId)
-        })
-        // Unity's Bundle.main doesn't include .lproj folders for all languages,
-        // so the SDK's default language detection (Bundle.main.preferredLocalizations)
-        // returns "en" regardless of the device language.
-        // Override with the actual device locale so gRPC Accept-Language header is correct.
-        octopus?.overrideDefaultLocale(with: Locale.current)
-        notSeenNotifCancellable = octopus?.$notSeenNotificationsCount.sink { count in
-            sendUnityMessage("OctopusChannel", "OnNotSeenNotificationsCount", String(count) )
-        }
-        groupsCancellable = octopus?.$groups.sink { groups in
-            sendUnityMessage("OctopusChannel", "OnGroupsChanged", groupsToJson(groups))
-        }
-        communityAccessCancellable = octopus?.$hasAccessToCommunity.sink { hasAccess in
-            sendUnityMessage("OctopusChannel", "OnHasAccessToCommunity", hasAccess ? "true" : "false")
-        }
-        eventsCancellable = octopus?.eventPublisher.sink { event in
-            let json = eventToJson(event)
-            // Loop-independent lane: delivers even while the Octopus UI is up and the loop is paused.
-            if let cb = eventCallback {
-                json.withCString { cb($0) }
-            } else {
-                sendUnityMessage("OctopusChannel", "OnOctopusEventJson", json)
-            }
-        }
+        lifecycleUsesSSO = String(cString: connectionMode) == "sso"
+        configureLifecycleBridge()
     } catch {
         print("Octopus Init Error: \(error)")
     }
 }
 
+private func configureLifecycleBridge() {
+    bindCommunityDataObservation()
+    configureProfileInterception()
+    clearClientPostSession()
+    octopus?.set(onNavigateToURLCallback: { url in
+        // Resolve the strategy SYNCHRONOUSLY over the loop-independent lane (mirrors Android's
+        // resolveUrlStrategy): the host's NavigateToUrlHandler runs in C# off the player loop, so
+        // it works while Octopus is shown and the loop is paused — no UnitySendMessage round-trip,
+        // no tearing down the UI to flush it. Codes match UrlOpeningStrategy.
+        guard urlInterceptionEnabled, let resolve = urlStrategyCallback else {
+            return .handledByOctopus
+        }
+        let urlString = url.absoluteString
+        let strategy = urlString.withCString { resolve($0) }
+        if strategy == 0 {
+            // HandledByApp → the host takes over: leave the community (dismiss resumes the loop).
+            OctopusSdkClose(keepState: true)
+        } else {
+            // HandledByOctopus → open the device's system browser; the community STAYS open
+            // (matches Android's openUrlInOctopus). Return .handledByApp below so the SDK does not
+            // also open its own in-app browser.
+            urlString.withCString { OctopusSdkOpenUrlInOctopus(url: $0) }
+        }
+        return .handledByApp
+    })
+    octopus?.set(displayClientObjectCallback: { objectId in
+        // Always a "leave Octopus" action → dismiss (resumes the loop), then notify.
+        OctopusSdkClose(keepState: true)
+        sendUnityMessage("OctopusChannel", "OnNavigateToClientObject", objectId)
+    })
+    octopus?.set(groupAccessDeniedCallback: { groupId in
+        sendUnityMessage("OctopusChannel", "OnGroupAccessDenied", groupId)
+    })
+    // Unity's Bundle.main doesn't include .lproj folders for all languages,
+    // so the SDK's default language detection (Bundle.main.preferredLocalizations)
+    // returns "en" regardless of the device language.
+    // Override with the actual device locale so gRPC Accept-Language header is correct.
+    octopus?.overrideDefaultLocale(with: Locale.current)
+    notSeenNotifCancellable = octopus?.$notSeenNotificationsCount.sink { count in
+        sendUnityMessage("OctopusChannel", "OnNotSeenNotificationsCount", String(count) )
+    }
+    profileCancellable?.cancel()
+    profileCancellable = octopus?.$profile.sink { profile in
+        sendUnityMessage("OctopusChannel", "OnProfileChanged", profileToJson(profile))
+    }
+    groupsCancellable = octopus?.$groups.sink { groups in
+        sendUnityMessage("OctopusChannel", "OnGroupsChanged", groupsToJson(groups))
+    }
+    communityAccessCancellable = octopus?.$hasAccessToCommunity.sink { hasAccess in
+        sendUnityMessage("OctopusChannel", "OnHasAccessToCommunity", hasAccess ? "true" : "false")
+    }
+    eventsCancellable = octopus?.eventPublisher.sink { event in
+        let json = eventToJson(event)
+        // Loop-independent lane: delivers even while the Octopus UI is up and the loop is paused.
+        if let cb = eventCallback {
+            json.withCString { cb($0) }
+        } else {
+            sendUnityMessage("OctopusChannel", "OnOctopusEventJson", json)
+        }
+    }
+}
+
 private func parseConnectionMode(
     _ connectionMode: UnsafePointer<Int8>, _ fieldsPtr: UnsafePointer<Int32>, _ fieldsCount: Int32
-) -> ConnectionMode {
+) -> Octopus.ConnectionMode {
     let deepLink: String? = nil
     let mode = String(cString: connectionMode)
     let fieldsBuf = UnsafeBufferPointer(
         start: fieldsPtr,
         count: Int(fieldsCount)
     )
-    let fields: Set<ConnectionMode.SSOConfiguration.ProfileField> =
+    let fields: Set<Octopus.ConnectionMode.SSOConfiguration.ProfileField> =
         Set(
             fieldsBuf.compactMap { fieldValue in
                 switch fieldValue {
@@ -211,7 +265,7 @@ private func parseConnectionMode(
     return .octopus(deepLink: deepLink)
 }
 
-private func fieldToString(_ profileField: ConnectionMode.SSOConfiguration.ProfileField?) -> String?
+private func fieldToString(_ profileField: Octopus.ConnectionMode.SSOConfiguration.ProfileField?) -> String?
 {
     switch profileField {
     case .nickname:
@@ -226,21 +280,21 @@ private func fieldToString(_ profileField: ConnectionMode.SSOConfiguration.Profi
 }
 
 @_cdecl("OctopusSdkOpen")
-public func OctopusSdkOpen(payloadJson: UnsafePointer<Int8>) {
+public func OctopusSdkOpen(payloadJson: UnsafePointer<Int8>, navigationMode: Int32) {
     let json = String(cString: payloadJson)
-    presentHome(initialScreen: .mainFeed, payloadJson: json.isEmpty ? nil : json)
+    presentHome(initialScreen: .mainFeed, payloadJson: json.isEmpty ? nil : json, navigationMode: navigationMode)
 }
 
 @_cdecl("OctopusSdkOpenGroup")
-public func OctopusSdkOpenGroup(groupId: UnsafePointer<Int8>) {
+public func OctopusSdkOpenGroup(groupId: UnsafePointer<Int8>, navigationMode: Int32) {
     let gid = String(cString: groupId)
-    presentHome(initialScreen: gid.isEmpty ? .mainFeed : .group(.init(groupId: gid)), payloadJson: nil)
+    presentHome(initialScreen: gid.isEmpty ? .mainFeed : .group(.init(groupId: gid)), payloadJson: nil, navigationMode: navigationMode)
 }
 
 @_cdecl("OctopusSdkOpenPost")
-public func OctopusSdkOpenPost(postId: UnsafePointer<Int8>) {
+public func OctopusSdkOpenPost(postId: UnsafePointer<Int8>, navigationMode: Int32) {
     let pid = String(cString: postId)
-    presentHome(initialScreen: pid.isEmpty ? .mainFeed : .post(.init(postId: pid)), payloadJson: nil)
+    presentHome(initialScreen: pid.isEmpty ? .mainFeed : .post(.init(postId: pid)), payloadJson: nil, navigationMode: navigationMode)
 }
 
 // Builds the bridge-share signing closure handed to OctopusPrefilledPost. Defined out-of-line so
@@ -266,7 +320,7 @@ private func makeBridgeShareSignClosure() -> @Sendable (_ bridgeFingerprint: Str
 @_cdecl("OctopusSdkOpenCreatePost")
 public func OctopusSdkOpenCreatePost(
     text: UnsafePointer<Int8>, topicId: UnsafePointer<Int8>, imagePath: UnsafePointer<Int8>,
-    ctaLabel: UnsafePointer<Int8>, ctaUrl: UnsafePointer<Int8>, hasSigner: Int32
+    ctaLabel: UnsafePointer<Int8>, ctaUrl: UnsafePointer<Int8>, hasSigner: Int32, navigationMode: Int32
 ) {
     let textStr = String(cString: text)
     let topicStr = String(cString: topicId)
@@ -321,7 +375,7 @@ public func OctopusSdkOpenCreatePost(
                 info = .init(prefilledPost: nil)
             }
         }
-        presentHome(initialScreen: .createPost(info), payloadJson: nil)
+        presentHome(initialScreen: .createPost(info), payloadJson: nil, navigationMode: navigationMode)
     }
 }
 
@@ -339,7 +393,33 @@ public func OctopusSdkOpenUrlInOctopus(url: UnsafePointer<Int8>) {
     }
 }
 
-private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: String?) {
+@_cdecl("OctopusSdkOpenProfile")
+public func OctopusSdkOpenProfile(clientUserId: UnsafePointer<Int8>, navigationMode: Int32) {
+    let id = String(cString: clientUserId).trimmingCharacters(in: .whitespacesAndNewlines)
+    presentHome(initialScreen: .mainFeed, payloadJson: nil, navigationMode: navigationMode,
+                opensProfile: true, profileClientUserId: id.isEmpty ? nil : id)
+}
+
+@_cdecl("OctopusSdkOpenActivity")
+public func OctopusSdkOpenActivity(navigationMode: Int32) {
+    DispatchQueue.main.async {
+        let screen: OctopusInitialScreen
+        // `core` is package-visible in the Swift SDK; same reflection as React Native and
+        // the debug config endpoint below, confined to reading the current profile id.
+        if let sdk = octopus,
+           let core = Mirror(reflecting: sdk).children.first(where: { $0.label == "core" })?.value as? OctopusSDKCore,
+           let id = core.profileRepository.profile?.id {
+            screen = .activity(.init(profileId: id))
+        } else {
+            screen = .mainFeed
+        }
+        presentHome(initialScreen: screen, payloadJson: nil, navigationMode: navigationMode)
+    }
+}
+
+private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: String?,
+                         navigationMode: Int32 = -1, opensProfile: Bool = false,
+                         profileClientUserId: String? = nil) {
     // Decode the octopus payload (if any) into the userInfo["data"] shape the SDK expects.
     var userInfo: [AnyHashable: Any]? = nil
     if let payloadJson,
@@ -354,8 +434,8 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
         // destination, a notification payload, or a main-feed request that follows a
         // non-feed screen (e.g. the create-post composer) rebuilds it — otherwise a stale
         // screen would be re-presented.
-        let wantsMainFeed = (userInfo == nil) && isMainFeed(initialScreen)
-        if !wantsMainFeed || !octopusControllerShowsMainFeed {
+        let wantsMainFeed = !opensProfile && (userInfo == nil) && isMainFeed(initialScreen)
+        if !wantsMainFeed || !octopusControllerShowsMainFeed || octopusControllerNavigationMode != navigationMode {
             octopusController?.dismiss(animated: false)
             octopusController = nil
         }
@@ -387,6 +467,7 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
                 navBarTitle: navBarTitle,
                 coloredNavBar: navBarUsesPrimaryColor,
                 initialScreen: effectiveScreen,
+                navigationMode: decodeNavigationMode(navigationMode),
                 notificationUserInfo: Binding(
                     get: { pendingNotificationUserInfo },
                     set: { pendingNotificationUserInfo = $0 }
@@ -397,9 +478,21 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
                     assets: .init(logo: logo)
                 )
             )
-            octopusController = OctopusHostingController(rootView: AnyView(root))
+            let view: AnyView
+            if opensProfile {
+                view = AnyView(OctopusProfileScreen(
+                    octopus: sdk, clientUserId: profileClientUserId,
+                    navigationMode: decodeNavigationMode(navigationMode, profile: true),
+                    navBarLeadingAction: .close(onTap: { OctopusSdkClose() })
+                ).environment(\.octopusTheme, OctopusTheme(
+                    colors: effectiveColorScheme, fonts: themeFonts, assets: .init(logo: logo))))
+            } else {
+                view = AnyView(root)
+            }
+            octopusController = OctopusHostingController(rootView: view)
+            octopusControllerNavigationMode = navigationMode
             octopusController?.modalPresentationStyle = .fullScreen
-            octopusControllerShowsMainFeed = isMainFeed(effectiveScreen)
+            octopusControllerShowsMainFeed = !opensProfile && isMainFeed(effectiveScreen)
         }
 
         if octopusController?.presentingViewController == nil {
@@ -430,6 +523,186 @@ public func OctopusSdkClose(keepState: Bool = true) {
             octopusController = nil
             pendingNotificationUserInfo = nil
         }
+    }
+}
+
+// MARK: - Community data (#167)
+
+private var communityDataCancellable: AnyCancellable?
+private var observingCommunityData = false
+private var communityDataProfileId: String?
+private var communityDataClientUserId: String?
+
+private func communityDataToJson(_ data: OctopusCommunityData?) -> String {
+    guard let data else { return "null" }
+    var fields: [String: Any] = [
+        "profileId": data.profileId,
+        "messageCount": data.messageCount.map { $0 as Any } ?? NSNull(),
+        "gamification": NSNull()
+    ]
+    if let standing = data.gamification {
+        fields["gamification"] = [
+            "level": standing.level,
+            "score": standing.score.map { $0 as Any } ?? NSNull()
+        ] as [String: Any]
+    }
+    guard let bytes = try? JSONSerialization.data(withJSONObject: fields),
+          let json = String(data: bytes, encoding: .utf8) else { return "null" }
+    return json
+}
+
+private func bindCommunityDataObservation() {
+    communityDataCancellable = nil
+    guard observingCommunityData, let sdk = octopus else { return }
+    let publisher: AnyPublisher<OctopusCommunityData?, Never>
+    if let profileId = communityDataProfileId {
+        publisher = sdk.communityDataPublisher(profileId: profileId)
+    } else if let clientUserId = communityDataClientUserId {
+        publisher = sdk.communityDataPublisher(clientUserId: clientUserId)
+    } else { return }
+    communityDataCancellable = publisher.sink { data in
+        sendUnityMessage("OctopusChannel", "OnCommunityDataChanged", communityDataToJson(data))
+    }
+}
+
+private func stopCommunityDataObservation() {
+    observingCommunityData = false
+    communityDataProfileId = nil
+    communityDataClientUserId = nil
+    communityDataCancellable = nil
+}
+
+private func isValidCommunityMemberId(_ profileId: String?, _ clientUserId: String?) -> Bool {
+    (profileId != nil) != (clientUserId != nil) && profileId != "" && clientUserId != ""
+}
+
+@_cdecl("OctopusSdkStartObservingCommunityData")
+public func OctopusSdkStartObservingCommunityData(profileId: UnsafePointer<CChar>?, clientUserId: UnsafePointer<CChar>?) {
+    // Copy borrowed nullable C strings before scheduling work.
+    let profile = profileId.map { String(cString: $0) }
+    let client = clientUserId.map { String(cString: $0) }
+    guard isValidCommunityMemberId(profile, client) else { return }
+    DispatchQueue.main.async {
+        communityDataProfileId = profile
+        communityDataClientUserId = client
+        observingCommunityData = true
+        bindCommunityDataObservation()
+    }
+}
+
+@_cdecl("OctopusSdkStopObservingCommunityData")
+public func OctopusSdkStopObservingCommunityData() {
+    DispatchQueue.main.async { stopCommunityDataObservation() }
+}
+
+@_cdecl("OctopusSdkFetchCommunityData")
+public func OctopusSdkFetchCommunityData(requestId: Int32, profileId: UnsafePointer<CChar>?, clientUserId: UnsafePointer<CChar>?) {
+    let profile = profileId.map { String(cString: $0) }
+    let client = clientUserId.map { String(cString: $0) }
+    Task { @MainActor in
+        guard let sdk = octopus else {
+            sendUnityMessage("OctopusChannel", "OnFetchCommunityDataError", "\(requestId)\nSDK is not initialized.")
+            return
+        }
+        guard isValidCommunityMemberId(profile, client) else {
+            sendUnityMessage("OctopusChannel", "OnFetchCommunityDataError", "\(requestId)\nExactly one nonempty member id is required.")
+            return
+        }
+        do {
+            let data: OctopusCommunityData?
+            if let profile {
+                data = try await sdk.fetchCommunityData(profileId: profile)
+            } else if let client {
+                data = try await sdk.fetchCommunityData(clientUserId: client)
+            } else { return }
+            sendUnityMessage("OctopusChannel", "OnFetchCommunityDataResult", "\(requestId)\n\(communityDataToJson(data))")
+        } catch {
+            sendUnityMessage("OctopusChannel", "OnFetchCommunityDataError", "\(requestId)\nCould not fetch community data.")
+        }
+    }
+}
+
+// MARK: - Lifecycle (#161)
+
+// Finish dismissal before releasing a controller: viewDidDisappear restores Unity's loop/orientation.
+@MainActor
+private func discardLifecycleUI() async {
+    if let controller = octopusController, controller.presentingViewController != nil {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            controller.dismiss(animated: false) { continuation.resume() }
+        }
+    }
+    octopusController = nil
+    octopusControllerShowsMainFeed = false
+    pendingNotificationUserInfo = nil
+}
+
+@_cdecl("OctopusSdkSwitchCommunity")
+public func OctopusSdkSwitchCommunity(
+    requestId: Int32, apiKey: UnsafePointer<Int8>, connectionMode: UnsafePointer<Int8>,
+    appManagedFields: UnsafePointer<Int32>, appManagedFieldsCount: Int32
+) {
+    // Copy borrowed C strings/arrays before crossing the asynchronous boundary.
+    let key = String(cString: apiKey)
+    let mode = parseConnectionMode(connectionMode, appManagedFields, appManagedFieldsCount)
+    let usesSSO = String(cString: connectionMode) == "sso"
+    Task { @MainActor in
+        clearClientPostSession()
+        await discardLifecycleUI()
+        do {
+            communityDataCancellable = nil
+            if let current = octopus {
+                try await current.switchCommunity(apiKey: key, connectionMode: mode)
+            } else {
+                octopus = try OctopusSDK(apiKey: key, connectionMode: mode, configuration: .init())
+            }
+            lifecycleUsesSSO = usesSSO
+            configureLifecycleBridge()
+            sendUnityMessage("OctopusChannel", "OnLifecycleResult", "\(requestId)\n")
+        } catch {
+            sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\nCommunity switch failed.")
+        }
+    }
+}
+
+@_cdecl("OctopusSdkReset")
+public func OctopusSdkReset(requestId: Int32) {
+    Task { @MainActor in
+        clearClientPostSession()
+        stopCommunityDataObservation()
+        await discardLifecycleUI()
+        do {
+            // MagicLinkConnectionRepository.disconnectUser traps (not throws) in 1.13.2.
+            // Do not reproduce the Flutter/RN wrapper crash for Octopus Auth.
+            if octopus != nil && !lifecycleUsesSSO {
+                sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\nReset requires SSO on iOS 1.13.2.")
+                return
+            }
+            try await octopus?.disconnectUser()
+            sendUnityMessage("OctopusChannel", "OnLifecycleResult", "\(requestId)\n")
+        } catch {
+            sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\nReset failed.")
+        }
+    }
+}
+
+@_cdecl("OctopusSdkStop")
+public func OctopusSdkStop(requestId: Int32) {
+    Task { @MainActor in
+        clearClientPostSession()
+        stopCommunityDataObservation()
+        await discardLifecycleUI()
+        // iOS has no public stop primitive. Best-effort disconnect, then release bridge ownership.
+        do { if lifecycleUsesSSO { try await octopus?.disconnectUser() } }
+        catch { print("[Octopus SDK] Stop: disconnection failed; releasing SDK instance.") }
+        notSeenNotifCancellable = nil
+        groupsCancellable = nil
+        profileCancellable = nil
+        eventsCancellable = nil
+        communityAccessCancellable = nil
+        octopus = nil
+        lifecycleUsesSSO = false
+        sendUnityMessage("OctopusChannel", "OnLifecycleResult", "\(requestId)\n")
     }
 }
 
@@ -483,6 +756,75 @@ public func OctopusSdkConnectUser(
         // Always signal completion so the Unity-side connect callback resolves.
         sendUnityMessage("OctopusChannel", "OnConnectUserCompleted", "")
     }
+}
+
+// Typed connection lane (#168). Legacy completion and its export above remain unchanged.
+@_cdecl("OctopusSdkConnectUserWithResult")
+public func OctopusSdkConnectUserWithResult(
+    requestId: Int32, userId: UnsafePointer<Int8>, nickname: UnsafePointer<Int8>,
+    bio: UnsafePointer<Int8>, picture: UnsafePointer<Int8>
+) {
+    let userIdStr = String(cString: userId)
+    let nicknameStr = String(cString: nickname)
+    let bioStr = String(cString: bio)
+    let pictureStr = String(cString: picture)
+    Task {
+        guard let sdk = octopus else {
+            sendConnectUserFailure(requestId, code: "other", message: "Call initialize() first")
+            return
+        }
+        guard lifecycleUsesSSO else {
+            sendConnectUserFailure(requestId, code: "other", message: "ConnectUser requires SSO mode")
+            return
+        }
+        let pictureData = await fetchImageData(fromPathOrUrl: pictureStr)
+        do {
+            try await sdk.connectUser(
+                ClientUser(userId: userIdStr, profile: ClientUser.Profile(
+                    nickname: nicknameStr, bio: bioStr, picture: pictureData)),
+                tokenProvider: {
+                    await withCheckedContinuation { continuation in
+                        tokenCheckedContinuation?.resume(returning: "")
+                        tokenCheckedContinuation = continuation
+                        if let cb = tokenRequestCallback { cb() }
+                        else { sendUnityMessage("OctopusChannel", "OnTokenRequested", "") }
+                    }
+                }
+            )
+            sendUnityMessage("OctopusChannel", "OnConnectUserSucceeded", "\(requestId)\n")
+        } catch let error as OctopusConnectUserError {
+            let code: String
+            let message: String
+            switch error {
+            case let .userBanned(reason):
+                code = "userBanned"
+                message = reason
+            case let .profileError(errors):
+                code = "profileError"
+                message = errors.isEmpty ? "The supplied profile was rejected" : errors.map { detail in
+                    (detail.field.map { "\($0): " } ?? "") + detail.message
+                }.joined(separator: "\n")
+            case .jwtError:
+                code = "invalidToken"
+                message = String(describing: error)
+            case .communityAccessDenied:
+                code = "communityAccessDenied"
+                message = String(describing: error)
+            default:
+                code = "other"
+                message = String(describing: error)
+            }
+            sendConnectUserFailure(requestId, code: code, message: message)
+        } catch {
+            sendConnectUserFailure(requestId, code: "other", message: String(describing: error))
+        }
+    }
+}
+
+private func sendConnectUserFailure(_ requestId: Int32, code: String, message: String) {
+    let data = try? JSONSerialization.data(withJSONObject: ["code": code, "message": message])
+    let json = data.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    sendUnityMessage("OctopusChannel", "OnConnectUserFailed", "\(requestId)\n\(json)")
 }
 
 @_cdecl("OctopusSdkDisconnectUser")
@@ -837,6 +1179,111 @@ public func OctopusSdkUpdateNotSeenNotificationsCount() {
     }
 }
 
+// MARK: - Individual group following (#162)
+
+@_cdecl("OctopusSdkFollowGroup")
+public func OctopusSdkFollowGroup(requestId: Int32, groupId: UnsafePointer<Int8>) {
+    setGroupFollowing(requestId: requestId, groupId: String(cString: groupId), followed: true)
+}
+
+@_cdecl("OctopusSdkUnfollowGroup")
+public func OctopusSdkUnfollowGroup(requestId: Int32, groupId: UnsafePointer<Int8>) {
+    setGroupFollowing(requestId: requestId, groupId: String(cString: groupId), followed: false)
+}
+
+private func groupFollowUnfollowError(_ requestId: Int32, _ type: String, _ message: String) {
+    let data = try? JSONSerialization.data(withJSONObject: ["type": type, "message": message])
+    let json = data.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    sendUnityMessage("OctopusChannel", "OnGroupFollowUnfollowError", "\(requestId)\n\(json)")
+}
+
+private func setGroupFollowing(requestId: Int32, groupId: String, followed: Bool) {
+    // iOS 1.13.2 has no individual follow API. Match Flutter's one-action adapter.
+    Task {
+        guard let sdk = octopus else {
+            groupFollowUnfollowError(requestId, "unknown", "Call Initialize first")
+            return
+        }
+        do {
+            let action = OctopusSyncFollowGroup.Action(groupId: groupId, followed: followed, actionDate: Date())
+            let results = try await sdk.syncFollowGroups(actions: [action])
+            guard let result = results.first else {
+                groupFollowUnfollowError(requestId, "unknown", "Empty syncFollowGroups response")
+                return
+            }
+            switch result.status {
+            case .applied, .skipped:
+                sendUnityMessage("OctopusChannel", "OnGroupFollowUnfollowResult", "\(requestId)\n")
+            case .groupNotFound:
+                groupFollowUnfollowError(requestId, "missingGroup", "Group not found")
+            case .notFollowable, .notUnfollowable:
+                groupFollowUnfollowError(requestId, "unfollowableGroup", "Group follow state cannot be changed")
+            case .alreadyFollowed:
+                groupFollowUnfollowError(requestId, "groupAlreadyFollowed", "Group is already followed")
+            case .alreadyUnfollowed:
+                groupFollowUnfollowError(requestId, "groupAlreadyUnfollowed", "Group is already not followed")
+            case .unknownError:
+                groupFollowUnfollowError(requestId, "unknown", "Unknown server error")
+            @unknown default:
+                groupFollowUnfollowError(requestId, "unknown", "Unhandled group follow status")
+            }
+        } catch {
+            groupFollowUnfollowError(requestId, "unknown", String(describing: error))
+        }
+    }
+}
+
+// SetReaction uses the same request-id envelope as group operations.
+@_cdecl("OctopusSdkSetReaction")
+public func OctopusSdkSetReaction(requestId: Int32, contentId: UnsafePointer<Int8>, kind: UnsafePointer<Int8>) {
+    // Copy borrowed C strings before entering the asynchronous task.
+    let postId = String(cString: contentId)
+    let wireKind = String(cString: kind)
+    Task { @MainActor in
+        let reaction: OctopusReactionKind?
+        switch wireKind {
+        case "": reaction = nil
+        case "heart": reaction = .heart
+        case "joy": reaction = .joy
+        case "mouthOpen": reaction = .mouthOpen
+        case "clap": reaction = .clap
+        case "cry": reaction = .cry
+        case "rage": reaction = .rage
+        default:
+            sendSetReactionError(requestId, "unknownReaction", "Unknown reaction not permitted")
+            return
+        }
+        guard let sdk = octopus else {
+            sendSetReactionError(requestId, "reactionError", "Call initialize() first")
+            return
+        }
+        do {
+            try await sdk.set(reaction: reaction, postId: postId)
+            sendUnityMessage("OctopusChannel", "OnSetReactionResult", "\(requestId)\n")
+        } catch let error as OctopusSetReactionError {
+            // Typed-throws inference does not cross the Task closure: without this
+            // explicit cast `error` is `any Error` and the switch does not compile.
+            let type: String
+            switch error {
+            case .unknownReaction: type = "unknownReaction"
+            case .postNotFound: type = "postNotFound"
+            case .notConnected, .noNetwork, .serverError, .other: type = "reactionError"
+            @unknown default: type = "reactionError"
+            }
+            sendSetReactionError(requestId, type, String(reflecting: error))
+        } catch {
+            sendSetReactionError(requestId, "reactionError", String(describing: error))
+        }
+    }
+}
+
+private func sendSetReactionError(_ requestId: Int32, _ type: String, _ message: String) {
+    let data = try? JSONSerialization.data(withJSONObject: ["type": type, "message": message])
+    let json = data.flatMap { String(data: $0, encoding: .utf8) }
+        ?? "{\"type\":\"reactionError\",\"message\":\"SetReaction failed\"}"
+    sendUnityMessage("OctopusChannel", "OnSetReactionError", "\(requestId)\n\(json)")
+}
+
 @_cdecl("OctopusSdkSyncFollowGroups")
 public func OctopusSdkSyncFollowGroups(requestId: Int32, actionsJson: UnsafePointer<Int8>) {
     let json = String(cString: actionsJson)
@@ -904,7 +1351,8 @@ private func syncResultsToJson(_ results: [OctopusSyncFollowGroup.Result]) -> St
 
 private func groupsToJson(_ groups: [OctopusGroup]) -> String {
     jsonArrayString(groups.map {
-        ["id": $0.id, "name": $0.name, "isFollowed": $0.isFollowed, "canChangeFollowStatus": $0.canChangeFollowStatus]
+        ["id": $0.id, "name": $0.name, "isFollowed": $0.isFollowed, "canChangeFollowStatus": $0.canChangeFollowStatus,
+         "canAccess": $0.canAccess, "canCreateChildren": $0.canCreateChildren]
     })
 }
 
@@ -939,7 +1387,7 @@ public func OctopusSdkTrack(
     guard let values = values else { return }
     
     let nameStr = String(cString: name)
-    var props: [String: CustomEvent.PropertyValue] = [:]
+    var props: [String: Octopus.CustomEvent.PropertyValue] = [:]
     
     for i in 0..<Int(count) {
         let key = String(cString: keys[i]!)
@@ -948,7 +1396,7 @@ public func OctopusSdkTrack(
     }
     
     Task {
-        try await octopus?.track(customEvent: CustomEvent(
+        try await octopus?.track(customEvent: Octopus.CustomEvent(
             name: nameStr,
             properties: props
         ))
@@ -995,6 +1443,49 @@ public func OctopusSdkSetFonts(
         caption2: fontFrom(name: caption2Name, size: caption2Size) ?? defaultFonts.caption2,
         navBarItem: fontFrom(name: navBarItemName, size: navBarItemSize) ?? defaultFonts.navBarItem
     )
+}
+
+// Applied after OctopusSdkSetFonts has restored the name/size defaults.
+@_cdecl("OctopusSdkSetFontWeights")
+public func OctopusSdkSetFontWeights(json: UnsafePointer<Int8>) {
+    guard let data = String(cString: json).data(using: .utf8),
+          let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+          !rows.isEmpty else { return }
+    var weights: [String: Font.Weight] = [:]
+    for row in rows {
+        guard let slot = row["slot"] as? String,
+              let value = row["fontWeight"] as? Int else { continue }
+        weights[slot] = fontWeightFrom(value)
+    }
+    let base = fonts ?? OctopusTheme.Fonts()
+    func weighted(_ slot: String, _ font: Font) -> Font {
+        guard let weight = weights[slot] else { return font }
+        return font.weight(weight)
+    }
+    fonts = OctopusTheme.Fonts(
+        title1: weighted("title1", base.title1),
+        title2: weighted("title2", base.title2),
+        body1: weighted("body1", base.body1),
+        body2: weighted("body2", base.body2),
+        caption1: weighted("caption1", base.caption1),
+        caption2: weighted("caption2", base.caption2),
+        navBarItem: weighted("navBarItem", base.navBarItem)
+    )
+}
+
+// Same nearest named-weight buckets as Flutter and React Native.
+private func fontWeightFrom(_ value: Int) -> Font.Weight {
+    switch value {
+    case ..<150: return .ultraLight
+    case ..<250: return .thin
+    case ..<350: return .light
+    case ..<450: return .regular
+    case ..<550: return .medium
+    case ..<650: return .semibold
+    case ..<750: return .bold
+    case ..<850: return .heavy
+    default: return .black
+    }
 }
 
 private func fontFrom(name: String, size: Float) -> Font? {
@@ -1248,4 +1739,331 @@ private func gamificationRemovedActionToken(_ a: OctopusEvent.GamificationPoints
     case .replyDeleted:    return "Reply"
     case .reactionDeleted: return "Reaction"
     }
+}
+
+// MARK: - Connected profile and entitlements
+
+private func profileToJson(_ profile: OctopusProfile?) -> String {
+    guard let profile else { return "null" }
+    let object: [String: Any] = [
+        "entitlements": Array(profile.entitlements),
+        "clientUserId": profile.clientUserId as Any? ?? NSNull()
+    ]
+    guard let data = try? JSONSerialization.data(withJSONObject: object),
+          let json = String(data: data, encoding: .utf8) else { return "null" }
+    return json
+}
+
+@_cdecl("OctopusSdkRefreshEntitlements")
+public func OctopusSdkRefreshEntitlements(requestId: Int32) {
+    guard let sdk = octopus else {
+        sendRefreshEntitlementsError(requestId, "userNotConnected", "SDK not initialized")
+        return
+    }
+    Task {
+        do {
+            try await sdk.refreshEntitlements()
+            sendUnityMessage("OctopusChannel", "OnRefreshEntitlementsResult", "\(requestId)\n")
+        } catch let error as OctopusRefreshEntitlementsError {
+            // Typed-throws inference does not cross the Task closure: without this
+            // explicit cast `error` is `any Error` and the switch does not compile.
+            switch error {
+            case .noClientTokenProvider:
+                sendRefreshEntitlementsError(requestId, "noClientTokenProvider", "No client token provider registered")
+            case .userNotConnected:
+                sendRefreshEntitlementsError(requestId, "userNotConnected", "No connected user")
+            case .noNetwork:
+                sendRefreshEntitlementsError(requestId, "noNetwork", "No network")
+            case .userBanned(let message):
+                sendRefreshEntitlementsError(requestId, "userBanned", message)
+            case .serverError(let underlying):
+                sendRefreshEntitlementsError(requestId, "serverError", String(describing: underlying))
+            }
+        } catch {
+            sendRefreshEntitlementsError(requestId, "serverError", String(describing: error))
+        }
+    }
+}
+
+private func sendRefreshEntitlementsError(_ requestId: Int32, _ type: String, _ message: String) {
+    let object = ["type": type, "message": message]
+    let data = try? JSONSerialization.data(withJSONObject: object)
+    let json = data.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    sendUnityMessage("OctopusChannel", "OnRefreshEntitlementsError", "\(requestId)\n\(json)")
+}
+
+// MARK: - Debug/QA configuration (#165)
+// Overrides are synchronous. Unity's main thread is normally the iOS main thread;
+// marshal other callers synchronously to satisfy the native SDK's MainActor contract.
+private func applyDebugConfigOverride(_ action: @escaping @MainActor () -> Void) {
+    if Thread.isMainThread {
+        MainActor.assumeIsolated { action() }
+    } else {
+        DispatchQueue.main.sync { action() }
+    }
+}
+
+private func debugConfigObject(_ pointer: UnsafePointer<CChar>) -> [String: Any]? {
+    let json = String(cString: pointer)
+    guard json != "null", let data = json.data(using: .utf8) else { return nil }
+    return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+}
+
+private func debugProfileFieldLock(_ value: Any?) -> ProfileFieldLockState? {
+    switch value as? String {
+    case "editable": return .editable
+    case "readOnly": return .readOnly
+    case "disabled": return .disabled
+    default: return nil
+    }
+}
+
+@_cdecl("OctopusSdkDebugOverrideProfileFieldsLock")
+public func OctopusSdkDebugOverrideProfileFieldsLock(json: UnsafePointer<CChar>) {
+    let object = debugConfigObject(json)
+    var lock: ProfileFieldsLock?
+    if let object = object {
+        guard let nickname = debugProfileFieldLock(object["nickname"]),
+              let avatar = debugProfileFieldLock(object["avatar"]),
+              let bio = debugProfileFieldLock(object["bio"]) else { return }
+        lock = ProfileFieldsLock(nickname: nickname, avatar: avatar, bio: bio)
+    }
+    let mapped = lock
+    applyDebugConfigOverride { octopus?.debugOverrideProfileFieldsLock(mapped) }
+}
+
+@_cdecl("OctopusSdkDebugOverrideContentOptions")
+public func OctopusSdkDebugOverrideContentOptions(json: UnsafePointer<CChar>) {
+    let object = debugConfigObject(json)
+    let options = object.map {
+        ContentOptions(
+            post: ContentOptions.PostOptions(
+                enablePictures: $0["postEnablePictures"] as? Bool ?? true,
+                enablePolls: $0["postEnablePolls"] as? Bool ?? true),
+            comment: ContentOptions.CommentOptions(enablePictures: $0["commentEnablePictures"] as? Bool ?? true),
+            reply: ContentOptions.ReplyOptions(enablePictures: $0["replyEnablePictures"] as? Bool ?? true))
+    }
+    applyDebugConfigOverride { octopus?.debugOverrideContentOptions(options) }
+}
+
+@_cdecl("OctopusSdkDebugOverrideTermsAcceptanceMode")
+public func OctopusSdkDebugOverrideTermsAcceptanceMode(mode: UnsafePointer<CChar>) {
+    let mapped: TermsAcceptanceMode?
+    switch String(cString: mode) {
+    case "null": mapped = nil
+    case "implicit": mapped = .implicit
+    case "explicitMultiCheckbox": mapped = .explicitMultiCheckbox
+    case "explicitSingleCheckbox": mapped = .explicitSingleCheckbox
+    default: return
+    }
+    applyDebugConfigOverride { octopus?.debugOverrideTermsAcceptanceMode(mapped) }
+}
+
+@_cdecl("OctopusSdkDebugOverrideExposeClientUserId")
+public func OctopusSdkDebugOverrideExposeClientUserId(enabled: UnsafePointer<CChar>) {
+    let mapped: Bool?
+    switch String(cString: enabled) {
+    case "null": mapped = nil
+    case "true": mapped = true
+    case "false": mapped = false
+    default: return
+    }
+    applyDebugConfigOverride { octopus?.debugOverrideExposeClientUserId(mapped) }
+}
+
+@_cdecl("OctopusSdkDebugGetCommunityConfig")
+public func OctopusSdkDebugGetCommunityConfig(requestId: Int32) {
+    Task { @MainActor in
+        guard let sdk = octopus else {
+            sendUnityMessage("OctopusChannel", "OnDebugGetCommunityConfigError", "\(requestId)\nSDK not initialized")
+            return
+        }
+        // Same debug-only inspection as React Native. `core` is package-visible,
+        // so reflection is deliberately confined to this diagnostic entry point.
+        guard let core = Mirror(reflecting: sdk).children.first(where: { $0.label == "core" })?.value as? OctopusSDKCore else {
+            sendUnityMessage("OctopusChannel", "OnDebugGetCommunityConfigError", "\(requestId)\nCould not reach the SDK core")
+            return
+        }
+        guard let config = core.configRepository.communityConfig else {
+            sendUnityMessage("OctopusChannel", "OnDebugGetCommunityConfigResult", "\(requestId)\nnull")
+            return
+        }
+        do {
+            let row: [String: Any] = [
+                "exposeClientUserId": config.exposeClientUserId,
+                "forceLoginOnStrongActions": config.forceLoginOnStrongActions,
+                "displayAccountAge": config.displayAccountAge,
+                "termsAcceptanceMode": String(describing: config.termsAcceptanceMode)
+            ]
+            let data = try JSONSerialization.data(withJSONObject: row)
+            let json = String(decoding: data, as: UTF8.self)
+            sendUnityMessage("OctopusChannel", "OnDebugGetCommunityConfigResult", "\(requestId)\n\(json)")
+        } catch {
+            sendUnityMessage("OctopusChannel", "OnDebugGetCommunityConfigError", "\(requestId)\n\(error)")
+        }
+    }
+}
+// MARK: - Client-object related posts (#166)
+
+private var clientPostCancellables: [String: AnyCancellable] = [:]
+private var clientPostObservationIds: [String: UUID] = [:]
+private var clientPostTasks: [Int32: Task<Void, Never>] = [:]
+private var clientPostSignContinuations: [Int32: CheckedContinuation<String, Error>] = [:]
+private var clientPostSignCallback: BridgeShareSignCallback?
+
+private func clearClientPostSession() {
+    clientPostObservationIds.removeAll()
+    clientPostCancellables.values.forEach { $0.cancel() }
+    clientPostCancellables.removeAll()
+    clientPostTasks.values.forEach { $0.cancel() }
+    clientPostTasks.removeAll()
+    let pending = clientPostSignContinuations.values
+    clientPostSignContinuations.removeAll()
+    pending.forEach { $0.resume(throwing: CancellationError()) }
+}
+
+@_cdecl("OctopusSdkSetClientPostSignCallback")
+public func OctopusSdkSetClientPostSignCallback(callback: BridgeShareSignCallback?) {
+    clientPostSignCallback = callback
+}
+
+@_cdecl("OctopusSdkSetClientPostSignature")
+public func OctopusSdkSetClientPostSignature(requestId: Int32, signature: UnsafePointer<CChar>) {
+    let value = String(cString: signature)
+    DispatchQueue.main.async {
+        guard let pending = clientPostSignContinuations.removeValue(forKey: requestId) else { return }
+        if value.isEmpty { pending.resume(throwing: BridgeShareSignError.hostFailed) }
+        else { pending.resume(returning: value) }
+    }
+}
+
+@MainActor
+private func requestClientPostSignature(_ requestId: Int32, _ fingerprint: String) async throws -> String {
+    try Task.checkCancellation()
+    guard let callback = clientPostSignCallback else { throw BridgeShareSignError.noCallback }
+    return try await withCheckedThrowingContinuation { continuation in
+        clientPostSignContinuations[requestId] = continuation
+        "\(requestId)\n\(fingerprint)".withCString { callback($0) }
+    }
+}
+
+@_cdecl("OctopusSdkFetchOrCreateClientObjectRelatedPost")
+public func OctopusSdkFetchOrCreateClientObjectRelatedPost(
+    requestId: Int32, json: UnsafePointer<CChar>, hasSigner: Int32
+) {
+    let payload = String(cString: json)
+    clientPostTasks[requestId] = Task { @MainActor in
+        defer { clientPostTasks.removeValue(forKey: requestId) }
+        guard let sdk = octopus else {
+            sendClientPostError(requestId, "other", "Call Initialize first")
+            return
+        }
+        do {
+            guard let data = payload.data(using: .utf8),
+                  let row = try JSONSerialization.jsonObject(with: data) as? [String: String],
+                  let objectId = row["objectId"], !objectId.isEmpty else {
+                sendClientPostError(requestId, "missingObjectId", "An object id is required")
+                return
+            }
+            func optional(_ key: String) -> String? {
+                guard let value = row[key], !value.isEmpty else { return nil }
+                return value
+            }
+            var attachment: Octopus.ClientPost.Attachment?
+            if let path = optional("imagePath") {
+                let bytes = try await Task.detached { try Data(contentsOf: URL(fileURLWithPath: path)) }.value
+                attachment = .localImage(bytes)
+            } else if let remote = optional("imageUrl") {
+                guard let url = URL(string: remote), let scheme = url.scheme?.lowercased(),
+                      ["https", "http"].contains(scheme), url.host != nil else {
+                    sendClientPostError(requestId, "fileDownload", "An absolute HTTP(S) image URL is required")
+                    return
+                }
+                attachment = .distantImage(url)
+            }
+            try Task.checkCancellation()
+            let content = Octopus.ClientPost(clientObjectId: objectId, groupId: optional("groupId"),
+                text: row["text"] ?? "", catchPhrase: optional("catchPhrase"), attachment: attachment,
+                viewClientObjectButtonText: optional("viewObjectButtonText"))
+            let signer: @Sendable (String) async throws -> String? = { fingerprint in
+                if hasSigner == 0 { return nil }
+                return try await requestClientPostSignature(requestId, fingerprint)
+            }
+            let post = try await sdk.fetchOrCreateClientObjectRelatedPost(content: content, tokenProvider: signer)
+            if !Task.isCancelled {
+                sendUnityMessage("OctopusChannel", "OnClientPostResult", "\(requestId)\n\(post.id)")
+            }
+        } catch let error as ClientPostError {
+            if !Task.isCancelled {
+                // ValidationError's fields are internal in 1.13.2. Do not infer kinds from descriptions.
+                switch error {
+                case .validation, .noNetwork, .serverError, .other:
+                    sendClientPostError(requestId, "other", error.debugDescription)
+                }
+            }
+        } catch {
+            if !Task.isCancelled { sendClientPostError(requestId, "other", error.localizedDescription) }
+        }
+    }
+}
+
+@_cdecl("OctopusSdkStartObservingClientObjectRelatedPost")
+public func OctopusSdkStartObservingClientObjectRelatedPost(objectId: UnsafePointer<CChar>, generation: Int32) {
+    let id = String(cString: objectId)
+    DispatchQueue.main.async {
+        clientPostCancellables.removeValue(forKey: id)?.cancel()
+        guard let sdk = octopus else {
+            print("[Octopus SDK] Client post observation requires Initialize")
+            return
+        }
+        let observationId = UUID()
+        clientPostObservationIds[id] = observationId
+        sendUnityMessage("OctopusChannel", "OnClientPostObservationStarted", "\(id)\n\(generation)")
+        clientPostCancellables[id] = sdk.getClientObjectRelatedPostPublisher(clientObjectId: id)
+            .receive(on: DispatchQueue.main)
+            .sink { post in
+                guard clientPostObservationIds[id] == observationId else { return }
+                sendUnityMessage("OctopusChannel", "OnClientObjectRelatedPostChanged",
+                    "\(id)\n\(post.map { clientPostToJson($0) } ?? "null")")
+            }
+    }
+}
+
+@_cdecl("OctopusSdkStopObservingClientObjectRelatedPost")
+public func OctopusSdkStopObservingClientObjectRelatedPost(objectId: UnsafePointer<CChar>) {
+    let id = String(cString: objectId)
+    DispatchQueue.main.async {
+        clientPostObservationIds.removeValue(forKey: id)
+        clientPostCancellables.removeValue(forKey: id)?.cancel()
+    }
+}
+
+private func clientPostToJson(_ post: any OctopusPost) -> String {
+    let row: [String: Any] = [
+        "id": post.id, "commentCount": post.commentCount, "viewCount": post.viewCount,
+        "reactions": post.reactions.map { ["reactionKind": clientPostReactionToken($0.reaction), "count": $0.count] as [String: Any] },
+        "userReactionKind": post.userReaction.map { clientPostReactionToken($0) } as Any? ?? NSNull()
+    ]
+    guard let data = try? JSONSerialization.data(withJSONObject: row),
+          let json = String(data: data, encoding: .utf8) else { return "null" }
+    return json
+}
+
+private func clientPostReactionToken(_ kind: OctopusReactionKind) -> String {
+    switch kind {
+    case .heart: return "Heart"
+    case .joy: return "Joy"
+    case .mouthOpen: return "MouthOpen"
+    case .clap: return "Clap"
+    case .cry: return "Cry"
+    case .rage: return "Rage"
+    case .unknown: return "Unknown"
+    }
+}
+
+private func sendClientPostError(_ requestId: Int32, _ type: String, _ message: String) {
+    let row = ["type": type, "message": message]
+    guard let data = try? JSONSerialization.data(withJSONObject: row),
+          let json = String(data: data, encoding: .utf8) else { return }
+    sendUnityMessage("OctopusChannel", "OnClientPostError", "\(requestId)\n\(json)")
 }

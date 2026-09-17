@@ -30,6 +30,7 @@ public class PushNotificationsExample : MonoBehaviour
     void Start()
     {
         OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.OctopusAuth());
+        OctopusSampleState.ReportInitialized("OctopusAuth");
         OctopusSDK.OnNotSeenNotificationsCount += OnNotSeenNotificationCount;
         RegisterForPushNotifications();
 #if UNITY_IOS && !UNITY_EDITOR
@@ -71,8 +72,9 @@ public class PushNotificationsExample : MonoBehaviour
 
     void RegisterForPushNotifications()
     {
+        // Shares the persistent subscription with the shell, regardless of scene load order.
+        OctopusSamplePushTokenSource.EnsureExists();
 #if UNITY_IOS && !UNITY_EDITOR
-        StartCoroutine(RequestIOSAuthorization());
         iOSNotificationCenter.OnRemoteNotificationReceived += OnIOSRemoteNotification;
 #elif UNITY_ANDROID && !UNITY_EDITOR
         InitializeFirebaseForAndroid();
@@ -80,20 +82,6 @@ public class PushNotificationsExample : MonoBehaviour
     }
 
 #if UNITY_IOS
-    System.Collections.IEnumerator RequestIOSAuthorization()
-    {
-        using (var req = new AuthorizationRequest(
-            AuthorizationOption.Alert | AuthorizationOption.Sound | AuthorizationOption.Badge,
-            registerForRemoteNotifications: true))
-        {
-            while (!req.IsFinished) yield return null;
-            if (req.Granted && !string.IsNullOrEmpty(req.DeviceToken))
-                OctopusSDK.RegisterNotificationsToken(req.DeviceToken);
-            else
-                Debug.LogWarning("iOS notification authorization denied or token unavailable. Error: " + req.Error);
-        }
-    }
-
     // Reads the notification the user tapped (the one that launched the app on a cold
     // start, or the one tapped while the app was backgrounded). Unity Mobile Notifications
     // does NOT raise OnRemoteNotificationReceived for a tap, so this is how taps are handled.
@@ -124,50 +112,20 @@ public class PushNotificationsExample : MonoBehaviour
 #if UNITY_ANDROID
     void InitializeFirebaseForAndroid()
     {
-        try { RequestAndroidNotificationPermission(); }
-        catch (System.Exception e) { Debug.LogWarning("Notification permission request failed: " + e.Message); }
-
-        Firebase.FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(task => {
-            if (task.Result == Firebase.DependencyStatus.Available)
+        OctopusSamplePushTokenSource.CheckFirebaseDependencies().ContinueWithOnMainThread(task => {
+            if (task.IsCanceled || task.IsFaulted || task.Result != Firebase.DependencyStatus.Available)
             {
-                Firebase.Messaging.FirebaseMessaging.TokenReceived += OnTokenReceived;
-                Firebase.Messaging.FirebaseMessaging.MessageReceived += OnMessageReceived;
+                Debug.LogError("[Octopus Sample] Could not resolve Firebase dependencies.");
+                return;
             }
-            else Debug.LogError(string.Format("Could not resolve Firebase dependencies: {0}", task.Result));
+            Firebase.Messaging.FirebaseMessaging.MessageReceived += OnMessageReceived;
         });
-    }
-
-    void OnTokenReceived(object sender, Firebase.Messaging.TokenReceivedEventArgs token)
-    {
-        // Logged so you can copy it for a Firebase Console "Send test message" push.
-        Debug.Log("FCM registration token: " + token.Token);
-        OctopusSDK.RegisterNotificationsToken(token.Token);
     }
 
     void OnMessageReceived(object sender, Firebase.Messaging.MessageReceivedEventArgs e)
     {
         if (e.Message.NotificationOpened)
             HandleTappedPayload(e.Message.Data);
-    }
-
-    void RequestAndroidNotificationPermission()
-    {
-        if (GetAndroidSDKInt() >= 33)
-        {
-            using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
-            using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
-            {
-                const string permission = "android.permission.POST_NOTIFICATIONS";
-                if (activity.Call<int>("checkSelfPermission", permission) != 0)
-                    activity.Call("requestPermissions", new string[] { permission }, 0);
-            }
-        }
-    }
-
-    int GetAndroidSDKInt()
-    {
-        using (var version = new AndroidJavaClass("android.os.Build$VERSION"))
-            return version.GetStatic<int>("SDK_INT");
     }
 #endif
 }

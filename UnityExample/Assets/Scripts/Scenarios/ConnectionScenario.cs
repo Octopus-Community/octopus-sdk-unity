@@ -9,16 +9,9 @@ using System.Threading.Tasks;
 /// changes here is the driving surface: five single-tap presets carrying the catalogue's ids
 /// instead of one toggling button, and a live result panel instead of the button's own caption.
 ///
-/// **The entitlement presets are honest about a gap.** The catalogue's presets 2 to 4 ask for a
-/// connection carrying entitlements (premium, moderator, both). Entitlements travel in the SSO
-/// token issued by the host's backend, and this package's `ConnectUser` takes no entitlements
-/// parameter and no per-preset token — the sample has exactly one `authToken` in its config asset.
-/// So those three presets pre-fill the entitlements they ask for, make the same SDK call as preset
-/// 1, and say so on screen rather than pretending. Closing that gap is an SDK question (a way to
-/// pass a token per connection), not a sample one.
-///
-/// The token itself is read from the gitignored `OctopusExampleConfig` asset at tap time and is
-/// never displayed, never logged and never put in a field.
+/// Each connect preset signs a demo SSO token with its requested entitlements using the config's
+/// local ssoTokenSecret. Without a secret the static authToken is used unchanged; the result
+/// explains that its claims cannot be changed by a preset. Neither credential is displayed or logged.
 /// </summary>
 public sealed class ConnectionScenario : OctopusScenarioPilot
 {
@@ -26,12 +19,21 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
     private const string EntitlementsKey = "entitlements";
     private const string ActionKey = "action";
 
-    private const string SampleProfile = "Default (OctopusExampleConfig)";
+    // Which of the config asset's profiles the next initialisation will use — the `Force login`
+    // switch in the Sign-in section header picks it, so the field has to be read at preset time
+    // rather than baked into a const, or the screen would keep naming a profile the tester moved
+    // away from.
+    private static string SampleProfile()
+    {
+        return OctopusSampleFeatureToggles.ForceLogin
+            ? "Forced login (OctopusExampleConfig)"
+            : "Default (OctopusExampleConfig)";
+    }
 
     private readonly OctopusScenarioFields _fields = new OctopusScenarioFields(
-        new OctopusScenarioField(ProfileKey, "SSO profile"),
-        new OctopusScenarioField(EntitlementsKey, "Requested entitlements"),
-        new OctopusScenarioField(ActionKey, "Action"));
+        new OctopusScenarioField(ProfileKey, "SSO profile", true),
+        new OctopusScenarioField(EntitlementsKey, "Requested entitlements", true),
+        new OctopusScenarioField(ActionKey, "Action (connect or disconnect)"));
 
     private readonly List<OctopusScenarioPreset> _presets;
 
@@ -44,15 +46,15 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
             // that makes the five-preset set coherent (RN builds a two-preset set, where preset 2
             // is "Disconnect" — taking that here would leave presets 2 and 5 both disconnecting).
             Connect(1, "Connect (no entitlements)", "none"),
-            Connect(2, "Connect as Premium", "premium"),
-            Connect(3, "Connect as Moderator", "moderator"),
-            Connect(4, "Connect as Premium + Moderator", "premium, moderator"),
+            Connect(2, "Connect as Premium", OctopusSampleFixtures.Premium),
+            Connect(3, "Connect as Moderator", OctopusSampleFixtures.Moderator),
+            Connect(4, "Connect as Premium + Moderator", OctopusSampleFixtures.Premium + ", " + OctopusSampleFixtures.Moderator),
             new OctopusScenarioPreset(
                 PresetTestId(5),
                 PresetLabel(5, "Disconnect"),
                 fields =>
                 {
-                    fields.Set(ProfileKey, SampleProfile);
+                    fields.Set(ProfileKey, SampleProfile());
                     fields.Set(EntitlementsKey, "n/a (disconnect)");
                     fields.Set(ActionKey, "disconnect");
                 },
@@ -64,6 +66,29 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
 
     public override IReadOnlyList<OctopusScenarioPreset> Presets { get { return _presets; } }
 
+    public override string Capability { get { return "Connect a sample user and inspect the call result."; } }
+    public override IReadOnlyList<string> ApiSymbols
+    {
+        get { return new[] { "ConnectUser", "DisconnectUser" }; }
+    }
+    public override string ParameterNotice
+    {
+        get { return "A local demo signing secret adds the requested entitlements to the SSO token. " +
+                     "With only a static authToken, its existing claims determine access."; }
+    }
+    public override bool CanCustomize { get { return true; } }
+
+    public override void RunCustom()
+    {
+        var action = (Fields.Get(ActionKey) ?? string.Empty).Trim();
+        if (string.Equals(action, "connect", System.StringComparison.OrdinalIgnoreCase))
+            ConnectAsync(Fields.Get(EntitlementsKey));
+        else if (string.Equals(action, "disconnect", System.StringComparison.OrdinalIgnoreCase))
+            Disconnect();
+        else
+            Report("No call made: action must be connect or disconnect.");
+    }
+
     private OctopusScenarioPreset Connect(int index, string description, string entitlements)
     {
         return new OctopusScenarioPreset(
@@ -71,7 +96,7 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
             PresetLabel(index, description),
             fields =>
             {
-                fields.Set(ProfileKey, SampleProfile);
+                fields.Set(ProfileKey, SampleProfile());
                 fields.Set(EntitlementsKey, entitlements);
                 fields.Set(ActionKey, "connect");
             },
@@ -98,42 +123,57 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
             return;
         }
 
+        string refusal;
+        if (!OctopusSampleTokenProvider.CanConnect(profile, out refusal))
+        {
+            Report(refusal);
+            OctopusSampleState.ReportSession(OctopusSampleState.Session.Failed, refusal);
+            OctopusSampleLog.Current.LogStateChange("[OctopusQA] scenario=connection state=refused", refusal);
+            return;
+        }
+        var requested = ParseEntitlements(entitlements);
+        var provider = new OctopusSampleTokenProvider(profile);
+
         string busy;
         if (!OctopusScenarioSdk.TryBeginOperation("ConnectUser", out busy))
         {
             Report(busy);
             return;
         }
+        var token = OctopusScenarioSdk.OperationToken;
 
-        var caveat = entitlements == "none"
+        var caveat = requested.Length == 0 || !string.IsNullOrWhiteSpace(profile.signingSecret)
             ? string.Empty
-            : "  Requested entitlements '" + entitlements + "' were NOT sent: this package's " +
-              "ConnectUser takes no entitlements parameter and the sample holds a single SSO " +
-              "token, so this call is identical to preset 1.";
+            : " Requested entitlements '" + entitlements + "' were NOT sent: the static authToken " +
+              "is used unchanged. Set the config's ssoTokenSecret to sign per-preset claims.";
 
         // Everything after the slot is taken runs inside the try: an exception anywhere here
         // (a throwing logger included) must release the slot, or every later tap is refused.
         try
         {
-            Report("Connecting as '" + profile.userId + "' (mode: " + mode + ")…" + caveat);
+            ReportRunning("Connecting as '" + profile.userId + "' (mode: " + mode + ")…" + caveat);
             OctopusSampleLog.Current.LogApiCall("OctopusSDK.ConnectUser", "userId=" + profile.userId);
-            await OctopusSDK.ConnectUser(profile.userId, profile.nickname, profile.bio,
-                                         profile.picture, () => Token(profile));
+            await OctopusScenarioSdk.Current.ConnectUser(profile.userId, profile.nickname, profile.bio,
+                                                        profile.picture, () => Task.FromResult(provider.GetToken(profile.userId, requested)));
             // Completion is not success: the native bridges signal the end of the call whether
             // the token was accepted or not, and this package exposes no connection state to
             // read back. Say what is actually known.
             Report("ConnectUser call completed for '" + profile.userId + "' (mode: " + mode +
                    "). This confirms the call returned, not that a session exists — check the " +
-                   "Debug console, or open the community from a demo scene, for the real state." +
+                   "Community tab for the real state." +
                    caveat);
+            OctopusSampleState.ReportSession(OctopusSampleState.Session.ConnectCompleted,
+                                             "Connect call completed for '" + profile.userId + "'");
         }
         catch (System.Exception e)
         {
             Report("ConnectUser failed: " + e.Message);
+            OctopusSampleState.ReportSession(OctopusSampleState.Session.Failed,
+                                             "ConnectUser failed: " + e.Message);
         }
         finally
         {
-            OctopusScenarioSdk.EndOperation();
+            OctopusScenarioSdk.EndOperation(token);
         }
     }
 
@@ -161,29 +201,35 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
             Report(busy);
             return;
         }
+        var token = OctopusScenarioSdk.OperationToken;
 
         try
         {
-            Report("Disconnecting…");
+            ReportRunning("Disconnecting…");
             OctopusSampleLog.Current.LogApiCall("OctopusSDK.DisconnectUser");
-            await OctopusSDK.DisconnectUser();
+            await OctopusScenarioSdk.Current.DisconnectUser();
             Report("DisconnectUser call completed (mode: " + mode + ").");
+            OctopusSampleState.ReportSession(OctopusSampleState.Session.Disconnected,
+                                             "Disconnect call completed");
         }
         catch (System.Exception e)
         {
             Report("DisconnectUser failed: " + e.Message);
+            OctopusSampleState.ReportSession(OctopusSampleState.Session.Failed,
+                                             "DisconnectUser failed: " + e.Message);
         }
         finally
         {
-            OctopusScenarioSdk.EndOperation();
+            OctopusScenarioSdk.EndOperation(token);
         }
     }
 
-    // The SSO token provider the SDK calls back into. Kept out of every field and every log line:
-    // it is a JWT read from the gitignored config asset, and the mirror-export guard scans for
-    // exactly that shape.
-    private static Task<string> Token(OctopusExampleConfig.ExampleProfile profile)
+    private static string[] ParseEntitlements(string value)
     {
-        return Task.FromResult(profile.authToken);
+        if (string.IsNullOrWhiteSpace(value) || value == "none") return new string[0];
+        var result = new List<string>();
+        foreach (var entitlement in value.Split(','))
+            if (!string.IsNullOrWhiteSpace(entitlement)) result.Add(entitlement.Trim());
+        return result.ToArray();
     }
 }

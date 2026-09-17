@@ -164,7 +164,7 @@ public partial class OctopusSDK
     public static void SetFonts(OctopusFonts fonts = null)
     {
 #if UNITY_EDITOR
-        MockBackend.SetFonts();
+        MockBackend.SetFonts(fonts);
 #elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
@@ -203,6 +203,7 @@ public partial class OctopusSDK
             fonts?.NavBarItem?.Size ?? 0f
         );
 #endif
+        SetFontWeights(fonts);
     }
 
     public static int ColorToInt(Color color)
@@ -386,8 +387,28 @@ public class OctopusFont
     public readonly string IOSFontName;
     public readonly float Size;
 
+    /// <summary>Optional CSS-style weight from 100 to 900; null keeps the native default.</summary>
+    public readonly int? FontWeight;
+
+    /// <summary>Creates a font using the native default weight.</summary>
     public OctopusFont(string androidFontResourceName, string iOSFontName, float size)
+        : this(androidFontResourceName, iOSFontName, size, null)
     {
+    }
+
+    /// <summary>
+    /// Creates a font with an optional CSS-style weight from 100 to 900 (400 regular, 700 bold).
+    /// Null keeps the native default; iOS selects the nearest named weight.
+    /// Empty font names allow a weight override on the native default font.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The weight is outside 100 through 900.</exception>
+    public OctopusFont(string androidFontResourceName, string iOSFontName, float size, int? fontWeight)
+    {
+        if (fontWeight.HasValue && (fontWeight.Value < 100 || fontWeight.Value > 900))
+        {
+            throw new ArgumentOutOfRangeException("fontWeight", "Font weight must be between 100 and 900.");
+        }
+        FontWeight = fontWeight;
         AndroidFontResourceName = androidFontResourceName;
         IOSFontName = iOSFontName;
         Size = size;

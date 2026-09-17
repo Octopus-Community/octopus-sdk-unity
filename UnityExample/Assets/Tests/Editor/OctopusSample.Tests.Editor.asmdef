@@ -1,6 +1,6 @@
 {
   "name": "OctopusSample.Tests.Editor",
-  "references": ["OctopusSample.Scripts"],
+  "references": ["Unity.TextMeshPro", "OctopusSample.Scripts", "OctopusSDK.Runtime", "UnityEngine.UI"],
   "includePlatforms": ["Editor"],
   "excludePlatforms": [],
   "overrideReferences": true,

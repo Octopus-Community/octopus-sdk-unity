@@ -49,5 +49,11 @@ public class OctopusSampleLogSeamTests
             new System.Collections.Generic.List<(string, string)>();
 
         public void LogApiCall(string method, string detail = null) => Calls.Add((method, detail));
+
+        public readonly System.Collections.Generic.List<(string headline, string detail)> States =
+            new System.Collections.Generic.List<(string, string)>();
+
+        public void LogStateChange(string headline, string detail = null) =>
+            States.Add((headline, detail));
     }
 }

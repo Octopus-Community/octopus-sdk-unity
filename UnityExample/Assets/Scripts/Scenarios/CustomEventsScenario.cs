@@ -48,6 +48,16 @@ public sealed class CustomEventsScenario : OctopusScenarioPilot
 
     public override IReadOnlyList<OctopusScenarioPreset> Presets { get { return _presets; } }
 
+    public override bool CanCustomize { get { return true; } }
+
+    public override string Capability { get { return "Send a named sample event with optional properties."; } }
+    public override IReadOnlyList<string> ApiSymbols { get { return new[] { "Track" }; } }
+
+    public override void RunCustom()
+    {
+        TrackNow(Fields.Get(NameKey), Fields.Get(PropertiesKey));
+    }
+
     private OctopusScenarioPreset Track(int index, string description, string properties)
     {
         return new OctopusScenarioPreset(
@@ -75,7 +85,7 @@ public sealed class CustomEventsScenario : OctopusScenarioPilot
         var props = Parse(properties);
         var detail = "name=" + eventName + ", props=" + props.Count;
         OctopusSampleLog.Current.LogApiCall("OctopusSDK.Track", detail);
-        OctopusSDK.Track(eventName, props);
+        OctopusScenarioSdk.Current.Track(eventName, props);
 
         var line = "Tracked '" + eventName + "' with " + props.Count + " propert" +
                    (props.Count == 1 ? "y" : "ies") + " (mode: " + mode + ").";

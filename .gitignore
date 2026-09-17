@@ -22,8 +22,22 @@ UnityExample/Assets/Scripts/OctopusTestHarness.cs
 UnityExample/Assets/Scripts/OctopusTestHarness.cs.meta
 
 # Unity test-run artifacts
-UnityExample/TestResults-*.xml
+**/TestResults-*.xml
 
 # Scratch file of Scripts/build_legacy_package_nounity.py. The script already removes it
 # on failure and renames it into place on success; this is belt and braces, not the fix.
 .*.unitypackage.*.tmp
+
+# Local store-publishing credentials, read by Scripts/store/*.sh. None of them is ever
+# committed, and none has a CI counterpart — see docs/STORE_PUBLISHING.md.
+/keystore.properties
+/Scripts/store/play-service-account.json
+/Scripts/store/apple-api-key.json
+
+# Output of Scripts/store/publish-android.sh: store-signed App Bundles and their R8 mapping.
+# Not just untidy — an unignored release artefact here is one `git add -A` from the tree.
+/build/
+
+# Generated before every sample build by OctopusSampleNativePinsProcessor (native build pins)
+UnityExample/Assets/Resources/OctopusSampleNativePins.txt
+UnityExample/Assets/Resources/OctopusSampleNativePins.txt.meta

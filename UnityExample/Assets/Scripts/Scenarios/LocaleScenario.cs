@@ -12,7 +12,7 @@ using UnityEngine;
 /// the device's own two-letter code and overrides with that, which is observably the same end
 /// state and the only thing the current surface allows. A real reset would be an SDK change.
 ///
-/// Only "fr" and "en" are presets, because the catalogue lists three. The field stays editable, so
+/// Only "fr" and "en" are presets, because the catalogue lists three. Customize unlocks the field, so
 /// the other locales `LanguageOverrideExample` offered ("es", "tr", and anything else the
 /// community ships) are still reachable by hand.
 /// </summary>
@@ -38,6 +38,20 @@ public sealed class LocaleScenario : OctopusScenarioPilot
     public override OctopusScenarioFields Fields { get { return _fields; } }
 
     public override IReadOnlyList<OctopusScenarioPreset> Presets { get { return _presets; } }
+
+    public override bool CanCustomize { get { return true; } }
+
+    public override string Capability { get { return "Choose the language used by the community."; } }
+    public override IReadOnlyList<string> ApiSymbols { get { return new[] { "OverrideDefaultLocale" }; } }
+    public override string ParameterNotice
+    {
+        get { return "Reset to system applies the current system language explicitly; it does not clear the override."; }
+    }
+
+    public override void RunCustom()
+    {
+        OverrideNow(Fields.Get(LocaleKey));
+    }
 
     /// <summary>
     /// The device's two-letter language code. `Application.systemLanguage` is the OS language
@@ -138,8 +152,9 @@ public sealed class LocaleScenario : OctopusScenarioPilot
 
         OctopusSampleLog.Current.LogApiCall("OctopusSDK.OverrideDefaultLocale",
                                             "languageCode=" + languageCode);
-        OctopusSDK.OverrideDefaultLocale(languageCode);
+        OctopusScenarioSdk.Current.OverrideDefaultLocale(languageCode);
+        OctopusSampleState.ReportLocaleOverride(languageCode);
         Report("Locale overridden to '" + languageCode + "' (mode: " + mode + "). The override " +
-               "applies to the community UI — open Octopus from a demo scene to see it.");
+               "applies to the community UI — open the Community tab to see it.");
     }
 }

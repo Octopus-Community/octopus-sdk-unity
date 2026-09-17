@@ -18,6 +18,9 @@ public partial class OctopusSDK
     {
         OctopusChannel.Initialize();
         OctopusMainThread.EnsureExists();
+        ResetProfileObservation();
+        ClearClientPostSession();
+        ResetCommunityDataState(false);
         string host = apiServerHost ?? "";
 #if UNITY_EDITOR
         MockBackend.Initialize(apiKey, mode);
@@ -44,6 +47,7 @@ public partial class OctopusSDK
         public const string OctopusChannelName = "OctopusChannel";
         public static void Initialize()
         {
+            if (UnityEngine.Object.FindObjectOfType<OctopusChannel>() != null) return;
             new GameObject(OctopusChannelName).AddComponent<OctopusChannel>();
         }
 

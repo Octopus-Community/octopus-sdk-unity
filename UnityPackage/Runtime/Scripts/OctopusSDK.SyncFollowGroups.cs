@@ -29,6 +29,10 @@ public struct OctopusGroup
     public string Name;
     public bool IsFollowed;
     public bool CanChangeFollowStatus;
+    /// <summary>Whether the connected user can access this group.</summary>
+    public bool CanAccess;
+    /// <summary>Whether the connected user can create posts in this group.</summary>
+    public bool CanCreateChildren;
 }
 
 // Pure, testable conversion helpers shared by both platform bridges.
@@ -92,6 +96,8 @@ internal static class OctopusSyncFollowGroupParsing
                 Name = row.ContainsKey("name") ? row["name"] : "",
                 IsFollowed = row.ContainsKey("isFollowed") && row["isFollowed"] == "true",
                 CanChangeFollowStatus = !row.ContainsKey("canChangeFollowStatus") || row["canChangeFollowStatus"] == "true",
+                CanAccess = !row.ContainsKey("canAccess") || row["canAccess"] != "false",
+                CanCreateChildren = !row.ContainsKey("canCreateChildren") || row["canCreateChildren"] != "false",
             });
         }
         return list;

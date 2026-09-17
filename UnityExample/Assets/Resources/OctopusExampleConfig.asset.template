@@ -1,26 +1,28 @@
-// OctopusExampleConfig — ScriptableObject template
+// OctopusExampleConfig — ScriptableObject template (contains no credentials)
 //
-// This file documents the expected structure. To set up:
+// 1. Use Assets > Create > Octopus Example Config in Unity.
+// 2. Fill the config-level ssoTokenSecret (demo HS256 secret for SSO and bridge posts)
+//    and the Default Profile apiKey. All three SSO profiles can use this same community.
+//    Lifecycle Switch community requires a second, distinct community key in
+//    forcedLoginProfile.apiKey (Forced Login > Api Key in the Inspector).
+//    The global secret defaults to empty when loading an older asset.
+// 3. Optional per-profile overrides:
+//      apiKey: overrides Default's key for Forced Login or Managed Fields
+//      authToken: static fallback when the global secret is empty
+//      userId, nickname, bio, picture, entitlements: custom demo identity
+//    Empty userId uses the complete OctopusSampleFixtures identity:
+//      Default: unity-sample-user / John Doe / no entitlements
+//      Forced Login: unity-sample-premium / Sample Premium / customer:premium
+//      Managed Fields: unity-sample-moderator / Sample Moderator / customer:moderator
+//    Connection presets explicitly request none / premium / moderator / both,
+//    overriding profile entitlements; legacy scenes use the profile's entitlements.
+//    Static authToken is unchanged, so presets cannot change its claims.
+//    With neither credential, Connection shows a readable refusal.
+//    Bridge posts require the same ssoTokenSecret or a host-provided
+//    OctopusScenarioSdk.BridgeShareSigner; static authToken cannot sign them.
+// 4. Optional designReferenceUrl supplies the About screen's Design reference link.
+//    Empty hides the row.
 //
-// 1. In Unity, go to Assets > Create > Octopus Example Config
-//    This creates Assets/Resources/OctopusExampleConfig.asset (git-ignored).
-//
-// 2. Fill in the fields in the Inspector:
-//
-//    Default Profile (used by most examples):
-//      - apiKey:    your Octopus API key for OctopusAuth mode
-//
-//    Forced Login Profile:
-//      - apiKey:    your Octopus API key for SSO mode
-//      - authToken: a valid JWT token
-//      - userId:    e.g. "user_01"
-//      - nickname:  e.g. "UNITY USER"
-//      - bio:       e.g. "Demo user for unity SDK"
-//      - picture:   URL to a profile picture
-//
-//    Managed Fields Profile:
-//      - apiKey:    your Octopus API key for SSO managed-fields mode
-//      - authToken: a valid JWT token
-//      - userId:    e.g. "user_01"
-//
-// 3. The asset is git-ignored and will not be committed.
+// The generated Resources/OctopusExampleConfig.asset is gitignored. Keep its
+// credentials local. Production apps obtain tokens from their backend and never
+// ship the signing secret. Fixture values are synthetic and contain no credentials.

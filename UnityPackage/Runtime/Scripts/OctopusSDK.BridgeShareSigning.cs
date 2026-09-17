@@ -32,7 +32,7 @@ public partial class OctopusSDK
             }
             catch (Exception e)
             {
-                Debug.LogException(e);
+                UnityEngine.Debug.LogException(e);
                 failed = true;
             }
         }

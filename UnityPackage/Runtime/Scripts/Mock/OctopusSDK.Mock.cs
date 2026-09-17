@@ -10,7 +10,7 @@ public partial class OctopusSDK
     /// automated EditMode tests without building for a device. Compiled out of
     /// player builds.
     /// </summary>
-    public static class Mock
+    public static partial class Mock
     {
         public readonly struct Call
         {
@@ -39,18 +39,25 @@ public partial class OctopusSDK
         {
             if (!Enabled)
             {
-                Debug.Log($"[Octopus Mock] {method} suppressed (mock disabled)");
+                UnityEngine.Debug.Log($"[Octopus Mock] {method} suppressed (mock disabled)");
                 return;
             }
             var call = new Call(method, args);
             _calls.Add(call);
-            Debug.Log($"[Octopus Mock] {call}");
+            UnityEngine.Debug.Log($"[Octopus Mock] {call}");
         }
 
         /// <summary>Clears the call log, current screen, and typed accessors. Call between tests.</summary>
         public static void Reset()
         {
+            ResetDebugMock();
+            ResetProfileMock();
+            ResetCommunityDataMock();
             _calls.Clear();
+            ResetGroupFollowing();
+            NextSetReactionError = null;
+            ClearClientPostSession();
+            NextConnectUserError = null;
             CurrentScreen = null;
             LastOpenedPost = null;
             LastPrefilledPost = null;

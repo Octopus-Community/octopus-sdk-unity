@@ -5,6 +5,17 @@ Octopus is an SDK that enables you to **integrate a fully customizable social ne
 **Minimum Unity version:** 2019.4
 **Supported platforms:** Android, iOS
 
+### iOS requirements — known issue with Xcode 27 / iOS 27
+
+Unity **6000.3.x** exports (verified with **6000.3.3f1**) built with **Xcode 27**
+install on **iOS 27** but are refused at launch with
+`UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption: Application failed to launch: UIScene life cycle is required for apps built with this SDK.`
+The Unity 6000.3 trampoline lacks `UIApplicationSceneManifest` and a scene delegate;
+this is a **Unity limitation, not an Octopus SDK bug**. Use **Unity 6000.5+** and
+re-export the project: launch and **Open community** were verified with **6000.5.11f1**
+on the iOS 27 simulator. This workaround concerns that Xcode/iOS combination; it does
+not change the package's minimum Unity version above.
+
 ## Documentation
 
 For complete integration guides and API reference, visit the [official documentation](https://doc.octopuscommunity.com).
@@ -192,7 +203,7 @@ A ready-to-use version of this flow is available in the **Push Notifications Exa
 
 ### Android — Firebase Setup
 
-Add a `google-services.json` for your Firebase project to `Assets/` in your Unity project. Create the file from the [Firebase Console](https://console.firebase.google.com) by adding an **Android** app with your package name (e.g. `com.octopuscommunity.example`).
+Add a `google-services.json` for your Firebase project to `Assets/` in your Unity project. Create the file from the [Firebase Console](https://console.firebase.google.com) by adding an **Android** app with your package name (e.g. `com.octopuscommunity.sdk.unity.sample`).
 
 ### Android — Notification Handling
 
@@ -361,7 +372,34 @@ OctopusSDK.OverrideCommunityAccess(true,
 ## Sample
 
 The package includes a sample project. Import it from the Unity Package Manager window under **Octopus SDK for Unity > Samples**.
-You will need an API Key to run the sample
+You will need an API Key to run the sample.
+
+For `UnityExample`, use **Assets > Create > Octopus Example Config**, then fill the
+Default profile's `apiKey` and the config-level `ssoTokenSecret` in the Inspector.
+The three existing profiles use versioned fixture identities when `userId` is empty;
+Forced Login and Managed Fields reuse the Default API key unless overridden. Existing
+asset values are preserved. Connection presets sign fresh HS256 tokens with no
+entitlements, `customer:premium`, `customer:moderator`, or both. The existing Force login
+switch selects the configured profile. Lifecycle Switch community requires a second,
+distinct community key in `forcedLoginProfile.apiKey` (Forced Login > Api Key in the
+Inspector); with only the Default key, that preset refuses to run. Managed Fields also
+has its legacy scene. No separate fixture picker is added.
+
+The new secret defaults to empty on old assets: each profile's static `authToken` is
+then used unchanged, so presets cannot change its claims. With neither credential,
+Connect explains the missing configuration without calling ConnectUser. Override the
+profile identity fields in the Inspector to use your own test users.
+
+Bridge posts use the same `ssoTokenSecret` to sign HS256 tokens containing only
+`bridge_fingerprint` and `exp` (one hour from the device clock, without `iat`).
+A host-supplied `OctopusScenarioSdk.BridgeShareSigner` takes precedence. Without
+either signer, signing still fails and the sample's in-app Debug console (when included)
+records "Bridge signing refused" with instructions to configure one; a static `authToken`
+cannot sign bridge posts.
+
+`UnityExample/Assets/Resources/OctopusExampleConfig.asset` is gitignored. Keep credentials
+there. Local signing is demo-only; production apps fetch tokens from a backend and must
+never embed the signing secret.
 
 ## Support
 

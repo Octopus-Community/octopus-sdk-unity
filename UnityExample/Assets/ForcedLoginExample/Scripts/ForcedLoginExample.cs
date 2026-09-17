@@ -31,6 +31,14 @@ public class ForcedLoginExample : MonoBehaviour
 
     public async void OnLoginButtonClicked()
     {
+        string reason;
+        if (!isLoggedIn && !OctopusSampleTokenProvider.CanConnect(config, out reason))
+        {
+            message.text = reason;
+            UpdateButton();
+            OctopusSampleLog.Current.LogStateChange("[OctopusQA] scene=ForcedLogin state=refused", reason);
+            return;
+        }
         message.text = "";
         DisableButton();
         if (isLoggedIn)
@@ -72,8 +80,10 @@ public class ForcedLoginExample : MonoBehaviour
 
     public async Task<string> GetToken()
     {
+        var profile = config;
+        var provider = new OctopusSampleTokenProvider(profile);
         await Task.Delay(100);
-        return config.authToken;
+        return provider.GetToken(profile.userId, profile.entitlements);
     }
 
     public void OnOpenButtonClicked()
