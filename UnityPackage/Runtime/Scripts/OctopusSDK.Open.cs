@@ -153,6 +153,34 @@ public partial class OctopusSDK
 #endif
     }
 
+    /// <summary>Open one member's activity (posts-only) screen, identified by
+    /// <see cref="OctopusCommunityMemberId.FromProfileId"/> or
+    /// <see cref="OctopusCommunityMemberId.FromClientUserId"/>. A client user id is resolved to its
+    /// Octopus profile natively and requires a community that exposes client user ids; an unknown
+    /// id shows the native unavailable state. A member that is the connected user opens their own
+    /// activity. Null navigationMode preserves the native home-screen default; Android ignores it.
+    /// Use <see cref="OpenActivity(OctopusNavigationMode?)"/> for the connected user's activity.</summary>
+    /// <param name="memberId">The member whose activity to open.</param>
+    /// <param name="navigationMode">iOS navigation container, or null for the native default.</param>
+    /// <exception cref="System.ArgumentNullException">memberId is null.</exception>
+    public static void OpenActivity(OctopusCommunityMemberId memberId, OctopusNavigationMode? navigationMode = null)
+    {
+        if (memberId == null) throw new System.ArgumentNullException("memberId");
+        NavigationModeCode(navigationMode);
+#if UNITY_EDITOR
+        MockBackend.OpenMemberActivity(memberId, navigationMode);
+#elif UNITY_ANDROID
+        using (var plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
+        {
+            plugin.CallStatic("openMemberActivity", memberId.ProfileId ?? "", memberId.ClientUserId ?? "",
+                NavigationModeCode(navigationMode));
+        }
+#elif UNITY_IOS
+        OctopusSdkOpenMemberActivity(memberId.ProfileId ?? "", memberId.ClientUserId ?? "",
+            NavigationModeCode(navigationMode));
+#endif
+    }
+
     internal static int NavigationModeCode(OctopusNavigationMode? mode)
     {
         if (!mode.HasValue) return -1;
@@ -179,5 +207,8 @@ public partial class OctopusSDK
 
     [DllImport("__Internal")]
     private static extern void OctopusSdkOpenActivity(int navigationMode);
+
+    [DllImport("__Internal")]
+    private static extern void OctopusSdkOpenMemberActivity(string profileId, string clientUserId, int navigationMode);
 #endif
 }

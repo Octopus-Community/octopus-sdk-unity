@@ -1,5 +1,6 @@
 using TMPro;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.UI;
@@ -62,6 +63,9 @@ public class OctopusSampleSettingsViewTests
                      OctopusSampleSettingsView.AboutRowId,
                      OctopusSampleSettingsView.ResetCardId,
                      OctopusSampleSettingsView.ResetButtonId,
+                     OctopusSampleSettingsView.ResetStateSectionId,
+                     OctopusSampleSettingsView.ResetConfigCardId,
+                     OctopusSampleSettingsView.LanguageLinkId,
                      OctopusSampleSettingsView.VersionLabelId,
                      OctopusSampleSettingsView.AppearanceRowId,
                      OctopusSampleSettingsView.LanguageRowId,
@@ -71,6 +75,39 @@ public class OctopusSampleSettingsViewTests
                 "Nothing in the Settings tab is named '" + id + "' — the QA pipeline addresses " +
                 "it by that name.");
         }
+    }
+
+    [Test]
+    public void TheLanguageLinkOpensTheLocaleScenario()
+    {
+        // The row used to say "Set through the Locale scenario" in plain text and nothing more.
+        OctopusScenarioSdk.Use(new OctopusRecordingScenarioSdk
+        {
+            Profile = new OctopusExampleConfig.ExampleProfile { apiKey = "test-key" },
+        });
+        var shell = Shell();
+
+        Find(shell.transform, OctopusSampleSettingsView.LanguageLinkId)
+            .GetComponent<Button>().onClick.Invoke();
+
+        var screen = Object.FindAnyObjectByType<OctopusScenarioScreenView>();
+        Assert.IsNotNull(screen, "The Language link opened no scenario screen.");
+        _spawned.Add(screen.gameObject);
+        Assert.AreEqual(OctopusSampleSettingsView.LocaleScenarioId, screen.ScenarioId);
+        Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
+    }
+
+    [Test]
+    public void OneResetCardHoldsBothResets()
+    {
+        var shell = Shell();
+        var cards = new List<string>();
+        foreach (var t in shell.GetComponentsInChildren<Transform>(true))
+            if (t.name == OctopusSampleSettingsView.ResetCardId) cards.Add(t.name);
+        Assert.AreEqual(1, cards.Count, "Settings shows more than one Reset card.");
+        var card = Find(shell.transform, OctopusSampleSettingsView.ResetCardId);
+        Assert.IsNotNull(Find(card, OctopusSampleSettingsView.ResetButtonId));
+        Assert.IsNotNull(Find(card, OctopusSampleSettingsView.ResetConfigButtonId));
     }
 
     [Test]
@@ -432,7 +469,10 @@ public class OctopusSampleSettingsViewTests
         Assert.AreEqual("Dark", Find(appearance, "settings-appearance-value").GetComponent<TMP_Text>().text);
         Assert.AreEqual("System default (no override)",
             Find(language, "settings-language-value").GetComponent<TMP_Text>().text);
-        Assert.IsEmpty(language.GetComponentsInChildren<Selectable>(true));
+        // The Language row edits nothing: its one control is the link to the Locale scenario.
+        CollectionAssert.AreEqual(new[] { OctopusSampleSettingsView.LanguageLinkId },
+            language.GetComponentsInChildren<Selectable>(true).Select(s => s.gameObject.name).ToArray());
+        Assert.IsEmpty(language.GetComponentsInChildren<TMP_InputField>(true));
         Assert.IsEmpty(appearance.GetComponentsInChildren<TMP_InputField>(true));
         Assert.IsEmpty(appearance.GetComponentsInChildren<Toggle>(true));
 

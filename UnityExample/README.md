@@ -1,5 +1,19 @@
 # Unity sample
 
+## Push notifications
+
+The sample asks for notification permission once the SDK is initialised and the Push
+registration switch is on, as the Android sample does — not at launch (#233). On a first run
+that means right after the first successful Start in Configuration; on a later run, at launch,
+when the saved profile is replayed.
+
+On iOS the device token is requested from APNs by that same authorization, so **the token only
+reaches the SDK after the first successful initialisation**. A push sent to a fresh install
+before any profile was started has no token to land on: start a profile first, then send the
+test push. On Android the FCM token is fetched at launch and cached, but the notification
+permission (Android 13+) is asked at the same point as on iOS. If the iOS request cannot reach
+the OS, the sample logs a warning and retries it on the next state change.
+
 ## QA automation
 
 Android reads launch extras once at process startup. Use `am start -S` to stop the

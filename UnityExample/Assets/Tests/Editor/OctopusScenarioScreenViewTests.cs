@@ -116,8 +116,8 @@ public class OctopusScenarioScreenViewTests
         {
             var bleed = Find(view.transform, name);
             Assert.AreSame(safe.parent, bleed.parent);
-            Assert.AreEqual(name == "TopBleed" ? OctopusSampleBranding.Palette.Chrome
-                : OctopusSampleBranding.Palette.Surface, bleed.GetComponent<Image>().color);
+            Assert.AreEqual(name == "TopBleed" ? OctopusSampleBranding.Palette.Header
+                : OctopusSampleBranding.Palette.TabBar, bleed.GetComponent<Image>().color);
         }
         Assert.AreEqual(OctopusSampleBranding.AppBarUnits,
             ((RectTransform)Find(view.transform, "Header")).sizeDelta.y);
@@ -566,6 +566,12 @@ public class OctopusScenarioScreenViewTests
         OctopusSampleFeatureToggles.SetForceLogin(enabled);
         var shell = OctopusSampleShell.Create();
         _spawned.Add(shell.gameObject);
+        // Leave the list where the chip must not land: the owning section collapsed and a query
+        // filtering it out.
+        shell.Select(OctopusSampleTab.Scenarios);
+        var before = shell.GetComponentInChildren<OctopusScenariosListView>();
+        before.ToggleSection(ScenarioSection.SignIn);
+        before.SetQuery("zzz-no-match");
         shell.Select(OctopusSampleTab.Home);
         var view = Open("connection");
         var feature = Find(view.transform, "scenario-feature-state");
@@ -577,6 +583,11 @@ public class OctopusScenarioScreenViewTests
         Tap(view, "scenario-feature-state");
         Assert.IsTrue(view == null, "The detail overlay must close to reveal Scenarios.");
         Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
+        var list = shell.GetComponentInChildren<OctopusScenariosListView>();
+        Assert.AreEqual("", list.Query, "The chip landed on a filtered list that may hide its switch.");
+        Assert.IsTrue(list.IsSectionOpen(ScenarioSection.SignIn), "The chip landed on a collapsed section.");
+        Assert.AreEqual(ScenarioSection.SignIn, list.FocusedSection,
+            "The chip did not scroll to the section that holds its switch.");
         Assert.AreEqual(enabled, OctopusSampleFeatureToggles.ForceLogin);
         Assert.IsEmpty(_sdk.Calls);
     }
@@ -781,10 +792,10 @@ public class OctopusScenarioScreenViewTests
         Assert.IsTrue(Find(view.transform, "ParametersSection").IsChildOf(safe));
         if (Screen.width > 0 && Screen.height > 0)
         {
-            Assert.AreEqual(new Vector2(Screen.safeArea.xMin / Screen.width,
-                Screen.safeArea.yMin / Screen.height), safe.anchorMin);
-            Assert.AreEqual(new Vector2(Screen.safeArea.xMax / Screen.width,
-                Screen.safeArea.yMax / Screen.height), safe.anchorMax);
+            Assert.AreEqual(new Vector2(SampleUiSafeArea.ScreenSafeArea().xMin / Screen.width,
+                SampleUiSafeArea.ScreenSafeArea().yMin / Screen.height), safe.anchorMin);
+            Assert.AreEqual(new Vector2(SampleUiSafeArea.ScreenSafeArea().xMax / Screen.width,
+                SampleUiSafeArea.ScreenSafeArea().yMax / Screen.height), safe.anchorMax);
         }
         Tap(view, "locale-customize");
         var input = Field(view, "locale-field-locale");

@@ -35,6 +35,10 @@ using UnityEngine.UI;
 ///   does not define either — it is Android's own test tag, reused verbatim so one QA step reads
 ///   the same on both platforms;
 /// - the Notifications switch is `scenarios-toggle-push-registration`, also Android's test tag;
+/// - the Sign-in section's nested Unified Profile section is `scenarios-unified-profile`, its three
+///   choices `expose-override-backend` / `-on` / `-off` (Android's test tags) and its read-out line
+///   `unified-profile-live-value`, and its host-profile-route switch `unified-profile-route-toggle`
+///   (row `unified-profile-route`);
 /// - the empty state is `scenarios-empty`.
 /// Unity renders into one opaque surface with no accessibility tree, so a name that moves takes the
 /// QA script with it.
@@ -53,24 +57,46 @@ public class OctopusScenariosListView : MonoBehaviour
     /// <summary>The line that appears under the switch once the SDK is up and it decides nothing.</summary>
     public const string ForceLoginLockedNoteId = "scenarios-toggle-force-login-locked";
 
+    /// <summary>
+    /// The link under that line to the Configuration screen, the one place that still changes
+    /// Force login once the SDK is up.
+    /// </summary>
+    public const string ForceLoginConfigLinkId = "scenarios-toggle-force-login-config";
+
     public const string PushRegistrationRowId = "scenarios-toggle-push-registration-row";
     public const string PushRegistrationLockedNoteId = "scenarios-toggle-push-registration-locked";
+
+    /// <summary>The nested Unified Profile section's head, which expands and collapses it.</summary>
+    public const string UnifiedProfileId = "scenarios-unified-profile";
+    public const string UnifiedProfileBackendId = "expose-override-backend";
+    public const string UnifiedProfileForceOnId = "expose-override-on";
+    public const string UnifiedProfileForceOffId = "expose-override-off";
+
+    /// <summary>The "Unified Profile ✓ on / ✗ off" line inside the section.</summary>
+    public const string UnifiedProfileLiveValueId = "unified-profile-live-value";
+
+    /// <summary>The row, then the switch, that wires or unwires the host profile route (#393).</summary>
+    public const string UnifiedProfileRouteRowId = "unified-profile-route";
+    public const string UnifiedProfileRouteToggleId = "unified-profile-route-toggle";
 
     private RectTransform _list;
     private bool _listening;
     private bool _lockedAsDrawn;
+    private bool _unifiedProfileOpen;
+    private bool _unifiedProfileDrawn;
     private string _query = "";
     private TMP_InputField _searchField;
 
     public sealed class ViewState
     {
         public string Query = "";
+        public bool UnifiedProfileOpen;
         public readonly Dictionary<ScenarioSection, bool> Open = new Dictionary<ScenarioSection, bool>();
     }
 
     public ViewState CaptureState()
     {
-        var state = new ViewState { Query = _query };
+        var state = new ViewState { Query = _query, UnifiedProfileOpen = _unifiedProfileOpen };
         foreach (var pair in _open) state.Open[pair.Key] = pair.Value;
         return state;
     }
@@ -85,6 +111,7 @@ public class OctopusScenariosListView : MonoBehaviour
         if (state != null)
         {
             view._query = state.Query;
+            view._unifiedProfileOpen = state.UnifiedProfileOpen;
             foreach (var pair in state.Open) view._open[pair.Key] = pair.Value;
         }
         var content = SampleUi.VerticalScroll(host, SampleUi.ContentPadding());
@@ -115,6 +142,66 @@ public class OctopusScenariosListView : MonoBehaviour
         // otherwise persist "open" for every section it touched.
         _open[section] = !IsSectionOpen(section);
         Repaint();
+    }
+
+    /// <summary>
+    /// Whether the Sign-in section's nested Unified Profile section shows its choices. Collapsed by
+    /// default, as on Android, and remembered across tab switches through <see cref="ViewState"/>.
+    /// </summary>
+    public bool IsUnifiedProfileOpen { get { return _unifiedProfileOpen; } }
+
+    /// <summary>Expands or collapses the Unified Profile section; expanding reads the flag afresh.</summary>
+    public void ToggleUnifiedProfile()
+    {
+        _unifiedProfileOpen = !_unifiedProfileOpen;
+        Repaint();
+        if (_unifiedProfileOpen) OctopusSampleUnifiedProfile.RefreshEffective();
+    }
+
+    /// <summary>
+    /// The section <see cref="ScrollTo"/> last brought to the top, or null. Test-only observable:
+    /// the scroll offset itself depends on the canvas size an EditMode run happens to have.
+    /// </summary>
+    public ScenarioSection? FocusedSection { get; private set; }
+
+    /// <summary>
+    /// Scrolls the list so the card of <paramref name="section"/> starts at the top of the
+    /// viewport, as far as the list's length allows. False when that section is not on screen —
+    /// filtered out by the query, for instance.
+    /// </summary>
+    public bool ScrollTo(ScenarioSection section)
+    {
+        var card = SectionCard(section);
+        var scroll = GetComponentInChildren<ScrollRect>();
+        if (card == null || scroll == null || scroll.content == null) return false;
+        FocusedSection = section;
+        Canvas.ForceUpdateCanvases();
+        LayoutRebuilder.ForceRebuildLayoutImmediate(scroll.content);
+        var viewport = scroll.viewport != null ? scroll.viewport : (RectTransform)scroll.transform;
+        var scrollable = scroll.content.rect.height - viewport.rect.height;
+        if (scrollable <= 0f)
+        {
+            scroll.verticalNormalizedPosition = 1f;
+            return true;
+        }
+        var corners = new Vector3[4];
+        card.GetWorldCorners(corners);
+        // corners[1] is the card's top-left; measured from the content's top edge.
+        var fromTop = scroll.content.rect.yMax - scroll.content.InverseTransformPoint(corners[1]).y;
+        scroll.verticalNormalizedPosition = 1f - Mathf.Clamp01(fromTop / scrollable);
+        return true;
+    }
+
+    private RectTransform SectionCard(ScenarioSection section)
+    {
+        if (_list == null) return null;
+        var headerId = OctopusScenarioSections.HeaderIdOf(section);
+        for (var i = 0; i < _list.childCount; i++)
+        {
+            var card = _list.GetChild(i);
+            if (card.gameObject.activeSelf && card.Find(headerId) != null) return (RectTransform)card;
+        }
+        return null;
     }
 
     /// <summary>Applies a new search query and repaints. Wired to the search field's own events.</summary>
@@ -175,6 +262,7 @@ public class OctopusScenariosListView : MonoBehaviour
     {
         if (!_listening) return;
         OctopusSampleState.Changed -= OnStateChanged;
+        WatchUnifiedProfile(false);
         _listening = false;
     }
 
@@ -193,6 +281,32 @@ public class OctopusScenariosListView : MonoBehaviour
         Repaint();
     }
 
+    /// <summary>
+    /// Repaints on a new override or a new read of the flag. Subscribed only while the section's
+    /// choices are on screen (<see cref="WatchUnifiedProfile"/>), so a read finishing behind a
+    /// collapsed section rebuilds nothing, and a community switch with no section open makes no
+    /// read at all — <see cref="OctopusSampleUnifiedProfile.Reapply"/> reads only for a listener.
+    /// </summary>
+    private void OnUnifiedProfileChanged()
+    {
+        // Same guard as the scenario screen: a view destroyed in edit mode never gets OnDestroy
+        // and would otherwise keep a static handler — and make every later switch read the flag.
+        if (this == null)
+        {
+            OctopusSampleUnifiedProfile.Changed -= OnUnifiedProfileChanged;
+            return;
+        }
+        Repaint();
+    }
+
+    private void WatchUnifiedProfile(bool watch)
+    {
+        if (_unifiedProfileDrawn == watch) return;
+        _unifiedProfileDrawn = watch;
+        if (watch) OctopusSampleUnifiedProfile.Changed += OnUnifiedProfileChanged;
+        else OctopusSampleUnifiedProfile.Changed -= OnUnifiedProfileChanged;
+    }
+
     private static bool Locked()
     {
         return OctopusSampleFeatureToggles.ForceLoginLockedNote().Length > 0;
@@ -206,6 +320,7 @@ public class OctopusScenariosListView : MonoBehaviour
         // section out draws no switch at all, and a stale value would then keep OnStateChanged
         // from repainting once the query is cleared.
         _lockedAsDrawn = Locked();
+        WatchUnifiedProfile(false);
 
         for (var i = _list.childCount - 1; i >= 0; i--)
         {
@@ -231,6 +346,9 @@ public class OctopusScenariosListView : MonoBehaviour
             BuildFeatureToggle(group, section);
             if (!IsSectionOpen(group.Section)) continue;
             foreach (var scenario in group.Scenarios) BuildCard(scenario, section);
+            // After the cards and never while searching — Android's placement: the section holds
+            // no scenario, so a query has nothing in it to match.
+            if (group.Section == ScenarioSection.SignIn && !Searching) BuildUnifiedProfile(section);
         }
     }
 
@@ -282,7 +400,8 @@ public class OctopusScenariosListView : MonoBehaviour
     /// - **The row states the effect in product words, under the label**, in both positions —
     ///   Android's `FeatureToggleRow` renders the same sentence from the same source. A switch that
     ///   flips with nothing on screen saying what changed is the defect the contract names.
-    /// - **Force login locks once the SDK is up**, with a restart note beneath its effect.
+    /// - **Force login locks once the SDK is up**, with a note beneath its effect and a link to
+    ///   the Configuration screen, whose profiles change it live (a community switch, no restart).
     ///   Push registration stays interactable: enabling forwards the cached device token and
     ///   disabling stops forwarding new tokens. The view listens to
     ///   <see cref="OctopusSampleState.Changed"/> so Force login also locks when a scenario
@@ -323,6 +442,8 @@ public class OctopusScenariosListView : MonoBehaviour
             var note = SampleUi.Label(ForceLoginLockedNoteId, copy, locked, SampleUi.TextCaption,
                                       SampleUi.Attention, TextAnchor.UpperLeft);
             note.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            SampleUi.Button(ForceLoginConfigLinkId, copy, "Change in Configuration",
+                            SampleUiButtonVariant.Tertiary, () => OctopusSampleConfigView.Open());
         }
 
         var next = !on;
@@ -339,6 +460,106 @@ public class OctopusScenariosListView : MonoBehaviour
         var changed = push ? OctopusSampleFeatureToggles.SetPushRegistration(enabled)
                            : OctopusSampleFeatureToggles.SetForceLogin(enabled);
         if (changed) Repaint();
+    }
+
+    /// <summary>
+    /// The Unified Profile override, nested in Sign-in &amp; user after its cards and indented, as
+    /// the Android sample's `UnifiedProfileSection`: a collapsible head, the intro, a read-out of
+    /// the effective flag, then the three choices — the selected one filled, the others outlined.
+    /// A choice applies to the running SDK at once (no Apply, no restart, so the signed-in user
+    /// stays) and is re-applied at the next start or community switch; see
+    /// <see cref="OctopusSampleUnifiedProfile"/>.
+    /// </summary>
+    private void BuildUnifiedProfile(RectTransform parent)
+    {
+        var block = SampleUi.Panel("scenarios-unified-profile-panel", parent, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(block, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm),
+            new RectOffset(Mathf.RoundToInt(OctopusSampleBranding.Dp(12f)), 0, 0, 0), false);
+
+        var head = SampleUi.Panel(UnifiedProfileId, block, OctopusSampleBranding.Clear);
+        var layout = head.gameObject.AddComponent<HorizontalLayoutGroup>();
+        layout.spacing = OctopusSampleBranding.Dp(8f);
+        layout.childAlignment = TextAnchor.MiddleLeft;
+        layout.childControlWidth = layout.childControlHeight = true;
+        layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+        head.gameObject.AddComponent<LayoutElement>().minHeight = OctopusSampleBranding.MinTouchUnits;
+        var title = SampleUi.Label("Title", head, OctopusSampleUnifiedProfile.Label, SampleUi.TextBody,
+            SampleUi.TitleColor, TextAnchor.MiddleLeft);
+        title.fontStyle = FontStyles.Bold;
+        var titleSize = title.gameObject.AddComponent<LayoutElement>();
+        titleSize.minWidth = 0f;
+        titleSize.preferredWidth = 0f;
+        titleSize.flexibleWidth = 1f;
+        var state = SampleUi.Label("State", head, _unifiedProfileOpen ? "(hide)" : "(show)", SampleUi.TextCaption,
+            SampleUi.Muted, TextAnchor.MiddleRight);
+        var stateSize = state.gameObject.AddComponent<LayoutElement>();
+        stateSize.minWidth = stateSize.preferredWidth = OctopusSampleBranding.Dp(64f);
+        head.GetComponent<Image>().raycastTarget = true;
+        head.gameObject.AddComponent<SampleUiTouchTarget>();
+        var button = head.gameObject.AddComponent<SampleUiButton>();
+        button.targetGraphic = head.GetComponent<Image>();
+        var palette = OctopusSampleBranding.Palette;
+        button.Configure(head.GetComponent<Image>(), null, title, palette.Surface, palette.Title,
+            palette.Border, OctopusSampleBranding.CardRadius, detail: state);
+        button.onClick.AddListener(ToggleUnifiedProfile);
+        if (!_unifiedProfileOpen) return;
+
+        WatchUnifiedProfile(true);
+        SampleUi.FlexibleLabel(block, OctopusSampleUnifiedProfile.Intro, SampleUi.TextCaption, SampleUi.Muted);
+
+        var readOut = SampleUi.Panel(UnifiedProfileLiveValueId, block, OctopusSampleBranding.Clear);
+        var readOutLayout = readOut.gameObject.AddComponent<HorizontalLayoutGroup>();
+        readOutLayout.spacing = OctopusSampleBranding.Dp(8f);
+        readOutLayout.childAlignment = TextAnchor.MiddleLeft;
+        readOutLayout.childControlWidth = readOutLayout.childControlHeight = true;
+        readOutLayout.childForceExpandWidth = readOutLayout.childForceExpandHeight = false;
+        var nameLabel = SampleUi.Label("Name", readOut, OctopusSampleUnifiedProfile.SectionName, SampleUi.TextBody,
+            SampleUi.TitleColor, TextAnchor.MiddleLeft);
+        nameLabel.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+        var value = SampleUi.Label("Value", readOut, OctopusSampleUnifiedProfile.LiveValue, SampleUi.TextBody,
+            SampleUi.TitleColor, TextAnchor.MiddleRight);
+        value.fontStyle = FontStyles.Bold;
+
+        var current = OctopusSampleUnifiedProfile.Override;
+        OverrideChoice(block, UnifiedProfileBackendId, null, current);
+        OverrideChoice(block, UnifiedProfileForceOnId, true, current);
+        OverrideChoice(block, UnifiedProfileForceOffId, false, current);
+        BuildRouteSwitch(block);
+    }
+
+    /// <summary>
+    /// Whether this app wires the host profile route at all (<c>NavigateToProfileHandler</c>), like
+    /// the Flutter sample's <c>onNavigateToProfile</c> switch. Off, every avatar opens the SDK
+    /// profile whatever the flag says (#393). Applied live, like the three choices above.
+    /// </summary>
+    private static void BuildRouteSwitch(RectTransform parent)
+    {
+        var wired = OctopusSampleUnifiedProfile.RouteWired;
+        var row = SampleUi.Panel(UnifiedProfileRouteRowId, parent, OctopusSampleBranding.Clear);
+        var layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+        layout.spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm);
+        layout.childAlignment = TextAnchor.MiddleLeft;
+        layout.childControlWidth = layout.childControlHeight = true;
+        layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+        var copy = SampleUi.Panel("Copy", row, Color.clear);
+        SampleUi.VerticalStack(copy, 6f, new RectOffset(0, 0, 0, 0), false);
+        copy.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+        SampleUi.FlexibleLabel(copy, "Host profile route (NavigateToProfileHandler)", SampleUi.TextBody,
+            SampleUi.TitleColor);
+        SampleUi.FlexibleLabel(copy, wired
+                ? "Wired: avatars of exposed members open this app's profile page."
+                : "Not wired: every avatar opens the SDK profile.",
+            SampleUi.TextCaption, SampleUi.Muted);
+        var next = !wired;
+        SampleUi.Switch(UnifiedProfileRouteToggleId, row, wired, true,
+            () => OctopusSampleUnifiedProfile.SetRouteWired(next));
+    }
+
+    private static void OverrideChoice(RectTransform parent, string id, bool? value, bool? current)
+    {
+        SampleUi.Button(id, parent, OctopusSampleUnifiedProfile.OverrideLabel(value),
+            current == value ? SampleUiButtonVariant.Primary : SampleUiButtonVariant.Tertiary,
+            () => OctopusSampleUnifiedProfile.SetOverride(value));
     }
 
     /// <summary>"3 (hide)" — the count, and what a tap would do to it.</summary>
@@ -358,10 +579,17 @@ public class OctopusScenariosListView : MonoBehaviour
 
     private void BuildCard(OctopusScenario scenario, RectTransform parent)
     {
-        var card = SampleUi.Panel("Card", parent, OctopusSampleBranding.Clear);
+        // One GameObject.name per card: every sibling used to be called "Card", which makes a
+        // hierarchy dump and a failing UI assertion equally unreadable. The catalog id stays on
+        // the button inside (scenario.CardTestId) — that is what QA taps.
+        var card = SampleUi.Panel("scenarios-" + scenario.Id + "-card-panel", parent, OctopusSampleBranding.Clear);
         SampleUi.VerticalStack(card, 0f, new RectOffset(), false);
         var id = scenario.Id;
-        SampleUi.ListRow(scenario.CardTestId, card, scenario.Title, scenario.Capability,
-            () => OpenScenario(id));
+        // Title, what you will observe, then the one SDK symbol — the wording model the other
+        // three samples already use. The capability line the card used to show is not gone: it
+        // heads the scenario screen, where a list of symbols is the answer to a question the
+        // reader has by then actually asked.
+        SampleUi.ListRow(scenario.CardTestId, card, scenario.DisplayTitle, scenario.Subtitle,
+            () => OpenScenario(id), scenario.ApiSymbol);
     }
 }

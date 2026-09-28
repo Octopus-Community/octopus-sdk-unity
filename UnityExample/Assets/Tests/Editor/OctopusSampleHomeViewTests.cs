@@ -74,6 +74,7 @@ public class OctopusSampleHomeViewTests
                      OctopusSampleHomeView.ConfigurationBlockId,
                      OctopusSampleHomeView.ConnectionCardId,
                      OctopusSampleHomeView.ConnectionStatusId,
+                     OctopusSampleHomeView.ConnectionScenarioLinkId,
                      OctopusSampleHomeView.CommunityAccessCardId,
                      OctopusSampleHomeView.OpenCommunityId,
                  })
@@ -133,13 +134,10 @@ public class OctopusSampleHomeViewTests
         OctopusSampleState.ReportSession(OctopusSampleState.Session.Disconnected, "done");
         Assert.AreEqual("DISCONNECT OK", OctopusSampleHomeView.ConnectionStatusLabel());
 
-        foreach (var session in new[]
-                 {
-                     OctopusSampleState.Session.None,
-                     OctopusSampleState.Session.ConnectCompleted,
-                     OctopusSampleState.Session.Disconnected,
-                     OctopusSampleState.Session.Failed,
-                 })
+        // Every state, StartupFailed included (#387): enumerated, so a new state is swept too.
+        var sessions = (OctopusSampleState.Session[])System.Enum.GetValues(typeof(OctopusSampleState.Session));
+        CollectionAssert.Contains(sessions, OctopusSampleState.Session.StartupFailed);
+        foreach (var session in sessions)
         {
             OctopusSampleState.ReportSession(session, "detail");
             var label = OctopusSampleHomeView.ConnectionStatusLabel();
@@ -258,6 +256,31 @@ public class OctopusSampleHomeViewTests
     }
 
     [Test]
+    public void TheConnectionLinkOpensTheConnectionScenarioOverItsSection()
+    {
+        // The card used to say "Open Scenarios → Connection" in plain text; the link has to land on
+        // that scenario's screen, not on the list root the reader would then search.
+        var shell = Create();
+        shell.Select(OctopusSampleTab.Home);
+        var home = shell.GetComponentInChildren<OctopusSampleHomeView>();
+        Assert.IsNotNull(home, "The Home tab built no view.");
+
+        Find(shell.transform, OctopusSampleHomeView.ConnectionScenarioLinkId)
+            .GetComponent<Button>().onClick.Invoke();
+
+        var screen = Object.FindAnyObjectByType<OctopusScenarioScreenView>();
+        Assert.IsNotNull(screen, "The link opened no scenario screen.");
+        _spawned.Add(screen.gameObject);
+        Assert.AreEqual(OctopusSampleHomeView.ConnectionScenarioId, screen.ScenarioId);
+        Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected,
+            "Back from the scenario would land on Home instead of the list it belongs to.");
+        var list = shell.GetComponentInChildren<OctopusScenariosListView>();
+        Assert.IsNotNull(list);
+        Assert.AreEqual(ScenarioSection.SignIn, list.FocusedSection);
+        Assert.IsTrue(list.IsSectionOpen(ScenarioSection.SignIn));
+    }
+
+    [Test]
     public void TheConfigurationBlockLabelsAreExactlyTheExpectedList()
     {
         var labels = new List<string>();
@@ -269,7 +292,7 @@ public class OctopusSampleHomeViewTests
             new[]
             {
                 "Server environment", "Community", "API key source", "SSO user", "Entitlements",
-                "Theme", "Language",
+                "Sample theme", "Language",
             },
             labels,
             "The configuration block's lines changed. The list is asserted whole because the " +

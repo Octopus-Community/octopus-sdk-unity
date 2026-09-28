@@ -28,8 +28,10 @@
 /// argument of that one call, and this sample initialises once per process
 /// (`OctopusScenarioSdk.EnsureInitialized`). Before the first scenario runs, the switch is live —
 /// flip it, then run a connection preset, and the SDK comes up on the other community. After that
-/// only Force login is locked. Push registration stays live and enabling it forwards the latest
-/// cached device token when the SDK is initialised.
+/// only this switch is locked: the Configuration screen still changes Force login, live, by
+/// applying the other profile (`OctopusScenarioSdk.ApplyConfiguration` switches community — no
+/// restart). Push registration stays live and enabling it forwards the latest cached device token
+/// when the SDK is initialised.
 /// </summary>
 public static class OctopusSampleFeatureToggles
 {
@@ -70,7 +72,11 @@ public static class OctopusSampleFeatureToggles
         OctopusSampleLog.Current.LogStateChange(
             ToggledHeadline,
             PushRegistrationLabel + " → " + (enabled ? "on" : "off") + "\n" + PushRegistrationEffect(enabled));
-        if (enabled) OctopusSamplePushRegistration.RegisterCachedToken();
+        if (enabled)
+        {
+            OctopusSamplePushPermission.Evaluate();
+            OctopusSamplePushRegistration.RegisterCachedToken();
+        }
         return true;
     }
 
@@ -110,6 +116,24 @@ public static class OctopusSampleFeatureToggles
         return true;
     }
 
+    /// <summary>
+    /// Puts the switch where an earlier launch left it, before the startup replay initialises the
+    /// SDK. Silent on purpose: replaying a persisted choice is not the tester flipping the switch,
+    /// so it writes no <see cref="ToggledHeadline"/> line (#342). Refused once the SDK is up, for
+    /// the reason <see cref="SetForceLogin"/> gives.
+    /// </summary>
+    internal static void Restore(bool forceLogin)
+    {
+        if (OctopusSampleState.IsInitialized) return;
+        _forceLogin = forceLogin;
+    }
+
+    // Only the configuration flow may change this after a successful SwitchCommunity.
+    internal static void ConfigurationApplied(bool forceLogin)
+    {
+        _forceLogin = forceLogin;
+    }
+
     /// <summary>The sentence under the switch, for the position given.</summary>
     public static string ForceLoginEffect(bool enabled)
     {
@@ -117,14 +141,15 @@ public static class OctopusSampleFeatureToggles
     }
 
     /// <summary>
-    /// What the Force login header says beneath the effect line once the SDK is up: the switch has stopped
-    /// deciding anything until the app is restarted. Empty while it is still live, so the header
-    /// draws no line at all rather than a reassuring one.
+    /// What the Force login header says beneath the effect line once the SDK is up: this switch has
+    /// stopped deciding anything, and the Configuration screen is where the choice now changes — it
+    /// applies live, through a community switch, not at the next launch. Empty while the switch is
+    /// still live, so the header draws no line at all rather than a reassuring one.
     /// </summary>
     public static string ForceLoginLockedNote()
     {
         return OctopusSampleState.IsInitialized
-            ? "Locked: the SDK is already initialised. Restart the app to apply a change."
+            ? "The SDK is running, so this switch is locked. Change the profile in Configuration: it applies right away, no restart."
             : string.Empty;
     }
 

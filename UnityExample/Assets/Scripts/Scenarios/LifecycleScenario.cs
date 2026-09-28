@@ -45,6 +45,8 @@ public sealed class LifecycleScenario : OctopusScenarioPilot
             if (action == "switchCommunity")
             {
                 var target = sdk.AlternateProfile;
+                // AlternateProfile is the profile the Force login switch does not select.
+                var targetSelection = OctopusSampleFeatureToggles.ForceLogin ? 1 : 2;
                 if (target == null || string.IsNullOrWhiteSpace(target.apiKey))
                 { Finish("No call made: alternate OctopusExampleConfig profile is missing or has no API key."); return; }
                 string reason;
@@ -54,14 +56,16 @@ public sealed class LifecycleScenario : OctopusScenarioPilot
                 OctopusScenarioSdk.EnsurePilotObservations();
                 OctopusSampleState.EnsureObserving();
                 ReportRunning("Switching to the alternate sample profile…");
-                OctopusSampleLog.Current.LogApiCall("OctopusSDK.SwitchCommunity", "profile=alternate, mode=SSO");
+                var switchHost = OctopusScenarioSdk.ServerHostFor(target);
+                OctopusSampleLog.Current.LogApiCall("OctopusSDK.SwitchCommunity",
+                    "profile=alternate, mode=SSO, host=" + switchHost);
                 OctopusScenarioSdk.ClearCommunityObservations();
-                sdk.SwitchCommunity(target.apiKey, OctopusScenarioSdk.PilotMode(),
+                sdk.SwitchCommunity(target.apiKey, OctopusScenarioSdk.PilotMode(), switchHost,
                     () =>
                     {
                         try
                         {
-                            OctopusScenarioSdk.CommunitySwitched(target);
+                            OctopusScenarioSdk.CommunitySwitched(target, targetSelection);
                             Finish("switchCommunity completed. Reconnect the user. No isInitialised stream is available in Unity.");
                         }
                         catch (Exception) { Finish("Community switched, but sample setup failed."); }

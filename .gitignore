@@ -29,10 +29,12 @@ UnityExample/Assets/Scripts/OctopusTestHarness.cs.meta
 .*.unitypackage.*.tmp
 
 # Local store-publishing credentials, read by Scripts/store/*.sh. None of them is ever
-# committed, and none has a CI counterpart — see docs/STORE_PUBLISHING.md.
+# committed — see docs/STORE_PUBLISHING.md.
 /keystore.properties
-/Scripts/store/play-service-account.json
 /Scripts/store/apple-api-key.json
+# No longer read by anything: Play uploads authenticate by Workload Identity Federation and no
+# service-account JSON key exists by design. Still ignored so a stray copy can never be committed.
+/Scripts/store/play-service-account.json
 
 # Output of Scripts/store/publish-android.sh: store-signed App Bundles and their R8 mapping.
 # Not just untidy — an unignored release artefact here is one `git add -A` from the tree.

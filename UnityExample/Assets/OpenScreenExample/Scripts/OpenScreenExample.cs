@@ -36,7 +36,8 @@ public class OpenScreenExample : MonoBehaviour
 
     public void OnOpenPostClicked()
     {
-        OctopusSDK.OpenPost(postId);
+        var target = string.IsNullOrWhiteSpace(postId) ? OctopusSampleFixtures.PostTextId : postId;
+        if (!string.IsNullOrWhiteSpace(target)) OctopusSDK.OpenPost(target);
     }
 
     public void OnOpenCreatePostClicked()
@@ -44,7 +45,7 @@ public class OpenScreenExample : MonoBehaviour
         OctopusSDK.OpenCreatePost(new OctopusPrefilledPost
         {
             Text = prefilledText,
-            TopicId = string.IsNullOrEmpty(prefilledTopicId) ? null : prefilledTopicId,
+            TopicId = string.IsNullOrEmpty(prefilledTopicId) ? OctopusSampleFixtures.DefaultTopicId : prefilledTopicId,
             ImagePath = string.IsNullOrEmpty(prefilledImagePath) ? null : prefilledImagePath,
             CtaLabel = string.IsNullOrEmpty(prefilledCtaLabel) ? null : prefilledCtaLabel,
             CtaUrl = string.IsNullOrEmpty(prefilledCtaUrl) ? null : prefilledCtaUrl

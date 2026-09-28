@@ -43,7 +43,9 @@ public static class OctopusSampleNativeTheme
                 OctopusSampleBranding.SdkDarkPrimaryMain,
                 OctopusSampleBranding.SdkDarkPrimaryLow,
                 OctopusSampleBranding.SdkDarkPrimaryHigh,
-                OctopusSampleBranding.SdkDarkOnPrimary);
+                OctopusSampleBranding.SdkDarkOnPrimary,
+                link: OctopusSampleBranding.AccentDark,
+                background: OctopusSampleBranding.DarkBackground);
         }
     }
 

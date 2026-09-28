@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-PACKAGE_VERSION = '1.13.2'
+PACKAGE_VERSION = '1.14.0'
 PACKAGE_URL     = 'https://github.com/Octopus-Community/octopus-sdk-swift.git'
 PRODUCTS        = ['Octopus', 'OctopusUI']
 
@@ -25,12 +25,18 @@ VENDOR_BUNDLE_DIR = File.join(SCRIPT_DIR, 'vendor', 'bundle')
 
 abort '[Octopus SDK] vendor/bundle not found' unless Dir.exist?(VENDOR_BUNDLE_DIR)
 
-xcodeproj_lib =
-  Dir.glob(File.join(VENDOR_BUNDLE_DIR, 'ruby', '*', 'gems', 'xcodeproj-*', 'lib')).first
+# EVERY vendored gem's `lib`, not just xcodeproj's. `xcodeproj.rb` requires `claide` on its
+# third line and reaches nanaimo, colored2, CFPropertyList, atomos and rexml right after, so
+# putting only xcodeproj on the load path worked by accident — on a machine where a CocoaPods
+# install had already dropped those gems into the interpreter's own gem path — and failed with
+# `cannot load such file -- claide` everywhere else, leaving an Xcode export that links no
+# native SDK. Every gem here is pure Ruby, no native extension, so the tree is usable from any
+# interpreter despite the `3.2.0` in its path.
+gem_libs = Dir.glob(File.join(VENDOR_BUNDLE_DIR, 'ruby', '*', 'gems', '*', 'lib')).sort
 
-abort '[Octopus SDK] xcodeproj gem not found' unless xcodeproj_lib
+abort '[Octopus SDK] xcodeproj gem not found' if gem_libs.grep(/xcodeproj-/).empty?
 
-$LOAD_PATH.unshift(xcodeproj_lib)
+$LOAD_PATH.unshift(*gem_libs)
 require 'xcodeproj'
 
 # ------------------------------------------------------------

@@ -1,6 +1,6 @@
 {
   "name": "OctopusSample.Scripts",
-  "references": ["Unity.TextMeshPro", "OctopusSDK.Runtime", "Unity.Notifications.iOS"],
+  "references": ["Unity.TextMeshPro", "OctopusSDK.Runtime", "Unity.Notifications.iOS", "Unity.InputSystem"],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

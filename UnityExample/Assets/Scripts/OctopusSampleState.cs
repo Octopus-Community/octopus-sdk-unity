@@ -30,7 +30,13 @@ public static class OctopusSampleState
         Disconnected,
 
         /// <summary>A connection call threw, or was refused before reaching the SDK.</summary>
-        Failed
+        Failed,
+
+        /// <summary>
+        /// The launch-time replay of the saved configuration failed. No connection call was made:
+        /// kept apart from <see cref="Failed"/> so Home does not describe it as one (#342).
+        /// </summary>
+        StartupFailed
     }
 
     private static bool _initialized;

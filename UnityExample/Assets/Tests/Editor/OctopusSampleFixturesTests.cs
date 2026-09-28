@@ -5,6 +5,97 @@ using UnityEngine;
 public class OctopusSampleFixturesTests
 {
     [Test]
+    public void LaunchOverridesCanSupplyMissingTargetsKeepDefaultsAndReset()
+    {
+        Assert.IsNull(OctopusSampleFixtures.PostImageId);
+        Assert.IsNull(OctopusSampleFixtures.PostPollId);
+        Assert.IsNull(OctopusSampleFixtures.PostCtaId);
+        Assert.IsNull(OctopusSampleFixtures.CommentReportedId);
+        Assert.IsNull(OctopusSampleFixtures.GatedTopicId);
+        Assert.IsNull(OctopusSampleFixtures.DeepLinkPost);
+        var defaults = OctopusSampleFixtures.PostTextId;
+        try
+        {
+            var options = OctopusSampleQaLaunchOptions.Parse(new System.Collections.Generic.Dictionary<string, string>
+            {
+                { "qaFixture.post.text", " " }, { "qaFixture.post.image", " image-target " },
+                { "qaFixture.comment.onPost", "comment-target" }, { "qaFixture.user.other", "profile-target" }
+            });
+            Assert.IsNull(options.Error);
+            new OctopusSampleQaRequest(options);
+            Assert.AreEqual(defaults, OctopusSampleFixtures.PostTextId);
+            Assert.AreEqual("image-target", OctopusSampleFixtures.PostImageId);
+            Assert.AreEqual("comment-target", OctopusSampleFixtures.CommentOnPostId);
+            Assert.AreEqual("profile-target", OctopusSampleFixtures.OtherUserId);
+            new OctopusSampleQaRequest(OctopusSampleQaLaunchOptions.Parse(null));
+            Assert.AreEqual(defaults, OctopusSampleFixtures.PostTextId);
+            Assert.IsNull(OctopusSampleFixtures.PostImageId);
+        }
+        finally { OctopusSampleFixtures.ApplyOverrides(null); }
+    }
+
+    [TestCase(false, null, TestName = "MissingExtraKeepsCompiledDefaults")]
+    [TestCase(true, "", TestName = "BlankExtraKeepsCompiledDefaultsIncludingNullTargets")]
+    [TestCase(true, " \t\r\n ", TestName = "WhitespaceExtraKeepsCompiledDefaultsIncludingNullTargets")]
+    [TestCase(true, null, TestName = "NullExtraKeepsCompiledDefaultsIncludingNullTargets")]
+    [TestCase(true, " replacement ", TestName = "NonBlankExtraOverridesEveryCompiledDefault")]
+    public void LaunchExtraResolutionAppliesToEveryFixture(bool includeExtra, string value)
+    {
+        OctopusSampleFixtures.ApplyOverrides(null);
+        var fixtures = new System.Collections.Generic.Dictionary<string, System.Func<string>>
+        {
+            { "post.text", () => OctopusSampleFixtures.PostTextId },
+            { "post.image", () => OctopusSampleFixtures.PostImageId },
+            { "post.poll", () => OctopusSampleFixtures.PostPollId },
+            { "post.cta", () => OctopusSampleFixtures.PostCtaId },
+            { "post.reactionStack", () => OctopusSampleFixtures.PostReactionStackId },
+            { "comment.onPost", () => OctopusSampleFixtures.CommentOnPostId },
+            { "comment.reported", () => OctopusSampleFixtures.CommentReportedId },
+            { "user.other", () => OctopusSampleFixtures.OtherUserId },
+            { "topic.default", () => OctopusSampleFixtures.DefaultTopicId },
+            { "topic.gated", () => OctopusSampleFixtures.GatedTopicId },
+            { "deeplink.post", () => OctopusSampleFixtures.DeepLinkPost }
+        };
+        CollectionAssert.AreEquivalent(OctopusSampleFixtures.Names, fixtures.Keys);
+        Assert.IsNotNull(OctopusSampleFixtures.PostTextId);
+        Assert.IsNull(OctopusSampleFixtures.PostImageId);
+        try
+        {
+            foreach (var fixture in fixtures)
+            {
+                OctopusSampleFixtures.ApplyOverrides(null);
+                var fallback = fixture.Value();
+                var extras = new System.Collections.Generic.Dictionary<string, string>();
+                if (includeExtra) extras[OctopusSampleFixtures.ExtraPrefix + fixture.Key] = value;
+                var options = OctopusSampleQaLaunchOptions.Parse(extras);
+                Assert.IsNull(options.Error);
+                new OctopusSampleQaRequest(options);
+                var expected = includeExtra && !string.IsNullOrWhiteSpace(value) ? value.Trim() : fallback;
+                Assert.AreEqual(expected, fixture.Value(), fixture.Key);
+            }
+        }
+        finally { OctopusSampleFixtures.ApplyOverrides(null); }
+    }
+
+    [Test]
+    public void InvalidLaunchDoesNotApplyItsFixtures()
+    {
+        var original = OctopusSampleFixtures.PostTextId;
+        var options = OctopusSampleQaLaunchOptions.Parse(new System.Collections.Generic.Dictionary<string, string>
+        {
+            { "qaFixture.post.text", "replacement" }, { "qaTab", "invalid" }
+        });
+        new OctopusSampleQaRequest(options);
+        Assert.IsNotNull(options.Error);
+        Assert.AreEqual(original, OctopusSampleFixtures.PostTextId);
+        options = OctopusSampleQaLaunchOptions.Parse(new System.Collections.Generic.Dictionary<string, string>
+        {
+            { "qaFixture.post.text", "TBD" }
+        });
+        Assert.IsNotNull(options.Error);
+    }
+
+    [Test]
     public void ProfilesHaveStableIdsAndCompleteSyntheticIdentities()
     {
         Assert.AreEqual(3, OctopusSampleFixtures.ProfileCount);

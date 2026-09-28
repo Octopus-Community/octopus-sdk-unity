@@ -186,7 +186,7 @@ public class SampleUiRenderingTests
                 Color shadowInk = shadow.color;
                 var surface = OctopusSampleBranding.Palette.Surface;
                 var composite = OctopusSampleBranding.Tint(shadowInk, surface,
-                    1f - Mathf.Pow(1f - shadowInk.a, 8f));
+                    1f - Mathf.Pow(1f - shadowInk.a, SampleUiElevation.Taps));
                 Assert.Greater(Mathf.Abs(composite.grayscale - surface.grayscale), 0.06f,
                     "The emitted elevation vertices must remain visible in this theme.");
                 var last = new UIVertex();
@@ -200,6 +200,43 @@ public class SampleUiRenderingTests
             Object.DestroyImmediate(host);
             OctopusSampleBranding.Theme = previous;
         }
+    }
+
+    [Test]
+    public void ElevationStaysWithinItsOverdrawBudget()
+    {
+        // Every tap repaints the whole card in a transparent pass, so the tap count is a
+        // fill-rate budget measured on device, not a style knob: eight taps cost a dropped
+        // vsync in nine while scrolling on a fill-bound mobile GPU. Raising this ceiling means
+        // re-running that measurement.
+        Assert.LessOrEqual(SampleUiElevation.Taps, 4,
+            "The elevation shadow may not cost more than five times the card's fill.");
+        var host = new GameObject("Elevation budget", typeof(RectTransform), typeof(Canvas));
+        try
+        {
+            var effect = SampleUi.Card("card", host.transform).GetComponent<SampleUiElevation>();
+            using (var vertices = new VertexHelper())
+            {
+                var quad = new UIVertex[4];
+                for (int i = 0; i < quad.Length; i++)
+                {
+                    quad[i] = UIVertex.simpleVert;
+                    quad[i].position = new Vector3(i % 2, i / 2, 0f);
+                }
+                vertices.AddUIVertexQuad(quad);
+                effect.ModifyMesh(vertices);
+                Assert.AreEqual(6 * (SampleUiElevation.Taps + 1), vertices.currentVertCount,
+                    "One transparent copy per tap, plus the opaque source on top.");
+                // The taps split a fixed opacity budget, so the rim keeps the same weight
+                // whatever the count.
+                var shadow = new UIVertex();
+                vertices.PopulateUIVertex(ref shadow, 0);
+                Color ink = shadow.color;
+                Assert.AreEqual(OctopusSampleBranding.ElevationOpacity / SampleUiElevation.Taps,
+                    ink.a, 1f / 255f);
+            }
+        }
+        finally { Object.DestroyImmediate(host); }
     }
 
     [TestCase("home")]

@@ -93,6 +93,8 @@ public class SampleUiDebugEntryHost : MonoBehaviour
         element.minWidth = element.preferredWidth = width;
         element.flexibleWidth = 0f;
         SampleUi.AppBarItem(entry);
+        var button = entry.GetComponent<SampleUiButton>();
+        if (button != null) button.SetChromeStyle(true);
         if (rect.GetComponent<HorizontalOrVerticalLayoutGroup>() != null) return;
         // A header posed by hand rather than by a layout group: sit at its trailing edge, the place
         // the layout group would have given the last child anyway.
@@ -128,6 +130,8 @@ public class SampleUiDebugEntryHost : MonoBehaviour
         SampleUi.DebugEntryClaimed -= OnClaimed;
         var entry = _entry;
         _entry = null;
+        var button = entry.GetComponent<SampleUiButton>();
+        if (button != null) button.SetChromeStyle(false);
         var label = entry.GetComponentInChildren<TMP_Text>();
         var scaled = label != null ? label.GetComponent<SampleUiScaledText>() : null;
         if (scaled != null) scaled.Configure(_baseSize, _baseLineHeight);

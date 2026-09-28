@@ -9,7 +9,8 @@ is produced by archiving `main` with `git archive` (`Scripts/release-on-public-r
 **deny-list**, not an allowlist: every path in this repo ships to the mirror unless
 `.gitattributes` marks it `export-ignore`. Today that excludes `AndroidBridge/` (the Android
 bridge Kotlin source — only the compiled `octopus-bridge.aar` under `UnityPackage/` ships),
-`ci/`, `Scripts/`, `.claude/`, `docs/`, `TechnicalDocumentation.md`, `UserManual.md` and
+`ci/`, `Scripts/`, `.claude/`, `docs/` (except `docs/integration-guide.md`, the public
+integration guide the README links to), `TechnicalDocumentation.md`, `UserManual.md` and
 `CLAUDE.md` itself. This file is **not** on that list and does ship, on the same footing as
 `README.md`, `CHANGELOG.md` and `MIGRATING.md` — but development happens in *this* private repo,
 so a few paths below (`ci/`, `AndroidBridge/`, `.claude/commands/...`) will not exist if you are
@@ -28,7 +29,7 @@ UnityPackage/                 the published UPM package — the ONLY thing integ
   Samples~/                   3 UPM samples, one project per sample
 UnityExample/                 demo Unity project, references UnityPackage via a local path
 AndroidBridge/                Gradle project producing octopus-bridge.aar (private only)
-ci/                           local + CI gates (compile-check, native-pins, bridge-contract, mirror-export-guard)
+ci/                           local + CI gates (compile-check, native-pins, firebase-analytics-guard, bridge-contract, mirror-export-guard)
 Scripts/                      release tooling, local Unity gates and CI attestation checker (private only)
 ```
 
@@ -56,11 +57,12 @@ All of these are read from the scripts themselves — run them before opening a 
 
 ```bash
 export PATH="$HOME/.dotnet:$PATH"        # or wherever your dotnet 8 SDK lives
-ci/compile-check/compile-check.sh                        # Compile UnityPackage (dotnet vs Unity stubs) — REQUIRED context
-ci/native-pins/verify-native-pins.sh                      # Native SDK pin coherence
-ci/bridge-contract/check-bridge-contract.sh               # Bridge string contract (C# vs Kotlin vs Swift)
-ci/mirror-export-guard/check-mirror-export.sh             # Mirror export guard (git archive) — REQUIRED context
-actionlint .github/workflows/*.yml                        # Lint workflows (actionlint), reports only
+ci/compile-check/compile-check.sh                        # Compile UnityPackage (dotnet vs Unity stubs), gated through PR gate
+ci/native-pins/verify-native-pins.sh                      # Native SDK pin coherence, gated through PR gate
+ci/firebase-analytics-guard/check-firebase-analytics.sh   # Firebase Analytics kept out of the sample (in the native-pins job), gated through PR gate
+ci/bridge-contract/check-bridge-contract.sh               # Bridge string contract (C# vs Kotlin vs Swift), gated through PR gate
+ci/mirror-export-guard/check-mirror-export.sh             # Mirror export guard (git archive), gated through PR gate
+actionlint .github/workflows/*.yml                        # Lint workflows (actionlint), gated through PR gate
 ```
 
 What each one is actually protecting against — full rationale in each script's own header
@@ -74,6 +76,10 @@ comment, which is the documentation, not this list:
   lines (resolver, bridge classpath, and the example's two generated copies) and the iOS
   SwiftPM pin all agree — `MAJOR.MINOR` locked across all three, `PATCH` free, package never
   leading the natives' minor.
+- **`check-firebase-analytics.sh`** fails on any Firebase Analytics dependency in the sample's
+  EDM4U files and their resolved copies: the `firebase-analytics` or `play-services-measurement`
+  coordinates, and the iOS `Firebase/Core` pod, whose CocoaPods subspec depends on
+  FirebaseAnalytics (`Firebase/CoreOnly` does not). A Firebase Unity SDK re-import restores both.
 - **`check-bridge-contract.sh`** compares the `On*` message names the C# side exposes against
   every literal Kotlin and Swift call into them by string — no compiler catches a rename on
   either side.

@@ -31,8 +31,101 @@ public class OctopusSampleShellTests
     }
 
     [Test]
-    public void PlatformIdentityBelongsToHomeAppBarOnly()
+    public void DeveloperToolsReturnsDebugEntryBeforeTabNavigationDestroysItsHeader()
     {
+        var owner = new GameObject("Debug owner", typeof(RectTransform));
+        _spawned.Add(owner);
+        var entry = SampleUi.Button("debug-open-button", owner.transform, "Debug", () => { });
+        SampleUi.RegisterDebugEntry(entry);
+        var shell = Create();
+        shell.Select(OctopusSampleTab.Settings);
+        var detail = OctopusSampleDeveloperToolsView.Open(() => 0,
+            () => new List<OctopusSampleDeveloperToolsView.LogLine>(),
+            () => new List<OctopusSampleDeveloperToolsView.InfoFact>(), () => { });
+        _spawned.Add(detail.gameObject);
+        Assert.IsTrue(entry.IsChildOf(detail.transform));
+        shell.Select(OctopusSampleTab.Home);
+        Assert.IsTrue(detail == null);
+        Assert.IsTrue(entry != null);
+        Assert.IsTrue(entry.IsChildOf(shell.transform));
+    }
+
+    [Test]
+    public void PushRegistrationLinkClosesDeveloperToolsOnceAndLandsOnNotifications()
+    {
+        var owner = new GameObject("Debug owner", typeof(RectTransform));
+        _spawned.Add(owner);
+        var entry = SampleUi.Button("debug-open-button", owner.transform, "Debug", () => { });
+        SampleUi.RegisterDebugEntry(entry);
+        var shell = Create();
+        shell.Select(OctopusSampleTab.Settings);
+        // Opened with the shell up, so its page is one of those a tab switch closes.
+        var detail = OctopusSampleDeveloperToolsView.Open(() => 0,
+            () => new List<OctopusSampleDeveloperToolsView.LogLine>(),
+            () => new List<OctopusSampleDeveloperToolsView.InfoFact>(), () => { });
+        _spawned.Add(detail.gameObject);
+        Assert.IsTrue(entry.IsChildOf(detail.transform));
+
+        // The link closes the tools itself, then switches tab: CloseAll must not close them again.
+        Find(detail.transform, OctopusSampleDeveloperToolsView.PushRegistrationScenariosLinkId)
+            .GetComponent<Button>().onClick.Invoke();
+
+        Assert.IsTrue(detail == null, "Developer tools stayed open over Scenarios.");
+        Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
+        var list = shell.GetComponentInChildren<OctopusScenariosListView>();
+        Assert.IsNotNull(list);
+        Assert.AreEqual(ScenarioSection.Notifications, list.FocusedSection);
+        Assert.IsTrue(entry != null);
+        Assert.IsTrue(entry.IsChildOf(shell.transform));
+    }
+
+    [Test]
+    public void KeyboardDoesNotTurnPinnedShellBarsIntoScrollableContent()
+    {
+        var shell = Create();
+        var safe = shell.GetComponentInChildren<SampleUiSafeArea>();
+        safe.Apply(new Rect(0f, 0f, 1080f, 1920f), new Rect(0f, 0f, 1080f, 1600f),
+            new Vector2(1080f, 1920f));
+        Canvas.ForceUpdateCanvases();
+        Assert.IsTrue(safe.KeepBarsPinned);
+        Assert.AreNotEqual("SafeAreaViewport", safe.transform.parent.name);
+        Assert.AreSame(safe.transform, Find(shell.transform, "TabBar").parent);
+    }
+
+    [TestCase(OctopusSampleTheme.Light)]
+    [TestCase(OctopusSampleTheme.Dark)]
+    public void DetailRetainsTabsAndClosesWhenSelectingAnotherTab(OctopusSampleTheme theme)
+    {
+        OctopusSampleBranding.Theme = theme;
+        var shell = Create();
+        shell.Select(OctopusSampleTab.Settings);
+        var detail = OctopusSampleAppearanceView.Open();
+        _spawned.Add(detail.gameObject);
+        var safe = detail.GetComponentInChildren<SampleUiSafeArea>();
+        Assert.AreEqual(OctopusSampleShell.TabBarHeight, safe.BottomInsetUnits);
+        Assert.AreEqual(1, detail.GetComponentsInChildren<SampleUiSafeArea>().Length);
+        var tabBar = Find(shell.transform, "TabBar").GetComponent<Image>();
+        Assert.AreEqual(theme == OctopusSampleTheme.Light ? Color.white : OctopusSampleBranding.DarkSurfaceLow, tabBar.color);
+        if (Screen.width > 0 && Screen.height > 0)
+        {
+            Canvas.ForceUpdateCanvases();
+            var pageCorners = new Vector3[4];
+            var tabCorners = new Vector3[4];
+            ((RectTransform)safe.transform).GetWorldCorners(pageCorners);
+            ((RectTransform)tabBar.transform).GetWorldCorners(tabCorners);
+            Assert.That(pageCorners[0].y, Is.EqualTo(tabCorners[1].y).Within(1f));
+        }
+        OctopusSampleBranding.Theme = theme == OctopusSampleTheme.Light ? OctopusSampleTheme.Dark : OctopusSampleTheme.Light;
+        Assert.IsTrue(detail != null);
+        shell.Select(OctopusSampleTab.Home);
+        Assert.IsTrue(detail == null);
+    }
+
+    [TestCase(OctopusSampleTheme.Light)]
+    [TestCase(OctopusSampleTheme.Dark)]
+    public void PlatformIdentityBelongsToHomeAppBarOnly(OctopusSampleTheme theme)
+    {
+        OctopusSampleBranding.Theme = theme;
         var shell = Create();
         foreach (OctopusSampleTab tab in System.Enum.GetValues(typeof(OctopusSampleTab)))
         {
@@ -43,7 +136,10 @@ public class OctopusSampleShellTests
             Assert.IsTrue(chip.IsChildOf(Find(shell.transform, "AppBar")));
             Assert.IsFalse(chip.IsChildOf(Find(shell.transform, "Content")));
             Assert.AreEqual("Unity", chip.GetComponentInChildren<TMP_Text>().text);
-            Assert.AreEqual(OctopusSampleBranding.PlatformSlotLight, chip.GetComponent<Image>().color);
+            var palette = OctopusSampleBranding.Palette;
+            Assert.AreEqual(theme == OctopusSampleTheme.Dark
+                ? OctopusSampleBranding.Tint(palette.Accent, palette.Chrome, 0.10f)
+                : OctopusSampleBranding.PlatformSlotLight, chip.GetComponent<Image>().color);
             Assert.AreEqual(OctopusSampleBranding.MinTouchUnits, chip.GetComponent<LayoutElement>().minHeight);
         }
     }
@@ -248,18 +344,6 @@ public class OctopusSampleShellTests
     {
         var shell = Create();
         Assert.IsNull(Find(shell.transform, "shell-theme-toggle"), "D1 moves Appearance to Settings.");
-    }
-
-    [Test]
-    public void AppearanceHookKeepsTheThemeControlIdAndChangesThePalette()
-    {
-        OctopusSampleBranding.Theme = OctopusSampleTheme.Dark;
-        var host = new GameObject("AppearanceTest", typeof(RectTransform));
-        _spawned.Add(host);
-        var toggle = OctopusSampleShell.BuildThemeToggle(host.transform);
-        Assert.AreEqual("shell-theme-toggle", toggle.name);
-        toggle.GetComponent<Button>().onClick.Invoke();
-        Assert.AreEqual(OctopusSampleTheme.Light, OctopusSampleBranding.Theme);
     }
 
     [Test]

@@ -1,5 +1,8 @@
 using NUnit.Framework;
+using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 /// <summary>
 /// Turns the readability floors of `shared/design/TOKENS.md` §2 into a gate.
@@ -43,6 +46,39 @@ public class OctopusSampleBrandingTests
         AssertPaletteIsReadable(OctopusSamplePalette.Dark(), "dark");
     }
 
+    [TestCase("Copy log")]
+    [TestCase("Copy")]
+    public void DarkChromeButtonsStayReadableWhilePressed(string caption)
+    {
+        OctopusSampleBranding.Theme = OctopusSampleTheme.Dark;
+        var owner = new GameObject("Copy button test", typeof(RectTransform));
+        var events = new GameObject("Copy button events", typeof(EventSystem));
+        try
+        {
+            var rect = SampleUi.ChromeButton("copy", owner.transform, caption, () => { });
+            var button = rect.GetComponent<SampleUiButton>();
+            var fill = rect.GetComponent<Image>();
+            var label = rect.GetComponentInChildren<TMP_Text>();
+            var normalFill = fill.color;
+            AssertReadable("dark", caption + " at rest", label.color, fill.color);
+
+            var pointer = new PointerEventData(events.GetComponent<EventSystem>());
+            button.OnPointerEnter(pointer);
+            button.OnPointerDown(pointer);
+            Assert.AreEqual(OctopusSampleBranding.DarkCardPressed, fill.color);
+            AssertReadable("dark", caption + " pressed", label.color, fill.color);
+
+            button.OnPointerUp(pointer);
+            Assert.AreEqual(normalFill, fill.color);
+            AssertReadable("dark", caption + " released", label.color, fill.color);
+        }
+        finally
+        {
+            Object.DestroyImmediate(owner);
+            Object.DestroyImmediate(events);
+        }
+    }
+
     /// <summary>
     /// Every text role, on every ground it is drawn on. The pairs are the ones the shell and the
     /// two catalogue screens actually paint: `SampleUi.RowBackground` is the palette's Surface, so
@@ -52,6 +88,10 @@ public class OctopusSampleBrandingTests
     {
         AssertReadable(theme, "Title on the page", palette.Title, palette.Page);
         AssertReadable(theme, "Title on a card", palette.Title, palette.Surface);
+        AssertReadable(theme, "Body on a card", palette.Body, palette.Surface);
+        AssertReadable(theme, "Body on a sheet", palette.Body, palette.Elevated);
+        AssertReadable(theme, "Caption on a sheet", palette.Muted, palette.Elevated);
+        AssertReadable(theme, "Chip label", palette.ChipInk, palette.ChipFill);
         AssertReadable(theme, "Title on a field", palette.Title, palette.SurfaceHigh);
         AssertReadable(theme, "Muted text on the page", palette.Muted, palette.Page);
         AssertReadable(theme, "Muted text on a card", palette.Muted, palette.Surface);
@@ -77,6 +117,34 @@ public class OctopusSampleBrandingTests
             "The field boundary must be identifiable on its actual fill.");
         AssertReadable(theme, "The platform slot on a card", palette.PlatformSlot, palette.Surface);
         AssertReadable(theme, "The platform slot on the page", palette.PlatformSlot, palette.Page);
+    }
+
+    [Test]
+    public void TheDarkControlOutlineHoldsOnEveryStepOfTheLadder()
+    {
+        // The navy ladder has four grounds a control can sit on; the outline has to read on each,
+        // not only on the field fill the palette check measures.
+        var dark = OctopusSamplePalette.Dark();
+        foreach (var ground in new[]
+                 {
+                     dark.Page, dark.Surface, dark.Elevated, OctopusSampleBranding.DarkCardPressed
+                 })
+        {
+            Assert.GreaterOrEqual(Contrast(dark.ControlBorder, ground), UiFloor,
+                "The dark control outline measures under 3:1 on one step of the ladder.");
+        }
+    }
+
+    [Test]
+    public void OnlyTheDarkThemeStrengthensTheFramedBlockHairline()
+    {
+        var light = OctopusSamplePalette.Light();
+        var dark = OctopusSamplePalette.Dark();
+
+        Assert.AreEqual(light.Border, light.BorderStrong, "The light theme must stay untouched.");
+        Assert.AreEqual(OctopusSampleBranding.DarkBorderStrong, dark.BorderStrong);
+        Assert.Greater(Contrast(dark.BorderStrong, dark.Surface), Contrast(dark.Border, dark.Surface),
+            "The strong hairline must read above the default one on a card.");
     }
 
     [Test]
@@ -210,6 +278,33 @@ public class OctopusSampleBrandingTests
         // so out loud.
         Assert.AreEqual(OctopusSampleBranding.AppName, Application.productName,
             "ProjectSettings.productName and OctopusSampleBranding.AppName disagree.");
+    }
+
+    [Test]
+    public void TheDarkHaloIsTheBrandBlueAtTwelvePercent()
+    {
+        var halo = OctopusSampleBranding.DarkHalo;
+        Assert.AreEqual(0.12f, OctopusSampleBranding.HaloAlpha);
+        Assert.AreEqual(OctopusSampleBranding.Accent.r, halo.r);
+        Assert.AreEqual(OctopusSampleBranding.Accent.g, halo.g);
+        Assert.AreEqual(OctopusSampleBranding.Accent.b, halo.b);
+        Assert.AreEqual(OctopusSampleBranding.HaloAlpha, halo.a);
+        Assert.AreEqual((Color32)new Color(0x1D / 255f, 0x88 / 255f, 0xFE / 255f), (Color32)new Color(halo.r, halo.g, halo.b));
+
+        Assert.AreEqual(halo, OctopusSamplePalette.Dark().Halo);
+        Assert.AreEqual(0f, OctopusSamplePalette.Light().Halo.a, "Light theme draws no halo.");
+        Assert.AreEqual(0f, OctopusSamplePalette.Dark().Header.a, "The dark header must let the halo through.");
+        Assert.AreEqual(OctopusSamplePalette.Light().Chrome, OctopusSamplePalette.Light().Header);
+    }
+
+    [Test]
+    public void TextStaysReadableOnTheHaloPeak()
+    {
+        var palette = OctopusSamplePalette.Dark();
+        var peak = SampleUiHalo.Composite(palette.Page, palette.Halo, 0f);
+        Assert.AreEqual(new Color32(0x0A, 0x1C, 0x33, 0xFF), (Color32)peak);
+        AssertReadable("dark", "muted text on the halo peak", palette.Muted, peak);
+        AssertReadable("dark", "app-bar title on the halo peak", palette.OnChrome, peak);
     }
 
     [Test]

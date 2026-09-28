@@ -72,6 +72,41 @@ public class OctopusLifecycleTests
     }
 
     [Test]
+    public void SwitchWithoutHostTargetsTheDefaultServer()
+    {
+        OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.SSO());
+        Drain();
+        var call = OctopusSDK.Mock.LastCall("SwitchCommunity").Value;
+        Assert.AreEqual("", call.Args[2]);
+    }
+
+    [Test]
+    public void SwitchHostOverloadForwardsTheServer()
+    {
+        int completions = 0;
+        OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.SSO(), "api.example.test", 8443,
+            () => completions++);
+        Drain();
+        Assert.AreEqual(1, completions);
+        var call = OctopusSDK.Mock.LastCall("SwitchCommunity").Value;
+        Assert.AreEqual("sso", call.Args[0]);
+        Assert.AreEqual("api.example.test", call.Args[2]);
+        Assert.AreEqual(8443, call.Args[3]);
+        StringAssert.DoesNotContain("YOUR_API_KEY", call.ToString());
+    }
+
+    [Test]
+    public void SwitchHostOverloadStillRejectsAMissingKey()
+    {
+        string error = null;
+        OctopusSDK.SwitchCommunity("", ConnectionMode.SSO(), "api.example.test", 443,
+            () => Assert.Fail(), e => error = e);
+        Drain();
+        Assert.AreEqual("apiKey and mode are required.", error);
+        Assert.IsFalse(OctopusSDK.Mock.LastCall("SwitchCommunity").HasValue);
+    }
+
+    [Test]
     public void OctopusAuthVariantUsesOctopusMode()
     {
         OctopusSDK.SwitchCommunityOctopusAuth("YOUR_API_KEY");
@@ -172,8 +207,11 @@ public class OctopusLifecycleTests
         Assert.IsFalse(OctopusSDK.Mock.LastCall("SwitchCommunity").HasValue);
     }
 
-    [Test]
-    public void NativeLandingPadsIgnoreUnknownAndDuplicateResponsesAndReleaseErrors()
+    [TestCase("first\nsecond")]
+    [TestCase("Reset failed.")]
+    [TestCase("Reset failed. Details: Native disconnection failed")]
+    [TestCase("Reset failed. Details: Native disconnection failed\nRetry later")]
+    public void NativeLandingPadsIgnoreUnknownAndDuplicateResponsesAndReleaseErrors(string nativeMessage)
     {
         // Register without the Mock's automatic success so the native failure lane is exercised.
         var begin = typeof(OctopusSDK).GetMethod("BeginLifecycleRequest", BindingFlags.NonPublic | BindingFlags.Static);
@@ -189,10 +227,10 @@ public class OctopusLifecycleTests
             channel.OnLifecycleError(null);
             Drain();
             Assert.IsNull(error);
-            channel.OnLifecycleError(id + "\nfirst\nsecond");
+            channel.OnLifecycleError(id + "\n" + nativeMessage);
             channel.OnLifecycleResult(id + "\n");
             Drain();
-            Assert.AreEqual("first\nsecond", error);
+            Assert.AreEqual(nativeMessage, error);
             Assert.AreEqual(0, completed);
             OctopusSDK.Reset(() => completed++);
             Drain();

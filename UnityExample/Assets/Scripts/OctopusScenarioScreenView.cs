@@ -43,6 +43,11 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
 
     private OctopusScenarioPilot _pilot;
     private TMP_Text _resultLabel;
+    private TMP_Text _unifiedProfileHint;
+    private bool _observingUnifiedProfile;
+
+    /// <summary>The `communityData` hint naming the Unified Profile flag and its effective value.</summary>
+    public const string UnifiedProfileHintId = "scenario-unified-profile-hint";
     private string _lastQaResult;
     private bool _qaBound;
     private GameObject _resultPanel;
@@ -56,6 +61,7 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
     private OctopusScenarioPreset _selectedPreset;
     private readonly Dictionary<string, string> _lastRunValues = new Dictionary<string, string>();
     private bool _hasRun;
+    private bool _dismissed;
     private readonly List<KeyValuePair<string, TMP_InputField>> _inputs =
         new List<KeyValuePair<string, TMP_InputField>>();
 
@@ -83,9 +89,15 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
     /// scenario in the same frame: in play mode <c>Destroy</c> only takes effect at the end of the
     /// frame, and <see cref="Open"/> answers with whatever screen it finds — an inactive one is not
     /// found, a merely doomed one is.
+    ///
+    /// Idempotent: the shell's <see cref="SampleUiDetailPage.CloseAll"/> and this screen's own
+    /// controls can both reach it, and a second call must not touch a destroyed hierarchy nor
+    /// release the debug entry or the profile page twice.
     /// </summary>
     public void Dismiss()
     {
+        if (_dismissed || this == null) return;
+        _dismissed = true;
         // A host profile page opened from this screen has no meaning without it.
         var profilePage = FindAnyObjectByType<OctopusSampleClientProfileView>();
         if (profilePage != null) profilePage.Dismiss();
@@ -120,6 +132,12 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         OctopusSampleBranding.ThemeChanged += OnThemeChanged;
         _pilot.ResultChanged += OnResultChanged;
         _pilot.HostProfileRequested += OnHostProfileRequested;
+        if (ShowsUnifiedProfileHint)
+        {
+            _observingUnifiedProfile = true;
+            OctopusSampleUnifiedProfile.Changed += OnUnifiedProfileChanged;
+            OctopusSampleUnifiedProfile.RefreshEffective();
+        }
         var shell = FindAnyObjectByType<OctopusSampleShell>();
         if (shell != null) shell.Location.OpenScenario(pilot.Id);
         _qaBound = true;
@@ -134,6 +152,8 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
             _pilot.ResultChanged -= OnResultChanged;
             _pilot.HostProfileRequested -= OnHostProfileRequested;
         }
+        if (_observingUnifiedProfile) OctopusSampleUnifiedProfile.Changed -= OnUnifiedProfileChanged;
+        _observingUnifiedProfile = false;
         // Pilots that subscribed to SDK events release them here instead of waiting for the next event.
         var disposable = _pilot as System.IDisposable;
         if (disposable != null) disposable.Dispose();
@@ -154,12 +174,9 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
     }
 
     private bool _rebuildRequested;
-    private RectTransform _topBleed, _bottomBleed;
 
     private void LateUpdate()
     {
-        SampleUi.ResizeBleed(_topBleed, true);
-        SampleUi.ResizeBleed(_bottomBleed, false);
         // Safe-area components update anchors in place, retaining keyboard focus and scroll.
         if (!_rebuildRequested) return;
         _rebuildRequested = false;
@@ -186,6 +203,22 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         Build();
         Canvas.ForceUpdateCanvases();
         _scroll.verticalNormalizedPosition = position;
+    }
+
+    private bool ShowsUnifiedProfileHint
+    {
+        get { return _pilot != null && _pilot.Id == "communityData"; }
+    }
+
+    private void OnUnifiedProfileChanged()
+    {
+        // Same guard as the theme handler: a view that never woke up keeps its static handler.
+        if (this == null)
+        {
+            OctopusSampleUnifiedProfile.Changed -= OnUnifiedProfileChanged;
+            return;
+        }
+        if (_unifiedProfileHint != null) _unifiedProfileHint.text = OctopusSampleUnifiedProfile.ScenarioHint;
     }
 
     private void OnResultChanged(string result)
@@ -244,11 +277,9 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         // The scene supplies the EventSystem, exactly as the scenario list documents: the project
         // is Input-System-only (ProjectSettings activeInputHandler: 1), so a hand-rolled
         // EventSystem's legacy StandaloneInputModule would throw every frame.
-        _root = SampleUi.Panel("Root", transform, SampleUi.Background);
+        _root = SampleUi.Panel("Root", transform, Color.clear);
         SampleUi.Stretch(_root, Vector2.zero, Vector2.one);
-        _topBleed = SampleUi.BuildBleed(_root, "TopBleed", OctopusSampleBranding.Palette.Chrome, true);
-        _bottomBleed = SampleUi.BuildBleed(_root, "BottomBleed", OctopusSampleBranding.Palette.Surface, false);
-        var root = SampleUi.SafeArea("scenario-safe-area", _root);
+        var root = SampleUi.DetailPage("scenario-safe-area", _root, Dismiss);
 
         BuildHeader(root);
 
@@ -257,6 +288,7 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         _scroll = content.GetComponentInParent<ScrollRect>();
         BuildDescription(content);
         BuildFeatureState(content);
+        BuildUnifiedProfileHint(content);
         BuildFields(content);
         var guidance = SampleUi.FlexibleLabel(content, "You will see: " + _pilot.YouWillSee,
                                               SampleUi.TextBody, SampleUi.TitleColor);
@@ -349,6 +381,20 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         _customRun.SetActive(false);
     }
 
+    /// <summary>
+    /// `communityData` only: the host profile route needs the server-driven exposeClientUserId flag,
+    /// whose value depends on the community and backend host. Read-only here; the switch is in
+    /// Configuration.
+    /// </summary>
+    private void BuildUnifiedProfileHint(RectTransform content)
+    {
+        _unifiedProfileHint = null;
+        if (!ShowsUnifiedProfileHint) return;
+        var card = SampleUi.Card(UnifiedProfileHintId, content);
+        _unifiedProfileHint = SampleUi.FlexibleLabel(card, OctopusSampleUnifiedProfile.ScenarioHint,
+            SampleUi.TextCaption, SampleUi.Muted);
+    }
+
     private void BuildFeatureState(RectTransform content)
     {
         var section = OctopusScenarioSections.SectionOf(_pilot.Id);
@@ -369,9 +415,13 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         SampleUi.Button("scenario-feature-state", content,
             "Feature: " + label + " · " + (enabled ? "On" : "Off"), SampleUiButtonVariant.Tertiary, () =>
             {
+                // Back to the section whose switch owns this feature — expanded, filter cleared and
+                // scrolled to — rather than the list's top, where the switch may be collapsed away.
                 var shell = FindAnyObjectByType<OctopusSampleShell>();
-                if (shell != null) shell.Select(OctopusSampleTab.Scenarios);
-                Dismiss();
+                // ShowScenarioSection selects the tab, which closes every detail page, this screen
+                // included; Dismiss is only the fallback when no shell hosts the screen.
+                if (shell != null) shell.ShowScenarioSection(section);
+                else Dismiss();
             });
     }
 

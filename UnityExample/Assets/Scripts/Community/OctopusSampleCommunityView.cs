@@ -238,6 +238,7 @@ public class OctopusSampleCommunityView : MonoBehaviour
         SampleUi.Stretch(scrollHost, Vector2.zero, Vector2.one);
         scrollHost.offsetMin = new Vector2(0f, DockHeight);
         var cards = SampleUi.VerticalScroll(scrollHost, SampleUi.ContentPadding());
+        SampleUi.DockFade(cards);
         cards.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(16f);
 
         BuildBands(cards);
@@ -255,7 +256,7 @@ public class OctopusSampleCommunityView : MonoBehaviour
     {
         // Docked rather than in the scroll, for the same reason the dashboard docks its own: the
         // one action a reader came to this tab for should not need a scroll to be found.
-        var dock = SampleUi.Panel("Dock", host, SampleUi.RowBackground);
+        var dock = SampleUi.Panel("Dock", host, OctopusSampleBranding.Palette.Dock);
         dock.anchorMin = Vector2.zero;
         dock.anchorMax = new Vector2(1f, 0f);
         dock.pivot = new Vector2(0.5f, 0f);
@@ -277,8 +278,8 @@ public class OctopusSampleCommunityView : MonoBehaviour
             "Configuration unavailable. Set up OctopusExampleConfig in the Editor to open the community.",
             null, null);
         _readOnlyBand = BuildBand(parent, ReadOnlyBandId, SampleUi.TitleColor,
-            "No connect call completed. Try Connection in Scenarios for authenticated access.",
-            "Scenarios", GoToScenarios);
+            "No connect call completed. The Connection scenario signs a user in for authenticated access.",
+            "Open Connection scenario", GoToScenarios);
         _grantedBand = BuildBand(parent, GrantedBandId, SampleUi.TitleColor,
             "Community access granted — reported by the SDK.", null, null);
     }
@@ -299,8 +300,10 @@ public class OctopusSampleCommunityView : MonoBehaviour
 
     public void GoToScenarios()
     {
+        // The Connection scenario itself, not the list root: the band names one scenario, and the
+        // list would leave the reader to find it among the rest.
         var shell = GetComponentInParent<OctopusSampleShell>();
-        if (shell != null) shell.Select(OctopusSampleTab.Scenarios);
+        if (shell != null) shell.OpenScenarioScreen(OctopusSampleHomeView.ConnectionScenarioId);
     }
 
     private static void BuildPlatformCard(RectTransform parent)
@@ -330,9 +333,9 @@ public class OctopusSampleCommunityView : MonoBehaviour
         SampleUi.ListRow(DestinationToggleId, card, "Open a specific destination", null, ToggleDestinations);
         _destinations = SampleUi.Panel("Destinations", card, OctopusSampleBranding.Clear);
         SampleUi.VerticalStack(_destinations, OctopusSampleBranding.Dp(8f), new RectOffset(), false);
-        _group = SampleUi.LabeledField(GroupFieldId, _destinations, "Group id", string.Empty);
+        _group = SampleUi.LabeledField(GroupFieldId, _destinations, "Group id", OctopusSampleFixtures.DefaultTopicId ?? string.Empty);
         SampleUi.Button(OpenGroupId, _destinations, "Open group", SampleUiButtonVariant.Secondary, OpenGroup);
-        _post = SampleUi.LabeledField(PostFieldId, _destinations, "Post id", string.Empty);
+        _post = SampleUi.LabeledField(PostFieldId, _destinations, "Post id", OctopusSampleFixtures.PostTextId ?? string.Empty);
         SampleUi.Button(OpenPostId, _destinations, "Open post", SampleUiButtonVariant.Secondary, OpenPost);
         SampleUi.FlexibleLabel(_destinations, "Use IDs from your demo community.", SampleUi.TextCaption, SampleUi.Muted);
         _destinations.gameObject.SetActive(false);

@@ -253,11 +253,10 @@ public class OctopusScenarioSdkFacadeTests
             {
                 preset.Fill(pilot.Fields);
                 preset.Run(pilot.Fields);
-                // communityData presets 2, 4 and 5 are local (last-lookup / stop / contract)
+                // communityData presets 4 and 5 are local (stop / contract)
                 // and never reach the SDK, so they cannot report the missing config.
                 var localPreset = pilot.Id == "communityData" &&
-                    (preset.TestId == "qa-preset-communityData-2" ||
-                     preset.TestId == "qa-preset-communityData-4" ||
+                    (preset.TestId == "qa-preset-communityData-4" ||
                      preset.TestId == "qa-preset-communityData-5");
                 // initialScreen presets 8 and 9 open a member's activity by id, which Unity
                 // does not expose: they report that unavailability and never reach the SDK,

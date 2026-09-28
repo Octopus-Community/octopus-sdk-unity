@@ -142,11 +142,13 @@ public class OctopusSignInThemeScenarioTests
     }
 
     [Test]
-    public void CommunityDataMissingPriorLookupAndContractNeedNoSdk()
+    public void CommunityDataWithoutPriorLookupUsesSharedOtherProfile()
     {
         var pilot = new CommunityDataScenario();
         Tap(pilot, 1);
-        StringAssert.Contains("run Preset 1 or 3 first", pilot.Result);
+        Assert.AreEqual("FetchCommunityData", _sdk.Last.Method);
+        Assert.AreEqual(OctopusSampleFixtures.OtherUserId, ((OctopusCommunityMemberId)_sdk.Last.Args[0]).ProfileId);
+        _sdk.Clear();
         Tap(pilot, 4);
         StringAssert.Contains("Exactly-one-id contract enforced locally", pilot.Result);
         Assert.IsEmpty(_sdk.Calls);

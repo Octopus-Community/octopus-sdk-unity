@@ -38,7 +38,7 @@ public static class SampleUi
     public static void ResizeBleed(RectTransform bleed, bool top)
     {
         if (bleed == null) return;
-        var area = Screen.safeArea;
+        var area = SampleUiSafeArea.ScreenSafeArea();
         var pixels = top ? Screen.height - area.yMax : area.yMin;
         if (Screen.width <= 0 || Screen.height <= 0 || pixels <= 0f)
         {
@@ -49,6 +49,17 @@ public static class SampleUi
         var unitsPerPixel = SampleUi.ReferenceWidthFor(SampleUi.ScreenDpWidth()) / Screen.width;
         var size = new Vector2(0f, pixels * unitsPerPixel);
         if (bleed.sizeDelta != size) bleed.sizeDelta = size;
+    }
+
+    /// <summary>A detail replaces the shell header/content, retaining its tabs and inset ownership.</summary>
+    public static RectTransform DetailPage(string name, Transform host, System.Action close, bool retainTabs = true)
+    {
+        var page = Panel(name, host, Background);
+        Stretch(page, Vector2.zero, Vector2.one);
+        Halo(page);
+        var detail = page.gameObject.AddComponent<SampleUiDetailPage>();
+        detail.Initialize(close, retainTabs);
+        return page;
     }
 
     public const string StrokeName = "Stroke";
@@ -282,6 +293,9 @@ public static class SampleUi
     /// </summary>
     public static TMP_Text FlexibleLabel(Transform parent, string text, int size, Color color)
     {
+        var palette = OctopusSampleBranding.Palette;
+        if (OctopusSampleBranding.Theme == OctopusSampleTheme.Dark && size == TextBody &&
+            (color == palette.Title || color == palette.Muted)) color = palette.Body;
         var label = Label("Line", parent, text, size, color, TextAnchor.UpperLeft);
         label.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
         return label;
@@ -298,26 +312,36 @@ public static class SampleUi
                                        SampleUiButtonVariant variant, UnityEngine.Events.UnityAction onClick,
                                        float radiusDp = OctopusSampleBranding.ButtonRadius)
     {
+        Color fill, ink, border;
+        VariantColors(variant, out fill, out ink, out border);
+        var built = BuildButton(name, parent, text, fill, ink, border, onClick, radiusDp, false);
+        var button = built.GetComponent<SampleUiButton>();
+        if (button != null) button.PageVariant = variant;
+        return built;
+    }
+
+    /// <summary>The colours of <paramref name="variant"/> in the live palette.</summary>
+    public static void VariantColors(SampleUiButtonVariant variant, out Color fill, out Color ink, out Color border)
+    {
         var p = OctopusSampleBranding.Palette;
-        Color fill = variant == SampleUiButtonVariant.Primary ? p.Accent
+        fill = variant == SampleUiButtonVariant.Primary ? p.Accent
             : variant == SampleUiButtonVariant.Destructive ? p.DangerSurface : p.SurfaceHigh;
-        Color ink = variant == SampleUiButtonVariant.Primary ? p.OnAccent
+        ink = variant == SampleUiButtonVariant.Primary ? p.OnAccent
             : variant == SampleUiButtonVariant.Destructive ? p.Negative : p.Accent;
-        Color border = variant == SampleUiButtonVariant.Secondary ? p.ControlBorder
+        border = variant == SampleUiButtonVariant.Secondary ? p.ControlBorder
             : variant == SampleUiButtonVariant.Destructive ? p.Negative : fill;
         if (variant == SampleUiButtonVariant.Tertiary)
         {
             fill = OctopusSampleBranding.Clear;
             border = p.ControlBorder;
         }
-        return BuildButton(name, parent, text, fill, ink, border, onClick, radiusDp, false);
     }
 
     /// <summary>Shared chrome; callers retain their existing header, title and back QA names.</summary>
     public static RectTransform AppBar(string name, RectTransform parent, string title,
         UnityEngine.Events.UnityAction onBack = null, string backName = "Back", string titleName = "Title")
     {
-        var bar = Panel(name, parent, OctopusSampleBranding.Palette.Chrome);
+        var bar = Panel(name, parent, OctopusSampleBranding.Palette.Header);
         Stretch(bar, new Vector2(0f, 1f), Vector2.one);
         bar.pivot = new Vector2(0.5f, 1f);
         bar.sizeDelta = new Vector2(0f, OctopusSampleBranding.AppBarUnits);
@@ -327,6 +351,7 @@ public static class SampleUi
         layout.childAlignment = TextAnchor.MiddleLeft;
         layout.childControlWidth = layout.childControlHeight = true;
         layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+        var screen = bar.gameObject.AddComponent<SampleUiBackTarget>();
         if (onBack != null)
         {
             var back = Panel(backName, bar, OctopusSampleBranding.Clear);
@@ -334,6 +359,7 @@ public static class SampleUi
             var button = back.gameObject.AddComponent<UnityEngine.UI.Button>();
             button.targetGraphic = back.GetComponent<Image>();
             button.onClick.AddListener(onBack);
+            screen.Back = button;
             var size = TouchLayout(back);
             size.preferredWidth = size.minWidth;
             AppBarItem(back);
@@ -450,9 +476,15 @@ public static class SampleUi
         return new RectOffset(h, h, v, v);
     }
 
-    /// <summary>A full-width action row; text determines height above the 48/64dp floor.</summary>
+    /// <summary>
+    /// A full-width action row; text determines height above the 48/64dp floor.
+    ///
+    /// <paramref name="chip"/> adds a third line under the subtitle: a bordered pill, named
+    /// `&lt;name&gt;-api`, holding one short token. It is optional and null everywhere but the
+    /// Scenarios cards, so every other row in the sample builds exactly the tree it built before.
+    /// </summary>
     public static RectTransform ListRow(string name, Transform parent, string title, string subtitle,
-                                        UnityEngine.Events.UnityAction onClick)
+                                        UnityEngine.Events.UnityAction onClick, string chip = null)
     {
         var p = OctopusSampleBranding.Palette;
         var rect = Panel(name, parent, p.Surface, OctopusSampleBranding.CardRadius, p.Border, 0f);
@@ -475,6 +507,7 @@ public static class SampleUi
         label.fontStyle = FontStyles.Bold;
         TMP_Text detail = null;
         if (!string.IsNullOrEmpty(subtitle)) detail = FlexibleLabel(copy, subtitle, TextCaption, p.Muted);
+        if (!string.IsNullOrEmpty(chip)) BuildRowChip(copy, name, chip, p);
         var chevron = Label("Chevron", rect, "›", TextTitle, p.Muted, TextAnchor.MiddleCenter);
         var chevronSize = chevron.gameObject.AddComponent<LayoutElement>();
         chevronSize.minWidth = chevronSize.preferredWidth = OctopusSampleBranding.Dp(24f);
@@ -484,6 +517,35 @@ public static class SampleUi
         button.Configure(rect.GetComponent<Image>(), stroke, label, p.Surface, p.Title, p.Border,
             OctopusSampleBranding.CardRadius, false, detail);
         return rect;
+    }
+
+    /// <summary>
+    /// The pill under a row's subtitle, wrapped in a left-aligned holder.
+    ///
+    /// The holder is the whole point: <see cref="VerticalStack"/> forces its children to the full
+    /// width, which would stretch a two-word pill across the card and make it read as a banner.
+    /// A horizontal group that expands nothing gives the pill its content width, the shape the
+    /// other three samples give it. For the same reason the label inside is a plain
+    /// <see cref="Label"/> and not a <see cref="FlexibleLabel"/>: the latter sets
+    /// <c>flexibleWidth = 1</c>, which the pill's own group reports upward, and a horizontal group
+    /// hands its surplus to whatever asks for flexible width whether or not it force-expands.
+    /// The pill's inner stack must also disable force-expansion: uGUI otherwise reports a
+    /// flexible width of at least one for that group, even with a plain label inside it.
+    /// </summary>
+    private static void BuildRowChip(RectTransform copy, string rowName, string chip,
+                                     OctopusSamplePalette p)
+    {
+        var holder = Panel("ApiRow", copy, OctopusSampleBranding.Clear);
+        var layout = holder.gameObject.AddComponent<HorizontalLayoutGroup>();
+        layout.childControlWidth = layout.childControlHeight = true;
+        layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+        layout.childAlignment = TextAnchor.MiddleLeft;
+        var pill = Panel(rowName + "-api", holder, p.ChipFill, OctopusSampleBranding.FieldRadius,
+            p.ChipBorder);
+        var stack = VerticalStack(pill, 0f, Padding(OctopusSampleBranding.SpaceSm, 2f), false);
+        stack.childForceExpandWidth = false;
+        var label = Label("Line", pill, chip, TextCaption, p.ChipInk, TextAnchor.MiddleLeft);
+        label.fontStyle = FontStyles.Bold;
     }
 
     /// <summary>
@@ -574,8 +636,13 @@ public static class SampleUi
     /// </summary>
     public static RectTransform Card(string name, Transform parent)
     {
-        var card = Panel(name, parent, RowBackground, OctopusSampleBranding.CardRadius,
-            OctopusSampleBranding.Palette.Border);
+        return Card(name, parent, OctopusSampleBranding.Palette.Border);
+    }
+
+    /// <summary>A <see cref="Card(string, Transform)"/> framed with <paramref name="border"/>.</summary>
+    public static RectTransform Card(string name, Transform parent, Color border)
+    {
+        var card = Panel(name, parent, RowBackground, OctopusSampleBranding.CardRadius, border);
         VerticalStack(card, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm),
             Padding(OctopusSampleBranding.SpaceLg, OctopusSampleBranding.SpaceLg), false);
         return card;
@@ -695,6 +762,37 @@ public static class SampleUi
         scroll.movementType = ScrollRect.MovementType.Elastic;
         scroll.scrollSensitivity = 40f;
         return content;
+    }
+
+    /// <summary>
+    /// Adds the dark-theme halo to a full-screen page ground, as its first child: behind the bleeds,
+    /// the header and the content, fixed to the viewport. Hidden in light theme.
+    /// </summary>
+    public static RectTransform Halo(RectTransform ground)
+    {
+        return SampleUiHalo.Attach(ground);
+    }
+
+    /// <summary>
+    /// Adds the dark-theme fade above a dock to the scroll whose content is
+    /// <paramref name="content"/> (what <see cref="VerticalScroll"/> returns): see
+    /// <see cref="SampleUiDockFade"/>. For a scroll host that ends on a docked bottom action.
+    ///
+    /// Also pads the end of the list by the fade's height, so a fully scrolled list stops with its
+    /// last card clear of the fade: together with the viewport's own bottom inset, the gap above
+    /// the dock is at least <see cref="SampleUiDockFade.Height"/> plus the usual spacing, as on the
+    /// Android sample. Without it the last card's bottom stayed under the fade at full scroll.
+    /// </summary>
+    public static RectTransform DockFade(RectTransform content)
+    {
+        var group = content.GetComponent<VerticalLayoutGroup>();
+        var clearance = Mathf.CeilToInt(SampleUiDockFade.Height);
+        if (group != null && group.padding.bottom < clearance)
+        {
+            var padding = group.padding;
+            group.padding = new RectOffset(padding.left, padding.right, padding.top, clearance);
+        }
+        return SampleUiDockFade.Attach((RectTransform)content.parent);
     }
 
     /// <summary>A live safe-area and keyboard inset; controls retain focus as it changes.</summary>

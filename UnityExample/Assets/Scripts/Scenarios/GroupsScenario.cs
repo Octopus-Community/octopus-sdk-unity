@@ -9,7 +9,7 @@ public sealed class GroupsScenario : CommunityScenarioPilot
         new OctopusScenarioField("action", "Action (fetch, follow, unfollow)"),
         new OctopusScenarioField("groupId", "Group id (for follow / unfollow)"))
     {
-        Add(1, PresetLabel(1, "Fetch groups"), "fetch", "none");
+        Add(1, PresetLabel(1, "Fetch groups"), "fetch", OctopusSampleFixtures.DefaultTopicId ?? string.Empty);
     }
 
     public override IReadOnlyList<string> ApiSymbols

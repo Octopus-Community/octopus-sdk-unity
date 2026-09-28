@@ -38,6 +38,26 @@ public class OctopusMockEventDriversTests
         Assert.AreEqual(ProfileField.NICKNAME, seen);
     }
 
+    // The Activity screen's "Edit my profile" item is gated on this flag on iOS (#280): the
+    // native SDK hides the item while the callback is nil, so it must only be wired while a
+    // host handler exists, or the item would dismiss the community and deliver to nobody.
+    [Test]
+    public void OnModifyUserSubscription_TogglesNativeHandlerFlag()
+    {
+        Assert.IsFalse(OctopusSDK.Mock.LastCall("SetHasModifyUserHandler").HasValue);
+        System.Action<ProfileField?> first = _ => { };
+        System.Action<ProfileField?> second = _ => { };
+        OctopusSDK.OnModifyUser += first;
+        Assert.AreEqual(true, OctopusSDK.Mock.LastCall("SetHasModifyUserHandler").Value.Args[0]);
+        OctopusSDK.OnModifyUser += second;
+        Assert.AreEqual(true, OctopusSDK.Mock.LastCall("SetHasModifyUserHandler").Value.Args[0]);
+        // Still one subscriber left: the item must stay available.
+        OctopusSDK.OnModifyUser -= first;
+        Assert.AreEqual(true, OctopusSDK.Mock.LastCall("SetHasModifyUserHandler").Value.Args[0]);
+        OctopusSDK.OnModifyUser -= second;
+        Assert.AreEqual(false, OctopusSDK.Mock.LastCall("SetHasModifyUserHandler").Value.Args[0]);
+    }
+
     [Test]
     public void EmitModifyUser_WithNull_RaisesEventWithNull()
     {

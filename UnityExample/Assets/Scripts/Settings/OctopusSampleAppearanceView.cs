@@ -73,9 +73,7 @@ public class OctopusSampleAppearanceView : MonoBehaviour
 
     private void Build()
     {
-        var ground = SampleUi.Panel("Ground", transform, SampleUi.Background);
-        SampleUi.Stretch(ground, Vector2.zero, Vector2.one);
-        var root = SampleUi.SafeArea(ScreenId, ground);
+        var root = SampleUi.DetailPage(ScreenId, transform, Close);
         var header = SampleUi.AppBar("Header", root, "Appearance", Close, BackId, "Line");
         SampleUiDebugEntryHost.Attach(header);
         var content = SampleUi.VerticalScroll(root, SampleUi.OverlayPadding());

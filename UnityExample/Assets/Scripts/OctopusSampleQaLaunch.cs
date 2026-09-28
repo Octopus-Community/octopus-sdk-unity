@@ -33,6 +33,9 @@ public sealed class OctopusSampleQaRequest
     public OctopusSampleQaRequest(OctopusSampleQaLaunchOptions options)
     {
         _options = options;
+        if (options.Error != null) return;
+        OctopusSampleFixtures.ApplyOverrides(options.FixtureOverrides);
+        if (options.Theme.HasValue) OctopusSampleBranding.ApplyLaunchTheme(options.Theme);
     }
 
     public void ConfigShown(Action start)
@@ -80,6 +83,7 @@ public static class OctopusSampleQaLaunch
     private static void Initialize()
     {
         _request = null;
+        OctopusSampleFixtures.ApplyOverrides(null);
 #if UNITY_ANDROID && !UNITY_EDITOR
         var extras = new Dictionary<string, string>();
         try
@@ -88,9 +92,15 @@ public static class OctopusSampleQaLaunch
             using (var activity = player.GetStatic<AndroidJavaObject>("currentActivity"))
             using (var intent = activity.Call<AndroidJavaObject>("getIntent"))
             {
-                foreach (var key in new[] { "qaTab", "qaScenario", "qaPreset" })
+                foreach (var key in new[] { "qaTab", "qaScenario", "qaPreset", "qaTheme" })
                     if (intent.Call<bool>("hasExtra", key))
                         extras[key] = intent.Call<string>("getStringExtra", key);
+                foreach (var name in OctopusSampleFixtures.Names)
+                {
+                    var key = OctopusSampleFixtures.ExtraPrefix + name;
+                    if (intent.Call<bool>("hasExtra", key))
+                        extras[key] = intent.Call<string>("getStringExtra", key);
+                }
                 if (intent.Call<bool>("hasExtra", "qaAutoStart"))
                     extras["qaAutoStart"] = intent.Call<bool>("getBooleanExtra", "qaAutoStart", false)
                         ? "true" : "false";
@@ -117,7 +127,7 @@ public static class OctopusSampleQaLaunch
     }
 
     // A Config screen supplies its existing Start action after loading persisted configuration.
-    // The base sample has no Config screen. Its future Start handler must call ConfigStarted.
+    // Successful configuration calls ConfigStarted; merely opening the screen makes no SDK call.
     public static void ConfigShown(Action start)
     {
         if (_request != null) _request.ConfigShown(start);

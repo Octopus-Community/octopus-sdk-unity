@@ -17,7 +17,7 @@
                 "UnityAddTimeSensitiveEntitlement"
             ],
             "m_Values": [
-                "True",
+                "False",
                 "7",
                 "False",
                 "False",

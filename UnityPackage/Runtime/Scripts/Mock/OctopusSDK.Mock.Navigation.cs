@@ -28,6 +28,12 @@ public partial class OctopusSDK
             Mock.Record("OpenActivity", navigationMode);
             if (Mock.Enabled) Mock.CurrentScreen = "Activity";
         }
+
+        internal static void OpenMemberActivity(OctopusCommunityMemberId memberId, OctopusNavigationMode? navigationMode)
+        {
+            Mock.Record("OpenMemberActivity", memberId.ProfileId, memberId.ClientUserId, navigationMode);
+            if (Mock.Enabled) Mock.CurrentScreen = "Activity " + (memberId.ProfileId ?? memberId.ClientUserId);
+        }
     }
 }
 #endif

@@ -112,6 +112,7 @@ public class PushNotificationsExample : MonoBehaviour
 #if UNITY_ANDROID
     void InitializeFirebaseForAndroid()
     {
+        if (!OctopusSampleFirebaseConfig.IsConfigured()) return;
         OctopusSamplePushTokenSource.CheckFirebaseDependencies().ContinueWithOnMainThread(task => {
             if (task.IsCanceled || task.IsFaulted || task.Result != Firebase.DependencyStatus.Available)
             {

@@ -30,6 +30,22 @@ public class SampleUiButton : Button
     private float _radius;
     private float _strokeDp;
     private bool _pointerSelection;
+    private bool _chrome;
+    private bool _hasPageStyle;
+    private bool _pageChrome;
+    private Color _pageFill;
+    private Color _pageInk;
+    private Color _pageBorder;
+
+    /// <summary>
+    /// The page variant the button was built with by <see cref="SampleUi.Button"/>, or null for a
+    /// button built with explicit colours. Leaving the app bar re-derives the page colours of this
+    /// variant from the live palette, so a theme change made while on the bar is honoured.
+    /// </summary>
+    public SampleUiButtonVariant? PageVariant { get; set; }
+
+    /// <summary>Whether the button currently wears the app-bar (chrome) style.</summary>
+    public bool IsChromeStyled { get { return _chrome; } }
 
     public override void OnPointerDown(PointerEventData eventData)
     {
@@ -57,8 +73,13 @@ public class SampleUiButton : Button
         _normalBorder = normalBorder;
         _radius = radius;
         _strokeDp = strokeDp;
+        _chrome = chrome;
         var palette = OctopusSampleBranding.Palette;
-        _pressedFill = OctopusSampleBranding.Tint(normalInk,
+        // Signal's pressed surface preserves contrast for both card and chrome labels.
+        _pressedFill = OctopusSampleBranding.Theme == OctopusSampleTheme.Dark &&
+            (normalFill == palette.Surface || chrome)
+            ? OctopusSampleBranding.DarkCardPressed
+            : OctopusSampleBranding.Tint(normalInk,
             normalFill.a == 0f ? palette.SurfaceHigh : normalFill, OctopusSampleBranding.PressedTint);
         _disabledFill = chrome ? palette.Chrome : palette.DisabledSurface;
         _disabledInk = chrome ? palette.OnChrome : palette.DisabledInk;
@@ -68,12 +89,49 @@ public class SampleUiButton : Button
         DoStateTransition(currentSelectionState, true);
     }
 
+    /// <summary>
+    /// Moves a page button onto an app bar (<paramref name="chrome"/> true) or back. On the bar it
+    /// wears <see cref="SampleUi.ChromeButtonFill"/> from the live palette — the page's accent
+    /// fill equals the navy chrome in light and would vanish there. Leaving the bar restores the
+    /// page style: a <see cref="PageVariant"/> button takes its variant colours from the live
+    /// palette, any other button the colours it had before.
+    /// </summary>
+    public void SetChromeStyle(bool chrome)
+    {
+        if (_fill == null) return;
+        if (chrome)
+        {
+            if (!_hasPageStyle)
+            {
+                _hasPageStyle = true;
+                _pageChrome = _chrome;
+                _pageFill = _normalFill;
+                _pageInk = _normalInk;
+                _pageBorder = _normalBorder;
+            }
+            Configure(_fill, _stroke, _label, SampleUi.ChromeButtonFill, SampleUi.ChromeButtonInk,
+                SampleUi.ChromeButtonFill, _radius, true, _detail, _strokeDp);
+            return;
+        }
+        if (!_hasPageStyle) return;
+        _hasPageStyle = false;
+        if (PageVariant.HasValue && !_pageChrome)
+        {
+            // Re-derive from the live palette: colours captured before a theme switch are stale.
+            SampleUi.VariantColors(PageVariant.Value, out _pageFill, out _pageInk, out _pageBorder);
+        }
+        Configure(_fill, _stroke, _label, _pageFill, _pageInk, _pageBorder, _radius, _pageChrome,
+            _detail, _strokeDp);
+    }
+
     protected override void DoStateTransition(SelectionState state, bool instant)
     {
         // Unity calls this during AddComponent, before the builder has assigned the graphics.
         if (_fill == null) return;
         bool disabled = state == SelectionState.Disabled;
-        bool pressed = state == SelectionState.Pressed;
+        bool pressed = state == SelectionState.Pressed ||
+            (state == SelectionState.Highlighted && OctopusSampleBranding.Theme == OctopusSampleTheme.Dark &&
+             _normalFill == OctopusSampleBranding.DarkSurfaceLow);
         // A scroll cancels Pressed through uGUI's pointer-up, but leaves selection/hover behind.
         // Only navigation selection gets an outline; passing a finger over rows must not add one.
         bool focused = state == SelectionState.Selected && !_pointerSelection;

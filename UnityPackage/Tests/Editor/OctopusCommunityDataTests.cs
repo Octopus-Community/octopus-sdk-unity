@@ -182,15 +182,18 @@ public class OctopusCommunityDataTests
         Assert.IsNull(_updates[1]);
     }
 
-    [Test]
-    public void Fetch_CorrelatesConcurrentResponsesOnceAndIgnoresMalformedPayloads()
+    [TestCase("offline\nretry")]
+    [TestCase("Could not fetch community data.")]
+    [TestCase("Could not fetch community data. Details: Network unavailable")]
+    [TestCase("Could not fetch community data. Details: Network unavailable\nRetry later")]
+    public void Fetch_CorrelatesConcurrentResponsesOnceAndIgnoresMalformedPayloads(string nativeMessage)
     {
         int successes = 0, errors = 0;
         int first = OctopusSDK.RegisterCommunityDataRequest(data => { Assert.IsNull(data); successes++; }, e => Assert.Fail(e));
-        int second = OctopusSDK.RegisterCommunityDataRequest(data => Assert.Fail(), e => { Assert.AreEqual("offline\nretry", e); errors++; });
+        int second = OctopusSDK.RegisterCommunityDataRequest(data => Assert.Fail(), e => { Assert.AreEqual(nativeMessage, e); errors++; });
         _channel.OnFetchCommunityDataResult(null);
         _channel.OnFetchCommunityDataError("bad\nerror");
-        _channel.OnFetchCommunityDataError(second + "\noffline\nretry");
+        _channel.OnFetchCommunityDataError(second + "\n" + nativeMessage);
         _channel.OnFetchCommunityDataResult(first + "\nnull");
         _channel.OnFetchCommunityDataResult(first + "\n{}");
         Assert.AreEqual(0, successes + errors);

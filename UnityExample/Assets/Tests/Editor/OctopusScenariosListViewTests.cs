@@ -271,6 +271,45 @@ public class OctopusScenariosListViewTests
     }
 
     [Test]
+    public void ShowingASectionClearsTheQueryReopensItAndScrollsToIt()
+    {
+        // What a link into the list ("Feature: …", "Scenarios › Notifications") lands on: the named
+        // section, visible, whatever the reader left collapsed or typed the last time.
+        var shell = Create();
+        shell.Select(OctopusSampleTab.Scenarios);
+        var list = shell.GetComponentInChildren<OctopusScenariosListView>();
+        list.ToggleSection(ScenarioSection.Theme);
+        list.SetQuery("zzz-no-match");
+        shell.Select(OctopusSampleTab.Home);
+
+        shell.ShowScenarioSection(ScenarioSection.Theme);
+
+        Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
+        list = shell.GetComponentInChildren<OctopusScenariosListView>();
+        Assert.AreEqual("", list.Query);
+        Assert.IsTrue(list.IsSectionOpen(ScenarioSection.Theme));
+        Assert.AreEqual(ScenarioSection.Theme, list.FocusedSection);
+        Assert.IsTrue(list.ScrollTo(ScenarioSection.Theme), "The section's card is not on screen.");
+    }
+
+    [Test]
+    public void APlainTabSwitchKeepsTheListAsTheReaderLeftIt()
+    {
+        var shell = Create();
+        shell.Select(OctopusSampleTab.Scenarios);
+        var list = shell.GetComponentInChildren<OctopusScenariosListView>();
+        list.ToggleSection(ScenarioSection.Theme);
+        shell.Select(OctopusSampleTab.Home);
+
+        shell.Select(OctopusSampleTab.Scenarios);
+
+        list = shell.GetComponentInChildren<OctopusScenariosListView>();
+        Assert.IsFalse(list.IsSectionOpen(ScenarioSection.Theme),
+            "Only a link reopens a section; a tab tap must not.");
+        Assert.IsNull(list.FocusedSection);
+    }
+
+    [Test]
     public void CollapsingASectionHidesItsCardsButKeepsItsHead()
     {
         var shell = Create();
@@ -404,6 +443,141 @@ public class OctopusScenariosListViewTests
                 ExecuteEvents.ExecuteHierarchy(field.gameObject, pointer, ExecuteEvents.pointerClickHandler),
                 "The padding target must dispatch the pointer click to the InputField.");
         }
+    }
+
+    [Test]
+    public void EveryCardPanelIsNamedAfterItsScenario()
+    {
+        var shell = Create();
+        shell.Select(OctopusSampleTab.Scenarios);
+
+        var expected = OctopusScenarioSections.Filter("").SelectMany(g => g.Scenarios)
+            .Select(scenario => "scenarios-" + scenario.Id + "-card-panel").ToArray();
+        var actual = shell.GetComponentsInChildren<Transform>(true)
+            .Select(t => t.name).Where(name => name.EndsWith("-card-panel")).ToArray();
+
+        CollectionAssert.AreEquivalent(expected, actual);
+        Assert.AreEqual(actual.Length, actual.Distinct().Count(),
+            "Two cards share a GameObject.name; a hierarchy dump cannot tell them apart.");
+        Assert.IsEmpty(shell.GetComponentsInChildren<Transform>(true)
+            .Where(t => t.name == "Card").ToArray(),
+            "A card fell back to the shared 'Card' name.");
+    }
+
+    /// <summary>
+    /// The card prints the product wording, not the catalogue's. Written against the rendered text
+    /// rather than against the catalogue fields, because the regression #129 describes is a card
+    /// still showing "Locale" and a capability line while the data sitting behind it is correct.
+    /// </summary>
+    [Test]
+    public void EveryCardShowsItsProductTitleSubtitleAndApiSymbol()
+    {
+        var shell = Create();
+        shell.Select(OctopusSampleTab.Scenarios);
+
+        foreach (var scenario in OctopusScenarioSections.Filter("").SelectMany(g => g.Scenarios))
+        {
+            var card = Find(shell.transform, scenario.CardTestId);
+            Assert.IsNotNull(card, "No card for " + scenario.Id);
+            var lines = card.GetComponentsInChildren<TMP_Text>(true).Select(t => t.text).ToArray();
+
+            CollectionAssert.Contains(lines, scenario.ProductTitle,
+                "The card for " + scenario.Id + " does not show its product title.");
+            CollectionAssert.Contains(lines, scenario.Subtitle,
+                "The card for " + scenario.Id + " does not show its subtitle.");
+            CollectionAssert.DoesNotContain(lines, scenario.Capability,
+                "The card for " + scenario.Id + " still shows the catalogue capability line.");
+
+            var chip = Find(card, scenario.CardTestId + "-api");
+            Assert.IsNotNull(chip, "No API chip on the card for " + scenario.Id);
+            Assert.AreEqual(scenario.ApiSymbol,
+                chip.GetComponentInChildren<TMP_Text>(true).text);
+        }
+    }
+
+    /// <summary>
+    /// The chip is sized by its content, not by the card. Nothing inside it may ask a parent layout
+    /// group for flexible width: a single `FlexibleLabel` in there is enough to make the pill
+    /// absorb the whole row and read as a banner, and no text assertion would notice.
+    /// </summary>
+    [Test]
+    public void TheApiChipAsksForNoFlexibleWidth()
+    {
+        var shell = Create();
+        shell.Select(OctopusSampleTab.Scenarios);
+
+        foreach (var scenario in OctopusScenarioSections.Filter("").SelectMany(g => g.Scenarios))
+        {
+            var chip = Find(Find(shell.transform, scenario.CardTestId), scenario.CardTestId + "-api");
+            Assert.IsNotNull(chip, "No API chip on the card for " + scenario.Id);
+
+            foreach (var element in chip.GetComponentsInChildren<LayoutElement>(true))
+            {
+                Assert.LessOrEqual(element.flexibleWidth, 0f,
+                    "'" + element.gameObject.name + "' inside the API chip of " + scenario.Id +
+                    " asks for flexible width, which stretches the pill across the card.");
+            }
+        }
+    }
+
+    [TestCase(1080f)]
+    [TestCase(1178f)]
+    public void ApiChipRectsHugTheirLabelsAfterLayout(float canvasWidth)
+    {
+        var host = new GameObject("ApiChipCanvas", typeof(RectTransform));
+        _spawned.Add(host);
+        var canvas = SampleUi.OverlayCanvas(host, 0);
+        canvas.renderMode = RenderMode.WorldSpace;
+        var hostRect = (RectTransform)host.transform;
+        hostRect.sizeDelta = new Vector2(canvasWidth, 2340f);
+        OctopusScenariosListView.BuildInto(hostRect);
+
+        // Exercise the actual nested groups, not just explicit LayoutElement components:
+        // a layout group can report flexible width even when no LayoutElement requests it.
+        for (var pass = 0; pass < 3; pass++)
+        {
+            Canvas.ForceUpdateCanvases();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(hostRect);
+        }
+
+        var symbols = new[] { "ConnectUser", "FetchCommunityData", "DebugOverrideProfileFieldsLock" };
+        var widths = new List<float>();
+        var expectedWidths = new List<float>();
+        foreach (var symbol in symbols)
+        {
+            var scenario = OctopusScenarioCatalog.All.Single(s => s.ApiSymbol == symbol);
+            var chip = (RectTransform)Find(host.transform, scenario.CardTestId + "-api");
+            Assert.IsNotNull(chip, "No API chip for " + symbol);
+            var label = chip.GetComponentInChildren<TMP_Text>();
+            var stack = chip.GetComponent<VerticalLayoutGroup>();
+            widths.Add(chip.rect.width);
+            expectedWidths.Add(label.preferredWidth + stack.padding.horizontal);
+            TestContext.WriteLine("{0}: canvas={1}, chip={2:F2}, text+padding={3:F2}, flexible={4}",
+                symbol, canvasWidth, chip.rect.width, expectedWidths.Last(),
+                LayoutUtility.GetFlexibleWidth(chip));
+        }
+
+        for (var i = 0; i < symbols.Length; i++)
+            Assert.That(widths[i], Is.EqualTo(expectedWidths[i]).Within(1f),
+                symbols[i] + " must hug its label after the real layout rebuild.");
+        Assert.That(widths[0], Is.LessThan(widths[1]));
+        Assert.That(widths[1], Is.LessThan(widths[2]));
+    }
+
+    /// <summary>
+    /// The chip is not decoration: an integrator who knows one method name can find the scenario
+    /// that calls it. Android matches the API name for the same reason.
+    /// </summary>
+    [Test]
+    public void SearchingForAnApiSymbolFindsItsCard()
+    {
+        // "SetLightColorScheme" appears in no other field of the theme row — its capability line
+        // reads "custom OctopusTheme (colors, fonts, logo)" — so a hit here can only come from the
+        // chip. Most symbols also occur in the capability line and would prove nothing.
+        var hits = OctopusScenarioSections.Filter("SetLightColorScheme")
+            .SelectMany(g => g.Scenarios).Select(s => s.Id).ToArray();
+
+        CollectionAssert.AreEqual(new[] { "theme" }, hits);
     }
 
     private OctopusSampleShell Create()

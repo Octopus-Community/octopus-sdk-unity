@@ -139,7 +139,8 @@ public class OctopusSampleClientProfileView : MonoBehaviour
 
         _root = SampleUi.Panel("Root", transform, SampleUi.Background);
         SampleUi.Stretch(_root, Vector2.zero, Vector2.one);
-        _topBleed = SampleUi.BuildBleed(_root, "TopBleed", OctopusSampleBranding.Palette.Chrome, true);
+        SampleUi.Halo(_root);
+        _topBleed = SampleUi.BuildBleed(_root, "TopBleed", OctopusSampleBranding.Palette.Header, true);
         _bottomBleed = SampleUi.BuildBleed(_root, "BottomBleed", OctopusSampleBranding.Palette.Surface, false);
         var root = SampleUi.SafeArea("clientProfile-safe-area", _root);
 

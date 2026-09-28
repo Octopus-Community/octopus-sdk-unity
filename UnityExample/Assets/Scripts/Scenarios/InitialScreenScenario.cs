@@ -32,8 +32,8 @@ public sealed class InitialScreenScenario : OctopusScenarioPilot
             _presets.Add(new OctopusScenarioPreset(PresetTestId(number), PresetLabel(number, labels[i]), fields =>
             {
                 fields.Set("preset", number.ToString());
-                fields.Set("postId", "auto");
-                fields.Set("groupId", "auto");
+                fields.Set("postId", OctopusSampleFixtures.PostTextId ?? string.Empty);
+                fields.Set("groupId", OctopusSampleFixtures.DefaultTopicId ?? string.Empty);
                 fields.Set("text", DefaultText);
                 fields.Set("ctaLabel", "none");
                 fields.Set("ctaUrl", "none");

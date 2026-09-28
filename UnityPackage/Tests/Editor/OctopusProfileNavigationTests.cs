@@ -183,4 +183,59 @@ public class OctopusProfileNavigationTests
         Assert.Throws<ArgumentOutOfRangeException>(() => OctopusSDK.OpenActivity((OctopusNavigationMode)99));
         Assert.IsNull(OctopusSDK.Mock.LastCall("OpenActivity"));
     }
+
+    [Test]
+    public void MemberActivity_ByProfileId_RecordsIdAndDefaultMode()
+    {
+        OctopusSDK.OpenActivity(OctopusCommunityMemberId.FromProfileId("profile-1"));
+        var call = OctopusSDK.Mock.LastCall("OpenMemberActivity").Value;
+        Assert.AreEqual("profile-1", call.Args[0]);
+        Assert.IsNull(call.Args[1]);
+        Assert.IsNull(call.Args[2]);
+        Assert.AreEqual("Activity profile-1", OctopusSDK.Mock.CurrentScreen);
+        Assert.IsNull(OctopusSDK.Mock.LastCall("OpenActivity"));
+    }
+
+    [Test]
+    public void MemberActivity_ByClientUserId_RecordsIdAndMode()
+    {
+        OctopusSDK.OpenActivity(OctopusCommunityMemberId.FromClientUserId("user-1"), OctopusNavigationMode.Automatic);
+        var call = OctopusSDK.Mock.LastCall("OpenMemberActivity").Value;
+        Assert.IsNull(call.Args[0]);
+        Assert.AreEqual("user-1", call.Args[1]);
+        Assert.AreEqual(OctopusNavigationMode.Automatic, call.Args[2]);
+        Assert.AreEqual("Activity user-1", OctopusSDK.Mock.CurrentScreen);
+    }
+
+    [Test]
+    public void MemberActivity_RejectsNullMemberAndInvalidMode_WithoutOpening()
+    {
+        Assert.Throws<ArgumentNullException>(() => OctopusSDK.OpenActivity((OctopusCommunityMemberId)null));
+        Assert.Throws<ArgumentOutOfRangeException>(() => OctopusSDK.OpenActivity(
+            OctopusCommunityMemberId.FromProfileId("profile-1"), (OctopusNavigationMode)99));
+        Assert.IsNull(OctopusSDK.Mock.LastCall("OpenMemberActivity"));
+        Assert.IsNull(OctopusSDK.Mock.CurrentScreen);
+    }
+
+    [Test]
+    public void ConnectedUserActivity_KeepsItsSignature_AndNullLiteralBindsToIt()
+    {
+        // The member overload must not make the shipped call shapes ambiguous or rebind them.
+        Action<OctopusNavigationMode?> activity = OctopusSDK.OpenActivity;
+        activity(null);
+        Assert.AreEqual("Activity", OctopusSDK.Mock.CurrentScreen);
+        OctopusSDK.Mock.Reset();
+        OctopusSDK.OpenActivity(null);
+        Assert.IsNotNull(OctopusSDK.Mock.LastCall("OpenActivity"));
+        Assert.IsNull(OctopusSDK.Mock.LastCall("OpenMemberActivity"));
+    }
+
+    [Test]
+    public void DisabledMock_DoesNotRecordMemberActivity()
+    {
+        OctopusSDK.Mock.Enabled = false;
+        OctopusSDK.OpenActivity(OctopusCommunityMemberId.FromProfileId("profile-1"));
+        Assert.AreEqual(0, OctopusSDK.Mock.Calls.Count);
+        Assert.IsNull(OctopusSDK.Mock.CurrentScreen);
+    }
 }

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 public sealed class PushNotificationsScenario : OctopusScenarioPilot
 {
-    private const string PlaceholderPostId = "octopus-demo-post-id-unset";
     private readonly OctopusScenarioFields _fields = new OctopusScenarioFields(
         new OctopusScenarioField("postId", "Sample notification target", true));
     private readonly List<OctopusScenarioPreset> _presets;
@@ -12,7 +11,7 @@ public sealed class PushNotificationsScenario : OctopusScenarioPilot
         _presets = new List<OctopusScenarioPreset>
         {
             new OctopusScenarioPreset(PresetTestId(1), PresetLabel(1, "Open sample notification (deep link)"),
-                fields => fields.Set("postId", PlaceholderPostId), fields => Run(fields.Get("postId")))
+                fields => fields.Set("postId", OctopusSampleFixtures.PostTextId ?? string.Empty), fields => Run(fields.Get("postId")))
         };
     }
     public override OctopusScenarioFields Fields { get { return _fields; } }
@@ -21,10 +20,11 @@ public sealed class PushNotificationsScenario : OctopusScenarioPilot
     { get { return new[] { "IsOctopusNotification", "GetOctopusNotification", "Open(OctopusNotification)" }; } }
     public override string ParameterNotice
     {
-        get { return "Replays a bundled notification without an FCM/APNs push or token registration. The placeholder post is expected to be not found; the SDK handles the stale deep link."; }
+        get { return "Replays a bundled notification without an FCM/APNs push or token registration. Targets post.text through the native notification payload. The external deeplink.post fixture is still TBD."; }
     }
     private void Run(string postId)
     {
+        if (string.IsNullOrWhiteSpace(postId)) { Report("Skipped: post.text has no id."); return; }
         string busy;
         if (!OctopusScenarioSdk.TryBeginOperation("OpenNotification", out busy)) { Report(busy); return; }
         var token = OctopusScenarioSdk.OperationToken;
@@ -51,7 +51,7 @@ public sealed class PushNotificationsScenario : OctopusScenarioPilot
             { Report("Failed to parse the sample notification payload."); return; }
             OctopusSampleLog.Current.LogApiCall("OctopusSDK.Open(OctopusNotification)", "bundled sample notification");
             sdk.Open(notification);
-            Report("Opening Octopus via notification → deep-links to a not-found placeholder post. The SDK handles the stale link gracefully.");
+            Report("Opening Octopus via notification → post.text: " + postId + ".");
         }
         catch (Exception error) { Report("Open notification failed: " + error.Message); }
         finally { OctopusScenarioSdk.EndOperation(token); }

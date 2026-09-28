@@ -86,7 +86,7 @@ public enum OctopusScreen
     DeleteAccount,
     /// <summary>Another user's posts list (native SDK 1.13+). Emitted by both Android and iOS.</summary>
     OtherUserPosts,
-    /// <summary>The connected user's community activity screen, shown under the unified profile instead of <see cref="Profile"/> (native SDK 1.13+). Distinct from the notification center. Android only for now — the iOS SDK has no matching screen event on 1.13.2.</summary>
+    /// <summary>The connected user's community activity screen, shown under the unified profile instead of <see cref="Profile"/> (native SDK 1.13+). Distinct from the notification center. Android only for now — the iOS SDK has no matching screen event on 1.14.0.</summary>
     Activity,
     Unknown
 }

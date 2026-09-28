@@ -55,6 +55,8 @@ public class OctopusSampleQaLaunchOptionsTests
     [TestCase("qaPreset", "999999999999", "unknown preset")]
     [TestCase("qaPreset", "1", "preset requires scenario")]
     [TestCase("qaAutoStart", "yes", "invalid autoStart")]
+    [TestCase("qaTheme", "Dark", "unknown theme")]
+    [TestCase("qaTheme", "", "unknown theme")]
     public void InvalidOptionsAreRejectedWithoutNavigation(string key, string value, string error)
     {
         var options = Parse(key, value);
@@ -62,6 +64,17 @@ public class OctopusSampleQaLaunchOptionsTests
         var navigation = new Navigation();
         Assert.IsFalse(new OctopusSampleQaRequest(options).Apply(navigation).MoveNext());
         Assert.IsNull(navigation.Tab);
+    }
+
+    [TestCase("light", OctopusSampleTheme.Light)]
+    [TestCase("dark", OctopusSampleTheme.Dark)]
+    public void ThemeIsParsedAndOnlyThenAppearsInTheSummary(string value, OctopusSampleTheme expected)
+    {
+        Assert.IsNull(Parse().Theme);
+        var options = Parse("qaTheme", value);
+        Assert.IsNull(options.Error);
+        Assert.AreEqual(expected, options.Theme);
+        Assert.AreEqual("tab=none scenario=none preset=none autoStart=false theme=" + value, options.Summary);
     }
 
     [TestCase("true", true)]

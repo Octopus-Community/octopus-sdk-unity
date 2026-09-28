@@ -52,6 +52,28 @@ public class OctopusProfileEntitlementsTests
         Assert.AreEqual(0, profile.Entitlements.Count);
     }
 
+    [TestCase("{\"isGuest\":true}", true)]
+    [TestCase("{\"isGuest\": true ,\"clientUserId\":null}", true)]
+    [TestCase("{\"isGuest\":false,\"clientUserId\":\"user1\"}", false)]
+    [TestCase("{\"clientUserId\":\"user1\"}", false)]
+    [TestCase("{\"isGuest\":\"true\"}", false)]
+    [TestCase("{\"isGuest\":1}", false)]
+    [TestCase("{\"isGuest\":null}", false)]
+    public void Profile_IsGuestIsTrueOnlyForJsonTrue(string json, bool expected)
+    {
+        Assert.AreEqual(expected, OctopusProfileParsing.FromJson(json).IsGuest);
+    }
+
+    [Test]
+    public void Profile_ConstructorDefaultsToAuthenticatedAndKeepsGuestFlag()
+    {
+        Assert.IsFalse(new OctopusProfile().IsGuest);
+        Assert.IsFalse(new OctopusProfile(clientUserId: "user1").IsGuest);
+        var guest = new OctopusProfile(isGuest: true);
+        Assert.IsTrue(guest.IsGuest);
+        Assert.IsNull(guest.ClientUserId);
+    }
+
     [TestCase(null)]
     [TestCase("null")]
     [TestCase("garbage")]

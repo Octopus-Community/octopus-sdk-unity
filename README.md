@@ -33,7 +33,7 @@ hosted backend, a few lines of C#.
 | Android | API 21 |
 | iOS | 13.0 |
 | Dependency | [External Dependency Manager for Unity](https://github.com/googlesamples/unity-jar-resolver) (resolves the native Android SDK) |
-| Native SDKs in 1.13.0 | Android 1.13.4, iOS 1.13.2 (added as a Swift package at Xcode export) |
+| Native SDKs in 1.14.0 | Android 1.14.1, iOS 1.14.0 (added as a Swift package at Xcode export) |
 
 > **Known issue: Xcode 27 / iOS 27.** A Unity 6000.3 iOS export is refused at launch on iOS 27
 > (a Unity trampoline limitation, not an SDK bug). Use Unity 6000.5+ and re-export.
@@ -47,12 +47,12 @@ hosted backend, a few lines of C#.
 {
   "dependencies": {
     "com.google.external-dependency-manager": "https://github.com/googlesamples/unity-jar-resolver.git?path=upm#v1.2.187",
-    "com.octopuscommunity.octopus_sdk_for_unity": "https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#v1.13.0"
+    "com.octopuscommunity.octopus_sdk_for_unity": "https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#v1.14.0"
   }
 }
 ```
 
-Replace `v1.13.0` with the [latest release](https://github.com/Octopus-Community/octopus-sdk-unity/releases/latest)
+Replace `v1.14.0` with the [latest release](https://github.com/Octopus-Community/octopus-sdk-unity/releases/latest)
 tag. Without the `#v…` suffix the URL tracks this repo's `main` branch.
 
 **Legacy `.unitypackage`.** Import the

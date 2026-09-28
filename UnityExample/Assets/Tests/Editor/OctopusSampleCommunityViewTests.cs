@@ -142,6 +142,7 @@ public class OctopusSampleCommunityViewTests
     public void TheGroupDoorWithoutAnIdCallsNothingAndSaysWhy()
     {
         var view = View();
+        view.SetGroupId("");
 
         view.OpenGroup();
 
@@ -155,6 +156,7 @@ public class OctopusSampleCommunityViewTests
     public void ThePostDoorPassesTheIdInItsFieldAndRefusesAnEmptyOne()
     {
         var view = View();
+        view.SetPostId("");
 
         view.OpenPost();
         Assert.IsEmpty(_sdk.ScenarioMethods, "An empty post id reached the SDK.");
@@ -352,12 +354,14 @@ public class OctopusSampleCommunityViewTests
         Assert.IsNotNull(Find(shell.transform, OctopusSampleCommunityView.ReadOnlyBandId + "-action"),
             "The read-only band has no action to take.");
 
-        // Driven through the method the button is wired to, not through the button: this assembly
-        // overrides its references down to nunit and cannot name `Button` to invoke its click.
         view.GoToScenarios();
 
         Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected,
             "The band's action did not land on the tab that connects a user.");
+        var screen = Object.FindAnyObjectByType<OctopusScenarioScreenView>();
+        Assert.IsNotNull(screen, "The band left the reader on the list instead of the Connection scenario.");
+        _spawned.Add(screen.gameObject);
+        Assert.AreEqual("connection", screen.ScenarioId);
     }
 
     [Test]
@@ -495,15 +499,15 @@ public class OctopusSampleCommunityViewTests
         public void TrackAccessToCommunity(bool value) { _recording.TrackAccessToCommunity(value); }
         public void OverrideCommunityAccess(bool value, System.Action completed, System.Action<string> error)
         { _recording.OverrideCommunityAccess(value, completed, error); }
-        public void SwitchCommunity(string key, ConnectionMode mode, System.Action completed, System.Action<string> error)
-        { _recording.SwitchCommunity(key, mode, completed, error); }
+        public void SwitchCommunity(string key, ConnectionMode mode, string host, System.Action completed, System.Action<string> error)
+        { _recording.SwitchCommunity(key, mode, host, completed, error); }
         public void Reset(System.Action completed, System.Action<string> error) { _recording.Reset(completed, error); }
         public void Stop(System.Action completed, System.Action<string> error) { _recording.Stop(completed, error); }
         public void UpdateNotSeenNotificationsCount() { _recording.UpdateNotSeenNotificationsCount(); }
         public bool IsOctopusNotification(IDictionary<string, string> payload) { return _recording.IsOctopusNotification(payload); }
         public OctopusNotification GetOctopusNotification(IDictionary<string, string> payload) { return _recording.GetOctopusNotification(payload); }
         public void Open(OctopusNotification notification) { Open(); }
-        public void Initialize(string key, ConnectionMode mode) { _recording.Initialize(key, mode); }
+        public void Initialize(string key, ConnectionMode mode, string host) { _recording.Initialize(key, mode, host); }
         public void ApplyTheme(OctopusColorScheme light, OctopusColorScheme dark) { _recording.ApplyTheme(light, dark); }
         public void SetColorSchemeType(int type) { _recording.SetColorSchemeType(type); }
         public void SetLogo(OctopusLogo logo) { _recording.SetLogo(logo); }
@@ -520,6 +524,10 @@ public class OctopusSampleCommunityViewTests
         { _recording.DebugOverrideTermsAcceptanceMode(mode); }
         public void DebugGetCommunityConfig(System.Action<OctopusCommunityConfig> result, System.Action<string> error)
         { _recording.DebugGetCommunityConfig(result, error); }
+        public void DebugOverrideExposeClientUserId(bool? enabled)
+        { _recording.DebugOverrideExposeClientUserId(enabled); }
+        public void SetNavigateToProfileHandler(System.Action<string> handler)
+        { _recording.SetNavigateToProfileHandler(handler); }
         public void DebugOverrideProfileFieldsLock(OctopusProfileFieldsLock fieldsLock)
         { _recording.DebugOverrideProfileFieldsLock(fieldsLock); }
         public void FetchCommunityData(OctopusCommunityMemberId memberId,

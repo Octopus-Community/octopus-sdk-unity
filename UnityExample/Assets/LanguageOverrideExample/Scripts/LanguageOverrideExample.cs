@@ -90,7 +90,7 @@ public class LanguageOverrideExample : MonoBehaviour
         text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         text.fontSize = fontSize;
         text.alignment = TextAnchor.MiddleCenter;
-        text.color = Color.white;
+        text.color = OctopusSampleBranding.Palette.OnChrome;
         return text;
     }
 }

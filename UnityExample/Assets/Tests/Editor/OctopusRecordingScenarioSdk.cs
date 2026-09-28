@@ -115,10 +115,14 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
         if (pending != null) pending.SetException(new InvalidOperationException(message));
     }
 
+    /// <summary>Makes <see cref="Initialize"/> throw after recording the call, as a broken native setup would.</summary>
+    public bool InitializeThrows;
+
     /// <inheritdoc/>
-    public void Initialize(string apiKey, ConnectionMode mode)
+    public void Initialize(string apiKey, ConnectionMode mode, string apiServerHost)
     {
-        Record("Initialize", apiKey, mode);
+        Record("Initialize", apiKey, mode, apiServerHost);
+        if (InitializeThrows) throw new InvalidOperationException("native initialization unavailable");
     }
 
     /// <inheritdoc/>
@@ -139,10 +143,14 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
         return NextTask();
     }
 
+    /// <summary>Makes <see cref="ApplyTheme"/> throw after recording, as a setup step after Initialize could.</summary>
+    public bool ApplyThemeThrows;
+
     /// <inheritdoc/>
     public void ApplyTheme(OctopusColorScheme light, OctopusColorScheme dark)
     {
         Record("ApplyTheme", light, dark);
+        if (ApplyThemeThrows) throw new InvalidOperationException("native theme unavailable");
     }
 
     /// <inheritdoc/>
@@ -188,12 +196,32 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
     {
         Record("DebugOverrideTermsAcceptanceMode", mode);
     }
+    /// <summary>Makes <see cref="DebugGetCommunityConfig"/> throw synchronously after recording.</summary>
+    public bool ThrowOnConfigRead;
+    /// <summary>Runs inside <see cref="DebugGetCommunityConfig"/>, before it throws or completes.</summary>
+    public Action OnConfigRead;
     public void DebugGetCommunityConfig(Action<OctopusCommunityConfig> onResult, Action<string> onError)
     {
         Record("DebugGetCommunityConfig");
         ConfigResult = onResult;
         ConfigError = onError;
+        var throws = ThrowOnConfigRead;
+        if (OnConfigRead != null) OnConfigRead();
+        if (throws) throw new InvalidOperationException("config read unavailable");
         if (!DeferCompletions) onResult(null);
+    }
+    public void DebugOverrideExposeClientUserId(bool? enabled)
+    {
+        Record("DebugOverrideExposeClientUserId", enabled);
+    }
+    /// <summary>
+    /// The handler the sample installed; null when native navigation is kept. Stored rather than
+    /// recorded, like an event subscription: it is wiring, and every initialisation installs it.
+    /// </summary>
+    public Action<string> NavigateToProfileHandler;
+    public void SetNavigateToProfileHandler(Action<string> handler)
+    {
+        NavigateToProfileHandler = handler;
     }
     public void DebugOverrideProfileFieldsLock(OctopusProfileFieldsLock fieldsLock)
     {
@@ -369,9 +397,9 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
         else completed();
     }
     public OctopusExampleConfig.ExampleProfile AlternateProfile { get; set; }
-    public void SwitchCommunity(string apiKey, ConnectionMode mode, Action onCompleted, Action<string> onError)
+    public void SwitchCommunity(string apiKey, ConnectionMode mode, string apiServerHost, Action onCompleted, Action<string> onError)
     {
-        Record("SwitchCommunity", apiKey, mode);
+        Record("SwitchCommunity", apiKey, mode, apiServerHost);
         CompleteCallback(onCompleted, onError);
     }
     public void Reset(Action onCompleted, Action<string> onError) { Record("Reset"); CompleteCallback(onCompleted, onError); }

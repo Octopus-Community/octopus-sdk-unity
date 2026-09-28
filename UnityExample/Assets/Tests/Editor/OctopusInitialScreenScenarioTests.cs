@@ -112,6 +112,46 @@ public class OctopusInitialScreenScenarioTests
         Assert.IsFalse(_pilot.IsRunning);
     }
 
+    [Test]
+    public void LaunchFixtureOverrideReachesOpenPostAndManualInputWins()
+    {
+        var options = OctopusSampleQaLaunchOptions.Parse(new System.Collections.Generic.Dictionary<string, string>
+        {
+            { "qaScenario", "initialScreen" }, { "qaPreset", "2" },
+            { "qaFixture.post.text", "retargeted-post" }
+        });
+        try
+        {
+            new OctopusSampleQaRequest(options);
+            Fill(2);
+            Run();
+            Assert.AreEqual("OpenPost", _sdk.Last.Method);
+            Assert.AreEqual("retargeted-post", _sdk.Last.Args[0]);
+            _pilot.Fields.Set("postId", "manual-post");
+            Run();
+            Assert.AreEqual("manual-post", _sdk.Last.Args[0]);
+        }
+        finally { OctopusSampleFixtures.ApplyOverrides(null); }
+    }
+
+    [Test]
+    public void BlankPostFixtureKeepsCompiledDefaultAndOpensPost()
+    {
+        try
+        {
+            OctopusSampleFixtures.ApplyOverrides(new System.Collections.Generic.Dictionary<string, string>
+            {
+                { "qaFixture.post.text", "" }
+            });
+            Fill(2);
+            Run();
+            Assert.AreEqual("SfEDTqxLavmbCEcEO6CBRp", _pilot.Fields.Get("postId"));
+            Assert.AreEqual("OpenPost", _sdk.Last.Method);
+            Assert.AreEqual("SfEDTqxLavmbCEcEO6CBRp", _sdk.Last.Args[0]);
+        }
+        finally { OctopusSampleFixtures.ApplyOverrides(null); }
+    }
+
     [TestCase(1)]
     [TestCase(7)]
     public void FeedPresetsUseTheNativeHomeEntryPoint(int number)
@@ -129,6 +169,10 @@ public class OctopusInitialScreenScenarioTests
     {
         Fill(number);
         Run();
+        Assert.AreEqual(OctopusSampleFixtures.PostTextId, _sdk.Last.Args[0]);
+        _sdk.Clear();
+        _pilot.Fields.Set("postId", "");
+        Run();
         StringAssert.Contains("Post id is empty", _pilot.Result);
         Assert.IsFalse(_sdk.Methods.Contains("OpenPost"));
         _pilot.Fields.Set("postId", " fixture-post ");
@@ -143,6 +187,7 @@ public class OctopusInitialScreenScenarioTests
         _sdk.Groups.Add(new OctopusGroup { Id = "first", Name = "First" });
         _sdk.Groups.Add(new OctopusGroup { Id = "general", Name = "General" });
         Fill(3);
+        _pilot.Fields.Set("groupId", "auto");
         Run();
         Assert.AreEqual("OpenGroup", _sdk.Last.Method);
         Assert.AreEqual("general", _sdk.Last.Args[0]);
@@ -157,6 +202,7 @@ public class OctopusInitialScreenScenarioTests
     public void EmptyGroupsAndFetchFailuresNeverOpenTheFeedInstead()
     {
         Fill(3);
+        _pilot.Fields.Set("groupId", "auto");
         Run();
         StringAssert.Contains("No group available", _pilot.Result);
         _sdk.GroupFetchError = "offline";
@@ -187,11 +233,11 @@ public class OctopusInitialScreenScenarioTests
     }
 
     [Test]
-    public void DefaultEditorAllowsNoGroupAndNoCta()
+    public void DefaultEditorUsesDefaultTopicAndNoCta()
     {
         Fill(4);
         Run();
-        Assert.IsNull(_sdk.LastPrefilledPost.TopicId);
+        Assert.AreEqual("PMYFiz0sv6cKEcpMkq5qlT", _sdk.LastPrefilledPost.TopicId);
         Assert.IsNull(_sdk.LastPrefilledPost.CtaLabel);
         Assert.IsNull(_sdk.LastPrefilledPost.CtaUrl);
     }
@@ -268,6 +314,7 @@ public class OctopusInitialScreenScenarioTests
     {
         _sdk.DeferGroups = true;
         Fill(3);
+        _pilot.Fields.Set("groupId", "auto");
         Run();
         Assert.IsTrue(_pilot.IsRunning);
         _pilot.Dispose();

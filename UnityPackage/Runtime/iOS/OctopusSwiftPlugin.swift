@@ -24,6 +24,8 @@ private var navBarUsesPrimaryColor: Bool = false
 private var logo: UIImage?
 private var appName: String?
 private var fonts: OctopusTheme.Fonts?
+// Icon overrides from OctopusSDK.SetIcons; nil keeps every native default.
+private var icons: OctopusTheme.Assets.Icons?
 
 // Orientation forced on the Octopus UI. 0 = None (follow the game/device), 1 = Portrait, 2 = Landscape.
 // Mirrors OctopusThemeSettings.ForcedOrientationType. Read by OctopusHostingController on present.
@@ -50,6 +52,9 @@ var communityAccessCancellable: AnyCancellable?
 // itself (in-app browser); when true taps are forwarded to Unity for the host to decide.
 private var urlInterceptionEnabled = false
 private var profileInterceptionEnabled = false
+// Toggled from C# (OctopusSdkSetHasModifyUserHandler) when a host subscribes to or unsubscribes
+// from OctopusSDK.OnModifyUser. Gates the activity screen's "Edit my profile" item (#280).
+private var modifyUserHandlerPresent = false
 private var octopusControllerNavigationMode: Int32 = -1
 
 @_cdecl("OctopusSdkSetProfileInterceptionEnabled")
@@ -57,6 +62,14 @@ public func OctopusSdkSetProfileInterceptionEnabled(enabled: Int32) {
     DispatchQueue.main.async {
         profileInterceptionEnabled = enabled != 0
         configureProfileInterception()
+    }
+}
+
+@_cdecl("OctopusSdkSetHasModifyUserHandler")
+public func OctopusSdkSetHasModifyUserHandler(present: Int32) {
+    DispatchQueue.main.async {
+        modifyUserHandlerPresent = present != 0
+        configureProfileEditInterception()
     }
 }
 
@@ -74,6 +87,34 @@ private func configureProfileInterception() {
                 sendUnityMessage("OctopusChannel", "OnNavigateToProfile", json)
             }
         }
+    })
+}
+
+// "Edit my profile" in the activity screen's overflow menu (#280). The native SDK keeps this hook
+// deliberately separate from SSO's `modifyUser`: it is nil-checkable, and the activity screen hides
+// the item while it is nil so the entry point never dead-ends. Honour that instead of defeating it
+// — wire it only when the host actually subscribed to OctopusSDK.OnModifyUser, otherwise the item
+// would render, dismiss the community on tap and deliver to nobody.
+//
+// This is the choice the Flutter wrapper already ships for the same native hook
+// (`hasModifyUserHandler`). Android stays unconditional: one native parameter serves both edit
+// paths there, and the native Android SDK requires it in SSO mode with app-managed fields — so a
+// Unity host with no OnModifyUser subscriber can still see the item on Android. Documented as a
+// known divergence in CHANGELOG.md, exactly as Flutter documents it.
+//
+// The native SDK applies its own gate on top (Unified Profile active, i.e. the host also set
+// NavigateToProfileHandler, and a non-guest connected user).
+private func configureProfileEditInterception() {
+    guard modifyUserHandlerPresent else {
+        octopus?.set(onNavigateToProfileEditCallback: nil)
+        return
+    }
+    octopus?.set(onNavigateToProfileEditCallback: { fieldToEdit in
+        // Same shape as the SSO `modifyUser` closure, and as Android, which foregrounds the Unity
+        // activity without finishing OctopusUIActivity: leave the community keeping its state,
+        // then deliver the field over the OnModifyUser landing pad both callers already use.
+        OctopusSdkClose(keepState: true)
+        sendUnityMessage("OctopusChannel", "OnModifyUser", fieldToString(fieldToEdit) ?? "")
     })
 }
 
@@ -119,7 +160,6 @@ private struct OctopusBridgeRootView: View {
     let initialScreen: OctopusInitialScreen
     let navigationMode: OctopusNavigationMode
     @Binding var notificationUserInfo: [AnyHashable: Any]?
-    let theme: OctopusTheme
 
     var body: some View {
         OctopusHomeScreen(
@@ -130,7 +170,20 @@ private struct OctopusBridgeRootView: View {
             navigationMode: navigationMode,
             notificationUserInfo: $notificationUserInfo
         )
-        .environment(\.octopusTheme, theme)
+    }
+}
+
+// Resolve dynamic colors from SwiftUI's effective appearance, including system changes while
+// a cached controller is open. A forced appearance is applied outside this environment reader.
+private struct OctopusBridgeAppearance: View {
+    let content: AnyView
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        content.environment(\.octopusTheme, OctopusTheme(
+            colors: resolveColorScheme(useDark: colorScheme == .dark),
+            fonts: fonts ?? OctopusTheme.Fonts(),
+            assets: .init(logo: logo, icons: icons ?? .init())))
     }
 }
 
@@ -194,6 +247,7 @@ private func configureLifecycleBridge() {
     octopus?.set(groupAccessDeniedCallback: { groupId in
         sendUnityMessage("OctopusChannel", "OnGroupAccessDenied", groupId)
     })
+    configureProfileEditInterception()
     // Unity's Bundle.main doesn't include .lproj folders for all languages,
     // so the SDK's default language detection (Bundle.main.preferredLocalizations)
     // returns "en" regardless of the device language.
@@ -403,18 +457,46 @@ public func OctopusSdkOpenProfile(clientUserId: UnsafePointer<Int8>, navigationM
 @_cdecl("OctopusSdkOpenActivity")
 public func OctopusSdkOpenActivity(navigationMode: Int32) {
     DispatchQueue.main.async {
-        let screen: OctopusInitialScreen
+        var screen: OctopusInitialScreen = .mainFeed
         // `core` is package-visible in the Swift SDK; same reflection as React Native and
         // the debug config endpoint below, confined to reading the current profile id.
-        if let sdk = octopus,
-           let core = Mirror(reflecting: sdk).children.first(where: { $0.label == "core" })?.value as? OctopusSDKCore,
-           let id = core.profileRepository.profile?.id {
-            screen = .activity(.init(profileId: id))
-        } else {
-            screen = .mainFeed
+        // The lookup is invisible to the compiler, so a rename in the Swift SDK would turn
+        // Open Activity into Open Main Feed silently: report it instead of failing quietly.
+        // A missing profile is NOT that case — it is the legitimate "not connected yet" path,
+        // and Android behaves the same way (OctopusUIActivity navigates nowhere without one).
+        if let sdk = octopus {
+            if let core = Mirror(reflecting: sdk).children.first(where: { $0.label == "core" })?.value as? OctopusSDKCore {
+                if let id = core.profileRepository.profile?.id {
+                    screen = .activity(.init(profileId: id))
+                }
+            } else {
+                print("OctopusSdkOpenActivity: Could not reach the SDK core; opening the main feed instead.")
+            }
         }
+        // `octopus == nil` needs no log here: presentHome reports "SDK not initialized" and bails.
         presentHome(initialScreen: screen, payloadJson: nil, navigationMode: navigationMode)
     }
+}
+
+/// One member's activity (posts-only), by Octopus profile id or by host client user id — the
+/// two public `ActivityScreenInfo` initializers. C# guarantees exactly one nonempty id
+/// (`OctopusCommunityMemberId`); ids are forwarded as sent, like the Kotlin `openMemberActivity`.
+/// Neither id opens the main feed, not the connected user's activity: the caller named a member.
+@_cdecl("OctopusSdkOpenMemberActivity")
+public func OctopusSdkOpenMemberActivity(profileId: UnsafePointer<CChar>?, clientUserId: UnsafePointer<CChar>?,
+                                         navigationMode: Int32) {
+    let profile = profileId.map { String(cString: $0) } ?? ""
+    let client = clientUserId.map { String(cString: $0) } ?? ""
+    let screen: OctopusInitialScreen
+    if !profile.isEmpty {
+        screen = .activity(.init(profileId: profile))
+    } else if !client.isEmpty {
+        screen = .activity(.init(clientUserId: client))
+    } else {
+        print("OctopusSdkOpenMemberActivity: no member id; opening the main feed instead.")
+        screen = .mainFeed
+    }
+    presentHome(initialScreen: screen, payloadJson: nil, navigationMode: navigationMode)
 }
 
 private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: String?,
@@ -456,9 +538,6 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
             } else {
                 navBarTitle = nil
             }
-            let themeFonts = fonts ?? OctopusTheme.Fonts()
-            let effectiveColorScheme = resolveColorScheme()
-
             // When a notification is pending, it drives navigation — keep initialScreen .mainFeed.
             let effectiveScreen: OctopusInitialScreen = (userInfo != nil) ? .mainFeed : initialScreen
 
@@ -471,11 +550,6 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
                 notificationUserInfo: Binding(
                     get: { pendingNotificationUserInfo },
                     set: { pendingNotificationUserInfo = $0 }
-                ),
-                theme: OctopusTheme(
-                    colors: effectiveColorScheme,
-                    fonts: themeFonts,
-                    assets: .init(logo: logo)
                 )
             )
             let view: AnyView
@@ -484,12 +558,22 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
                     octopus: sdk, clientUserId: profileClientUserId,
                     navigationMode: decodeNavigationMode(navigationMode, profile: true),
                     navBarLeadingAction: .close(onTap: { OctopusSdkClose() })
-                ).environment(\.octopusTheme, OctopusTheme(
-                    colors: effectiveColorScheme, fonts: themeFonts, assets: .init(logo: logo))))
+                ))
             } else {
                 view = AnyView(root)
             }
-            octopusController = OctopusHostingController(rootView: view)
+            let forcedScheme: ColorScheme? = colorSchemeType == COLOR_SCHEME_TYPE_LIGHT ? .light
+                : colorSchemeType == COLOR_SCHEME_TYPE_DARK ? .dark : nil
+            let appearance = OctopusBridgeAppearance(content: view)
+            let themedView: AnyView
+            if let forcedScheme = forcedScheme {
+                themedView = AnyView(appearance.environment(\.colorScheme, forcedScheme))
+            } else {
+                themedView = AnyView(appearance)
+            }
+            octopusController = OctopusHostingController(rootView: themedView)
+            octopusController?.overrideUserInterfaceStyle = forcedScheme == .dark ? .dark
+                : forcedScheme == .light ? .light : .unspecified
             octopusControllerNavigationMode = navigationMode
             octopusController?.modalPresentationStyle = .fullScreen
             octopusControllerShowsMainFeed = !opensProfile && isMainFeed(effectiveScreen)
@@ -617,7 +701,16 @@ public func OctopusSdkFetchCommunityData(requestId: Int32, profileId: UnsafePoin
             } else { return }
             sendUnityMessage("OctopusChannel", "OnFetchCommunityDataResult", "\(requestId)\n\(communityDataToJson(data))")
         } catch {
-            sendUnityMessage("OctopusChannel", "OnFetchCommunityDataError", "\(requestId)\nCould not fetch community data.")
+            // The native description is the only clue a host gets about what went wrong once the
+            // payload crosses the bridge (#276), so forward it. The generic sentence is kept
+            // verbatim, period included, because it is the exact string hosts already match on and
+            // it is what the Android bridge sends; the detail is appended as a second sentence, and
+            // some errors carry no useful text at all.
+            let detail = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+            let message = detail.isEmpty
+                ? "Could not fetch community data."
+                : "Could not fetch community data. Details: \(detail)"
+            sendUnityMessage("OctopusChannel", "OnFetchCommunityDataError", "\(requestId)\n\(message)")
         }
     }
 }
@@ -640,26 +733,36 @@ private func discardLifecycleUI() async {
 @_cdecl("OctopusSdkSwitchCommunity")
 public func OctopusSdkSwitchCommunity(
     requestId: Int32, apiKey: UnsafePointer<Int8>, connectionMode: UnsafePointer<Int8>,
-    appManagedFields: UnsafePointer<Int32>, appManagedFieldsCount: Int32
+    appManagedFields: UnsafePointer<Int32>, appManagedFieldsCount: Int32,
+    apiServerHost: UnsafePointer<Int8>, apiServerPort: Int32
 ) {
     // Copy borrowed C strings/arrays before crossing the asynchronous boundary.
     let key = String(cString: apiKey)
     let mode = parseConnectionMode(connectionMode, appManagedFields, appManagedFieldsCount)
     let usesSSO = String(cString: connectionMode) == "sso"
+    let hostStr = String(cString: apiServerHost)
+    let port = Int(apiServerPort)
     Task { @MainActor in
         clearClientPostSession()
         await discardLifecycleUI()
         do {
             communityDataCancellable = nil
+            // Same rule as OctopusSdkInitialize: empty host = the SDK default (prod). Without it
+            // a switch from a custom host silently lands on production (issue #391).
+            let configuration: OctopusSDK.Configuration =
+                hostStr.isEmpty ? .init()
+                                : .init(apiServer: try .init(host: hostStr, port: port))
             if let current = octopus {
-                try await current.switchCommunity(apiKey: key, connectionMode: mode)
+                try await current.switchCommunity(apiKey: key, connectionMode: mode,
+                                                  configuration: configuration)
             } else {
-                octopus = try OctopusSDK(apiKey: key, connectionMode: mode, configuration: .init())
+                octopus = try OctopusSDK(apiKey: key, connectionMode: mode, configuration: configuration)
             }
             lifecycleUsesSSO = usesSSO
             configureLifecycleBridge()
             sendUnityMessage("OctopusChannel", "OnLifecycleResult", "\(requestId)\n")
         } catch {
+            // Do not echo exception text that may contain a supplied credential.
             sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\nCommunity switch failed.")
         }
     }
@@ -672,16 +775,20 @@ public func OctopusSdkReset(requestId: Int32) {
         stopCommunityDataObservation()
         await discardLifecycleUI()
         do {
-            // MagicLinkConnectionRepository.disconnectUser traps (not throws) in 1.13.2.
+            // MagicLinkConnectionRepository.disconnectUser traps (not throws) in 1.14.0.
             // Do not reproduce the Flutter/RN wrapper crash for Octopus Auth.
             if octopus != nil && !lifecycleUsesSSO {
-                sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\nReset requires SSO on iOS 1.13.2.")
+                sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\nReset requires SSO on iOS 1.14.0.")
                 return
             }
             try await octopus?.disconnectUser()
             sendUnityMessage("OctopusChannel", "OnLifecycleResult", "\(requestId)\n")
         } catch {
-            sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\nReset failed.")
+            let detail = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+            let message = detail.isEmpty
+                ? "Reset failed."
+                : "Reset failed. Details: \(detail)"
+            sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\n\(message)")
         }
     }
 }
@@ -935,6 +1042,10 @@ private func orientationMask(from o: UIInterfaceOrientation) -> UIInterfaceOrien
 // including the SDK dismissing itself (OctopusHomeScreen calls presentationMode.dismiss()), which
 // never routes through OctopusSdkClose. viewDidAppear/viewDidDisappear fire once per present/dismiss.
 final class OctopusHostingController: UIHostingController<AnyView> {
+    // Unity uses controller-based status bars. Leave the style with SwiftUI's navigation and
+    // media controllers so their per-screen appearance can override the SDK's resolved theme.
+    override var prefersStatusBarHidden: Bool { false }
+
     // Constrain the community to the forced orientation, if any. When not forcing, defer to the
     // default so behaviour is unchanged. This is the VC half of UIKit's orientation intersection;
     // the app-level half is widened by the swizzle in OctopusUnityPause.mm.
@@ -1067,7 +1178,7 @@ public func OctopusSdkSetDarkColorScheme(
 /// Every slot is optional, per channel: 0 (fully transparent) means the host left that color
 /// disabled, and the pinned SDK default must stand. `OctopusTheme.Colors.init` takes
 /// `primarySet`/`onPrimary`/`link`/`background` as optionals defaulting to nil (checked in
-/// `Sources/OctopusUI/Theme/Theme.swift` at Octopus iOS 1.13.2), so nil is how a slot is left
+/// `Sources/OctopusUI/Theme/Theme.swift` at Octopus iOS 1.14.0), so nil is how a slot is left
 /// alone. `ColorSet` itself has three non-optional members, so a partially set primary set is
 /// filled from a default-constructed `Colors` — the SDK's own values, never a copy of them here.
 private func colorsFrom(
@@ -1148,17 +1259,7 @@ func colorFrom(rgba: Int32) -> Color {
     return Color(red: red, green: green, blue: blue, opacity: alpha)
 }
 
-private func resolveColorScheme() -> OctopusTheme.Colors {
-    let useDark: Bool
-    switch colorSchemeType {
-    case COLOR_SCHEME_TYPE_LIGHT:
-        useDark = false
-    case COLOR_SCHEME_TYPE_DARK:
-        useDark = true
-    default:  // System (0) or any invalid value
-        useDark = UITraitCollection.current.userInterfaceStyle == .dark
-    }
-
+private func resolveColorScheme(useDark: Bool) -> OctopusTheme.Colors {
     if useDark {
         return darkColorScheme ?? OctopusTheme.Colors()
     } else {
@@ -1198,7 +1299,7 @@ private func groupFollowUnfollowError(_ requestId: Int32, _ type: String, _ mess
 }
 
 private func setGroupFollowing(requestId: Int32, groupId: String, followed: Bool) {
-    // iOS 1.13.2 has no individual follow API. Match Flutter's one-action adapter.
+    // iOS 1.14.0 has no individual follow API. Match Flutter's one-action adapter.
     Task {
         guard let sdk = octopus else {
             groupFollowUnfollowError(requestId, "unknown", "Call Initialize first")
@@ -1747,7 +1848,8 @@ private func profileToJson(_ profile: OctopusProfile?) -> String {
     guard let profile else { return "null" }
     let object: [String: Any] = [
         "entitlements": Array(profile.entitlements),
-        "clientUserId": profile.clientUserId as Any? ?? NSNull()
+        "clientUserId": profile.clientUserId as Any? ?? NSNull(),
+        "isGuest": profile.isGuest
     ]
     guard let data = try? JSONSerialization.data(withJSONObject: object),
           let json = String(data: data, encoding: .utf8) else { return "null" }
@@ -1995,7 +2097,7 @@ public func OctopusSdkFetchOrCreateClientObjectRelatedPost(
             }
         } catch let error as ClientPostError {
             if !Task.isCancelled {
-                // ValidationError's fields are internal in 1.13.2. Do not infer kinds from descriptions.
+                // ValidationError's fields are internal in 1.14.0. Do not infer kinds from descriptions.
                 switch error {
                 case .validation, .noNetwork, .serverError, .other:
                     sendClientPostError(requestId, "other", error.debugDescription)
@@ -2066,4 +2168,177 @@ private func sendClientPostError(_ requestId: Int32, _ type: String, _ message: 
     guard let data = try? JSONSerialization.data(withJSONObject: row),
           let json = String(data: data, encoding: .utf8) else { return }
     sendUnityMessage("OctopusChannel", "OnClientPostError", "\(requestId)\n\(json)")
+}
+
+// MARK: - Icon overrides (OctopusSDK.SetIcons)
+
+/// Loads an image like OctopusSdkSetLogo: a bundle path when it contains "/" (e.g. "Data/Raw/x.png"),
+/// otherwise an asset-catalog name.
+private func bridgeImage(_ resource: String) -> UIImage? {
+    guard !resource.isEmpty else { return nil }
+    guard resource.contains("/") else { return UIImage(named: resource) }
+    let url = URL(fileURLWithPath: resource)
+    let directory = url.deletingLastPathComponent().path
+    let fileName = url.deletingPathExtension().lastPathComponent
+    let ext = url.pathExtension.isEmpty ? nil : url.pathExtension
+    guard let bundlePath = Bundle.main.path(forResource: fileName, ofType: ext, inDirectory: directory) else {
+        return nil
+    }
+    return UIImage(contentsOfFile: bundlePath)
+}
+
+/// Bridge keys understood on iOS (OctopusSDK.IconSlotKey). The Android-only keys content.views,
+/// content.like and profile.defaultAvatar have no iOS counterpart and are ignored.
+private let iosIconKeys: Set<String> = [
+    "groups.openList", "groups.selected", "groups.viewGroup",
+    "content.post.creation.open", "content.post.creation.topicSelection",
+    "content.post.creation.addPicture", "content.post.creation.deletePicture",
+    "content.post.creation.addPoll", "content.post.creation.addPollOption",
+    "content.post.creation.deletePoll", "content.post.creation.deletePollOption",
+    "content.post.emptyFeedInGroups", "content.post.emptyFeedInCurrentUserProfile",
+    "content.post.emptyFeedInOtherUserProfile", "content.post.notAvailable",
+    "content.post.commentCount", "content.post.viewCount", "content.post.moreReactions",
+    "content.post.likeNotSelected", "content.post.moderated",
+    "content.comment.creation.open", "content.comment.creation.create",
+    "content.comment.creation.addPicture", "content.comment.creation.deletePicture",
+    "content.comment.emptyFeed", "content.comment.notAvailable",
+    "content.comment.seeReplies", "content.comment.likeNotSelected",
+    "content.reply.creation.open", "content.reply.creation.create",
+    "content.reply.creation.addPicture", "content.reply.creation.deletePicture",
+    "content.reply.likeNotSelected",
+    "content.video.muted", "content.video.notMuted", "content.video.pause",
+    "content.video.play", "content.video.replay",
+    "content.poll.selectedOption",
+    "content.reaction.heart", "content.reaction.joy", "content.reaction.mouthOpen",
+    "content.reaction.clap", "content.reaction.cry", "content.reaction.rage",
+    "content.delete", "content.report",
+    "profile.addPicture", "profile.editPicture", "profile.addBio",
+    "profile.emptyNotifications", "profile.report", "profile.notConnected", "profile.blockUser",
+    "gamification.badge", "gamification.info", "gamification.rulesHeader",
+    "settings.account", "settings.help", "settings.info", "settings.logout",
+    "settings.deleteAccountWarning",
+    "common.radio.on", "common.radio.off", "common.checkbox.on", "common.checkbox.off",
+    "common.toggle.on", "common.toggle.off",
+    "common.close", "common.moreActions", "common.activityButton", "common.listCellNavIndicator",
+]
+
+/// Builds the native icon tree from slot key -> image; every missing slot keeps its native default.
+private func bridgeIcons(_ images: [String: UIImage]) -> OctopusTheme.Assets.Icons {
+    typealias Icons = OctopusTheme.Assets.Icons
+    func pair(_ key: String) -> Icons.OnOff? {
+        guard let on = images[key + ".on"], let off = images[key + ".off"] else { return nil }
+        return Icons.OnOff(on: on, off: off)
+    }
+    return Icons(
+        groups: Icons.Groups(
+            openList: images["groups.openList"],
+            selected: images["groups.selected"],
+            viewGroup: images["groups.viewGroup"]),
+        content: Icons.Content(
+            post: Icons.Content.Post(
+                creation: Icons.Content.Post.Creation(
+                    open: images["content.post.creation.open"],
+                    topicSelection: images["content.post.creation.topicSelection"],
+                    addPicture: images["content.post.creation.addPicture"],
+                    deletePicture: images["content.post.creation.deletePicture"],
+                    addPoll: images["content.post.creation.addPoll"],
+                    addPollOption: images["content.post.creation.addPollOption"],
+                    deletePoll: images["content.post.creation.deletePoll"],
+                    deletePollOption: images["content.post.creation.deletePollOption"]),
+                emptyFeedInGroups: images["content.post.emptyFeedInGroups"],
+                emptyFeedInCurrentUserProfile: images["content.post.emptyFeedInCurrentUserProfile"],
+                emptyFeedInOtherUserProfile: images["content.post.emptyFeedInOtherUserProfile"],
+                notAvailable: images["content.post.notAvailable"],
+                commentCount: images["content.post.commentCount"],
+                viewCount: images["content.post.viewCount"],
+                moreReactions: images["content.post.moreReactions"],
+                likeNotSelected: images["content.post.likeNotSelected"],
+                moderated: images["content.post.moderated"]),
+            comment: Icons.Content.Comment(
+                creation: Icons.Content.Comment.Creation(
+                    open: images["content.comment.creation.open"],
+                    create: images["content.comment.creation.create"],
+                    addPicture: images["content.comment.creation.addPicture"],
+                    deletePicture: images["content.comment.creation.deletePicture"]),
+                emptyFeed: images["content.comment.emptyFeed"],
+                notAvailable: images["content.comment.notAvailable"],
+                seeReply: images["content.comment.seeReplies"],
+                likeNotSelected: images["content.comment.likeNotSelected"]),
+            reply: Icons.Content.Reply(
+                creation: Icons.Content.Reply.Creation(
+                    open: images["content.reply.creation.open"],
+                    create: images["content.reply.creation.create"],
+                    addPicture: images["content.reply.creation.addPicture"],
+                    deletePicture: images["content.reply.creation.deletePicture"]),
+                likeNotSelected: images["content.reply.likeNotSelected"]),
+            video: Icons.Content.Video(
+                muted: images["content.video.muted"],
+                notMuted: images["content.video.notMuted"],
+                pause: images["content.video.pause"],
+                play: images["content.video.play"],
+                replay: images["content.video.replay"]),
+            poll: Icons.Content.Poll(selectedOption: images["content.poll.selectedOption"]),
+            reaction: Icons.Content.Reaction(
+                heart: images["content.reaction.heart"],
+                joy: images["content.reaction.joy"],
+                mouthOpen: images["content.reaction.mouthOpen"],
+                clap: images["content.reaction.clap"],
+                cry: images["content.reaction.cry"],
+                rage: images["content.reaction.rage"]),
+            delete: images["content.delete"],
+            report: images["content.report"]),
+        profile: Icons.Profile(
+            addPicture: images["profile.addPicture"],
+            editPicture: images["profile.editPicture"],
+            addBio: images["profile.addBio"],
+            emptyNotifications: images["profile.emptyNotifications"],
+            report: images["profile.report"],
+            notConnected: images["profile.notConnected"],
+            blockUser: images["profile.blockUser"]),
+        gamification: Icons.Gamification(
+            badge: images["gamification.badge"],
+            info: images["gamification.info"],
+            rulesHeader: images["gamification.rulesHeader"]),
+        settings: Icons.Settings(
+            account: images["settings.account"],
+            help: images["settings.help"],
+            info: images["settings.info"],
+            logout: images["settings.logout"],
+            deleteAccountWarning: images["settings.deleteAccountWarning"]),
+        common: Icons.Common(
+            radio: pair("common.radio"),
+            checkbox: pair("common.checkbox"),
+            toggle: pair("common.toggle"),
+            close: images["common.close"],
+            moreActions: images["common.moreActions"],
+            activityButton: images["common.activityButton"],
+            listCellNavIndicator: images["common.listCellNavIndicator"]))
+}
+
+/// Replaces every icon override; an empty array restores the native defaults. Payload:
+/// [{"slot": "<OctopusSDK.IconSlotKey>", "resource": "<bundle path or asset name>"}].
+@_cdecl("OctopusSdkSetIcons")
+public func OctopusSdkSetIcons(json: UnsafePointer<Int8>) {
+    OctopusSdkClose(keepState: false)
+    guard let data = String(cString: json).data(using: .utf8),
+          let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        print("OctopusSdkSetIcons: invalid payload; native icons kept")
+        icons = nil
+        return
+    }
+    var images: [String: UIImage] = [:]
+    for row in rows {
+        guard let slot = row["slot"] as? String,
+              let resource = row["resource"] as? String, !resource.isEmpty else { continue }
+        guard iosIconKeys.contains(slot) else {
+            print("OctopusSdkSetIcons: '\(slot)' has no iOS icon; ignored")
+            continue
+        }
+        guard let image = bridgeImage(resource) else {
+            print("OctopusSdkSetIcons: image '\(resource)' not found for '\(slot)'; default kept")
+            continue
+        }
+        images[slot] = image
+    }
+    icons = images.isEmpty ? nil : bridgeIcons(images)
 }

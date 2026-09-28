@@ -5,6 +5,7 @@ using System.Globalization;
 /// <summary>Pure parsing of the sample's Android launch extras; never reads configuration.</summary>
 public sealed class OctopusSampleQaLaunchOptions
 {
+    public IReadOnlyDictionary<string, string> FixtureOverrides { get; private set; }
     public string Tab { get; private set; }
     public string Scenario { get; private set; }
 
@@ -16,6 +17,12 @@ public sealed class OctopusSampleQaLaunchOptions
     public string Destination { get; private set; }
     public int? Preset { get; private set; }
     public bool AutoStart { get; private set; }
+
+    /// <summary>
+    /// `qaTheme` (`light` or `dark`): the appearance for this launch only, never saved, so reference
+    /// captures do not depend on what an earlier run left in PlayerPrefs.
+    /// </summary>
+    public OctopusSampleTheme? Theme { get; private set; }
     public string Error { get; private set; }
 
     public string Summary
@@ -24,7 +31,8 @@ public sealed class OctopusSampleQaLaunchOptions
         {
             return "tab=" + (Tab ?? "none") + " scenario=" + (Scenario ?? Destination ?? "none") +
                 " preset=" + (Preset.HasValue ? Preset.Value.ToString(CultureInfo.InvariantCulture) : "none") +
-                " autoStart=" + (AutoStart ? "true" : "false");
+                " autoStart=" + (AutoStart ? "true" : "false") +
+                (Theme.HasValue ? " theme=" + (Theme.Value == OctopusSampleTheme.Light ? "light" : "dark") : "");
         }
     }
 
@@ -32,6 +40,18 @@ public sealed class OctopusSampleQaLaunchOptions
     {
         var options = new OctopusSampleQaLaunchOptions();
         if (extras == null) return options;
+        var fixtures = new Dictionary<string, string>();
+        foreach (var name in OctopusSampleFixtures.Names)
+        {
+            string fixture;
+            var key = OctopusSampleFixtures.ExtraPrefix + name;
+            if (extras.TryGetValue(key, out fixture))
+            {
+                if (fixture != null && fixture.Trim() == "TBD") return options.Fail("fixture must be an id or empty");
+                fixtures[key] = fixture;
+            }
+        }
+        options.FixtureOverrides = fixtures;
         string value;
         if (extras.TryGetValue("qaTab", out value))
         {
@@ -62,6 +82,12 @@ public sealed class OctopusSampleQaLaunchOptions
             bool autoStart;
             if (!bool.TryParse(value, out autoStart)) return options.Fail("invalid autoStart");
             options.AutoStart = autoStart;
+        }
+        if (extras.TryGetValue("qaTheme", out value))
+        {
+            if (value == "light") options.Theme = OctopusSampleTheme.Light;
+            else if (value == "dark") options.Theme = OctopusSampleTheme.Dark;
+            else return options.Fail("unknown theme");
         }
         return options;
     }

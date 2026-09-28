@@ -3,7 +3,7 @@ using NUnit.Framework;
 
 /// <summary>
 /// Guards the scenario pilots against the two ways they could quietly stop being QA-usable:
-/// a preset id or label that drifts from `pm-tools/shared/config/scenarios-catalog.yaml`, and a
+/// a preset id or label that drifts from the shared QA scenario catalog (internal), and a
 /// preset that leaves a field for the Tester to fill in by hand (SDK_STANDARDS §5.2).
 ///
 /// The expected ids are spelled out as literals on purpose. Deriving them from

@@ -6,6 +6,274 @@ section when a release is cut (format inspired by
 
 ## Unreleased
 
+## 1.14.0 — 2026-09-28
+
+Legacy `OctopusCommunitySDK.unitypackage` for this version was regenerated with Unity Editor 6000.3.3f1 (`build_legacy_package.sh`, the reference path), not import-tested in a scratch project before the cut. UPM remains the reference install path.
+
+### Added
+- runtime: `OctopusSDK.SetIcons(OctopusIcons icons)` overrides the icons of the native Octopus UI,
+  bridged to Android (`OctopusIcons`) and iOS (`OctopusTheme.Assets.Icons`). Each
+  `OctopusIconSlot` takes an `OctopusIcon(androidDrawableName, iOSResourceName)` resolved like
+  `OctopusLogo`; unset slots keep the native default and `SetIcons(null)` restores them all. Every
+  icon group up to native 1.13 is covered; the `screenStates` illustrations that Android 1.14.1 and
+  iOS 1.14.0 add are not bridged yet (#414). A few slots exist on one platform only and are
+  ignored on the other (documented per slot). Additive: no existing signature changed. (#366)
+- runtime: `OctopusProfile.IsGuest` tells an anonymous guest apart from an authenticated user —
+  in forced-login communities `CurrentProfile` becomes non-null again right after `DisconnectUser`,
+  as a guest. Mirrors iOS `OctopusProfile.isGuest` and Android `ConnectionState.Connected.isGuest`;
+  both bridges now send it with every profile snapshot, and the `OctopusProfile` constructor gains
+  an optional `isGuest` parameter (default `false`, source-compatible). Needs the rebuilt bridge
+  AAR shipped with this package.
+- runtime: `OctopusSDK.SwitchCommunity(string apiKey, ConnectionMode mode, string apiServerHost,
+  int apiServerPort, Action onCompleted = null, Action<string> onError = null)` switches community
+  on a custom server — the switch counterpart of `Initialize`'s `apiServerHost`/`apiServerPort`,
+  forwarded as the native `apiServer` (Android) and `Configuration(apiServer:)` (iOS). The existing
+  overload is unchanged and still targets production: an app initialized against a custom host
+  must pass it again on every switch. Works on the native pins this release ships (Android
+  1.14.1, iOS 1.14.0). (#391)
+- sample: Scenarios › Sign-in & user gains a collapsible Unified Profile (exposeClientUserId)
+  section after its cards, as in the Android sample — Use backend value, Force active or Force
+  inactive (same labels and test ids) — applied live through `DebugOverrideExposeClientUserId`
+  and re-applied at every start and community switch, with the effective value read back in the
+  section. The sample now routes member-avatar taps to its host profile page, so the Unified
+  Profile is reachable on the default demo community; the `communityData` scenario names the flag
+  and its effective value.
+- sample: Scenarios › Sign-in & user › Unified Profile gains a *Host profile route* switch that
+  wires or unwires `NavigateToProfileHandler` live, as the Flutter sample's switch does. On (the
+  default, as on Android) member avatars open the sample's host profile page; off, every avatar
+  opens the SDK profile. The choice holds across the next Start. (#393)
+- sample: Restore the previously validated SDK profile at launch after the first successful
+  scenario initialization. First launch still requires a tap; startup failures appear on Home. (#332)
+- runtime: `OctopusSDK.OpenActivity(OctopusCommunityMemberId memberId, OctopusNavigationMode? navigationMode = null)`
+  opens another member's activity screen, by Octopus profile id (`FromProfileId`) or by client user
+  id (`FromClientUserId`, resolved natively), matching Flutter's and React Native's member-scoped
+  Activity screen. Additive overload: `OpenActivity()` and `OpenActivity(null)` keep opening the
+  connected user's activity. Works on the native pins this release ships (Android 1.14.1, iOS
+  1.14.0). (#220)
+- sample: Configuration and Account screens, reached from Settings. Configuration picks one of the
+  build's two profiles (Default, Forced login) and applies it live through a community switch, no
+  restart; Account connects and disconnects the demo SSO user. The chosen profile number — never a
+  key or token — is now persisted, so the 1.13.0 note that nothing in this sample is persisted no
+  longer holds. Sample only — no package API changed. (#341, #349)
+- sample: A `qaTheme` launch extra (`light` or `dark`) sets the appearance for that launch only,
+  without saving it, so a QA run no longer inherits the theme an earlier run left behind
+  (`adb install -r` keeps PlayerPrefs). The launch log gains ` theme=<value>` only when the extra
+  is present. The saved theme's numbers (`Light = 0`, `Dark = 1`) are now explicit and marked as a
+  stored contract. Sample only — no package API changed. (#374)
+
+### Changed
+- **Native SDK pins raised to the 1.14 line on both platforms**: Android 1.13.4 → 1.14.1 (EDM4U resolver,
+  bridge compile classpath and the example's generated copies, all eight lines; 1.14.1 is a
+  single-fix patch over 1.14.0: stopping the SDK, switching community or initializing it again
+  while it is still starting up no longer closes the app, present since native 1.12) and iOS 1.13.2 →
+  1.14.0 (`patch_xcode_proj.rb` → `PACKAGE_VERSION`). Floors unchanged (Android minSdk 21, iOS 13).
+  The Android bridge needed no source change for the bump — it uses neither `GuestError` nor raw
+  profile tab indices; the shipped AAR is rebuilt against 1.14.1 with the `IsGuest` change above.
+  iOS 1.14.0 declares no breaking change. Natively, both SDKs add a Comments tab on profile and
+  Activity screens, a "who reacted" list and empty/error screen states; iOS 1.14.0 also ships a
+  `PrivacyInfo.xcprivacy`, so a host may need to update its App Store Connect App Privacy answers.
+  Theme overrides for the new screen-state illustrations are not exposed by this package yet
+  (#414).
+- ci: The sample's Play Internal Testing upload moves to CI and authenticates by Workload Identity
+  Federation; the local service-account-JSON upload path is removed. `Scripts/store/publish-android.sh`
+  now builds and signs by default (`--build-only` is kept as an alias) and, with `--stage`, puts the
+  bundle on a draft GitHub release that the dispatch-only `Internal beta sample` workflow uploads.
+  The bundle is still built locally: the Unity Editor does not run in CI. Sample tooling only — no
+  package API changed.
+- docs: The README is reorganized for a quick evaluation (what you get, requirements,
+  installation pinned to a release tag, a quickstart checked against the 1.13.0 API, sample
+  app, links, license). The long-form reference it carried (connection modes, push notifications,
+  groups, badges, theming, locale, analytics, sample configuration, the Xcode 27 known issue)
+  moves unchanged to `docs/integration-guide.md`, which is now exported to the public mirror
+  (the rest of `docs/` stays internal). No package API changed.
+- bridge: The Android Octopus UI now always shows the status and navigation bars, even when the
+  game runs fullscreen: `OctopusUIActivity` clears `FLAG_FULLSCREEN` and shows the system bars on
+  open, as the iOS presentation already did. Only the Octopus activity's own window changes; the
+  game activity's window flags are not modified. (#367)
+- sample: Scenario cards read as product copy instead of catalogue data. Each of the 23 listed
+  cards now shows what the scenario demonstrates, a sentence of context and the SDK symbol it
+  calls — Android's wording verbatim — instead of the catalogue title over a comma-separated
+  list of API names. The catalogue titles stay untouched and searchable, so a query that found a
+  card before still finds it. Sample only — no package API changed. (#129)
+- sample: Every scenario card carries its own `GameObject.name` — `scenarios-<id>-card-panel` —
+  instead of the literal `Card` every sibling shared, so a hierarchy dump or a failing UI
+  assertion names the card it belongs to. The catalog handle QA taps, `scenarios-<id>-card`, is
+  unchanged. Sample only — no package API changed. (#142)
+- sample: The dark theme moves onto the octopuscommunity.com navy ladder, matching Android:
+  navy cards (`#0F1B2D`) over the ink page, a bluish hairline (`#1E2A3D`), a hover/pressed step
+  at `#1D2E48`, a brighter text ladder (`#F2F6FC` / `#E9F0FA` / `#8C9AB0`) and a control outline
+  at `#6A7D9B` that keeps 3:1 on every surface. The Home "Current configuration" block is framed
+  with a new, stronger hairline (`#243349`). The light theme and the colors handed to the SDK
+  are unchanged. Sample only — no package API changed.
+- ci: A new `check-firebase-analytics.sh` guard, run in the `Native SDK pin coherence` job with
+  its own regression suite, fails a PR that brings Firebase Analytics back into the sample — the
+  `firebase-analytics` or `play-services-measurement` coordinates, or the iOS `Firebase/Core` pod.
+  The sample's iOS pod moves to `Firebase/CoreOnly`: `Firebase/Core` depends on FirebaseAnalytics
+  under CocoaPods (the iOS build resolves through Swift packages and links `FirebaseCore` and
+  `FirebaseMessaging` only, so today's builds were not affected). The resolver's line-number
+  comments in `mainTemplate.gradle` now match the dependency files again. Sample and tooling only —
+  no package API changed. (#396)
+
+### Fixed
+- sample: Configuration opens on the profile the SDK is actually running after a Lifecycle
+  *switchCommunity (alt key)*, instead of the saved one, so a later Apply of the saved profile
+  switches back rather than doing nothing. (#387)
+- sample: A startup that throws after the SDK initialized (theme or state replay) no longer
+  resets the saved profile and reports a startup failure over a working session; it logs a
+  warning instead. (#387)
+- sample: The Unified Profile effective value is read again after a community switch while its
+  Scenarios section is on screen, and a stale synchronous read failure no longer overwrites a
+  newer read. (#393)
+- sample: The Debug entry, moved back from the app bar after a theme change made while it sat
+  there, takes the new theme's colours instead of the old one's. (#394)
+- sample: The notification permission request is retried on the next state change when it throws
+  before reaching the OS, instead of being counted as made; the README documents that on iOS the
+  push token only arrives after the first successful initialisation. (#394)
+- sample: On Android API 34 and below the status bar is transparent over the page, as API 35+
+  already draws it: the window was not edge-to-edge there, so an opaque bar cut the dark halo at
+  its lower edge. The header still starts below the bar. Sample only — no package API changed.
+  (#378)
+- sample: The Android system back is only listened to in an Android player: in the Editor, or on
+  an iPad with a hardware keyboard, Escape no longer closes screens or sends tabs to Home. The
+  confirmation it cancels first is now marked by a `SampleUiBackCancel` component on the Cancel
+  button instead of a `-cancel` name suffix, and an Input System test covers a press and release
+  inside one update. Sample only — no package API changed. (#375)
+- sample: A fully scrolled Home or Community list stops with its last card clear of the fade above
+  the tab bar; the safe-area probe releases its Android views on every failure path; the shared
+  halo and fade textures are released before an Editor script reload instead of leaking one pair
+  per reload. Sample only — no package API changed. (#380)
+- sample: A community switch (Lifecycle *switchCommunity (alt key)* or Configuration *Apply* onto a
+  profile with another key) moved the session from the demo backend to production; both paths now
+  pass the profile's host, and Home names the host the SDK last initialized or switched onto
+  rather than the startup one. The `apiServerHost` tooltip and config template state "host only, no scheme,
+  port or path". (#391)
+- sample: Bridge posts work on the demo community. The sample initialized the SDK without a host,
+  so the native SDKs targeted production, where the demo key resolves to a community without
+  bridge-post setup, and every Bridge preset failed with "Bridge posts are not configured for this
+  community". It now passes the demo backend host, as the Android, Flutter and React Native
+  samples do; an optional `apiServerHost` in `OctopusExampleConfig` overrides it, and Home names
+  the host in use. Sample only — no package API changed.
+- sample: A saved profile that fails to start at launch is forgotten, so the next launch asks for a
+  profile instead of failing the same way until the app is reinstalled. Home labels it STARTUP
+  FAILED rather than a failed connection call, the Configuration screen that opens over it says
+  why, and replaying the saved Force login choice no longer writes a "feature toggled" line in the
+  Debug console. After a configuration reset, Configuration highlights the profile the SDK is
+  running on instead of Default, so Apply keeps the live session. Sample only — no package API
+  changed. (#342, #349)
+- sample: The dark theme glows from the top-right corner, as on the other samples: the brand
+  blue at 12% fading to transparent over one screen width, fixed to the viewport, behind a
+  transparent header, on every sample-owned screen — not on the Community tab, as on the other
+  samples. Drawn from a texture generated in code, no new asset. The Home and Community docks
+  drop their opaque band in dark theme, so the Open community action sits on the page instead of
+  a hard-edged strip, and the list above them fades into the page over its last 24dp instead of
+  being cut on a hard line; the fade never takes a tap. The light theme is unchanged.
+- sample: On Android the header starts below the status bar again, in both themes. Since the
+  sample shows the system bars over an edge-to-edge player, Unity's safe area no longer covered
+  the status bar, so the title sat under the clock and the Unity and Debug chips under the status
+  icons. The safe area now also clears the system bars that overlap the player's view; the bars'
+  backgrounds (and the dark halo) still paint behind the status strip.
+- sample: The Android system back (button or gesture) now works across the sample shell. One
+  press does what the topmost screen's own controls would: it cancels an open confirmation,
+  otherwise presses that screen's on-screen Back (one level, so a Developer tools sub-screen
+  returns to its index first), otherwise returns a root tab to Home, and on Home sends the app to
+  the background like the native Android sample — it never quits. The community's native screens
+  keep their own back. Sample only — no package API changed.
+- bridge: Native SDK system-bar colours and icon contrast now follow the resolved Unity theme
+  and navigation-bar surface; iOS feed and profile presentations apply the same appearance to
+  UIKit and SwiftUI. (#367)
+- bridge: Android app bars use the selected community palette for their background and
+  text, including while scrolled, instead of capturing the host's theme before it is applied.
+- sample: Persist the Appearance theme choice and restore it before the first screen on relaunch. (#344)
+- sample: An Android build made without `google-services.json` — a fresh clone, a QA workspace —
+  no longer paints a Firebase error over every screen of a development build. The sample checks for
+  the Firebase options resource first and, when it is absent, skips Firebase with a single warning;
+  with a config present, dependency and token failures are still reported. Sample only — no package
+  API changed. (#345)
+- sample: Hide the Account screen's Sign out action for a guest visitor, matching Android. (#346)
+- sample: Cross-screen links land where they say. The Force login lock note points to
+  Configuration, which applies the profile live, instead of asking for a restart; the Community
+  band, the Home connection card and the Settings Language row open their scenario directly; a
+  scenario's feature chip reopens Scenarios on its section, expanded and scrolled to; Developer
+  tools links to Configuration and to Scenarios › Notifications; Configuration opened from Account
+  returns to Account on Back or Apply, but a tab switch closes it onto the tab picked. The two
+  Settings reset cards merge into one. Sample only — no package API
+  changed. (#369)
+- bridge: Android `FetchCommunityData` failures now append the native error detail, matching
+  iOS, and `Reset` failures include it on both platforms so hosts can diagnose the failure
+  beyond the bare sentence. Existing first sentences stay unchanged; empty details are omitted.
+  `SwitchCommunity` errors remain generic to avoid echoing a supplied credential. (#291)
+- bridge: Drop the dead job reference after an Android community-data collection failure,
+  keeping the documented implicit rebind on Initialize/SwitchCommunity working. Pass absent
+  member identifiers as empty strings across JNI and normalize them to absent values in
+  Android community-data fetch and observation calls. (#192)
+- store: Clean up serialized keystore passwords and the generated Gradle export when Android
+  publishing is interrupted by SIGINT or SIGTERM, preserving exit status 130 or 143. (#331)
+- sample: Declare the iOS export compliance exemption in the exported `Info.plist` to avoid
+  repeated compliance prompts on TestFlight uploads. (#320)
+- bridge: Android `ConnectUser` failures now search the whole validation-error batch by
+  priority (`UserBanned` > `MissingToken` > `ProfileError` > other) instead of reading only the
+  first reported error, so a ban arriving alongside another error is no longer masked. Generic
+  connection failures (no network, permission denied, server error, etc.) now report a readable
+  message instead of `result.toString()`'s `OctopusResult$Failure$NoNetwork@1f2a3b`-style dump —
+  same defect class as #183's setReaction/refreshEntitlements/follow-group fix, reusing its
+  helper. Error codes and JSON shape are unchanged. (#194)
+- sample: Scrolling no longer drops a frame every ninth vsync. The soft elevation behind every
+  card was drawn as eight offset copies of the card — nine times its fill rate for a 2 dp rim —
+  which a fill-bound mobile GPU cannot pay inside 16.6 ms. Four copies split the same opacity
+  budget and keep the rim's width; only the falloff at the corners flattens, measured at
+  0.4/255 mean and 23/255 peak against the old rendering. Measured on a 60 Hz Pixel 4a over
+  30 s of scripted flings: frames over 25 ms fall from 11.8 % to 0.0 %, p99 from 33.3 ms to
+  16.7 ms. (#322)
+- bridge: Android connection failures (`refreshEntitlements`, `setReaction`, follow/unfollow
+  group) now report a readable message instead of `result.toString()`'s
+  `OctopusResult$Failure$NoNetwork@1f2a3b`-style dump. Error codes and JSON shape are
+  unchanged. (#183)
+- sample: Render at the display's refresh rate instead of the 30 fps Unity gives a mobile
+  player that never sets `Application.targetFrameRate`, so scrolling is sampled at 60 Hz (or up
+  to 120 Hz where the panel and the platform allow it) rather than 30. On iOS, exceeding 60 also
+  needs `CADisableMinimumFrameDuration` in the generated `Info.plist`, which this project does
+  not set yet. (#294)
+- sample: The Debug entry is visible again in the light theme's navy app bar. Adopted into a header,
+  it now wears the app bar's chrome control fill (3.31:1 against the bar) instead of the accent
+  fill that equals the navy chrome in light; back on the page it keeps its own style. Internal builds only —
+  no package API changed. (#377)
+- ios: The activity screen's **Edit my profile** menu item now reaches the host. The iOS bridge
+  never set the native `onNavigateToProfileEditCallback`, which that item is gated on, so a Unity
+  host subscribing to `OnModifyUser` got the entry point on Android only. It is now wired to the
+  same `OnModifyUser` event, with the same field values (`null` from this entry point — no
+  specific field) and the same "leave the community, keeping its state" behaviour as SSO's edit
+  hook. It fires in `.octopus` connection mode too, where no app-managed fields exist, so it is
+  not limited to the SSO/app-managed-fields scenario the README used to describe.
+
+  The callback is wired **only while `OctopusSDK.OnModifyUser` has a subscriber**. The native SDK
+  hides the menu item while the callback is nil, precisely so the entry point cannot dead-end;
+  wiring it unconditionally would have shown the item to a host with no handler, where tapping it
+  dismisses the community and delivers to nobody. Subscribing and unsubscribing now pushes that
+  state to the native side, the same way setting `NavigateToProfileHandler` pushes profile-tap
+  interception. **Known divergence:** Android wires its equivalent unconditionally — one native
+  parameter serves both edit paths there, and the native Android SDK requires it in SSO mode with
+  app-managed profile fields — so on Android the item is shown even to a host with no
+  `OnModifyUser` subscriber, where tapping it does nothing. Subscribe to `OnModifyUser` alongside
+  `NavigateToProfileHandler` and both platforms behave identically. This matches the choice the
+  Flutter wrapper already ships for the same native hook. (#280)
+- ios: Log when `OpenActivity` cannot reach the SDK core through reflection, instead of
+  falling back to the main feed silently. The fallback itself is unchanged, and the legitimate
+  "no profile yet" path stays quiet — only a failed core lookup, which a native SDK rename would
+  cause, now prints a line. (#234)
+- ios: Append the native error description to a failed `FetchCommunityData` message, so a
+  host has something to log or display beyond the bare sentence. The sentence itself is
+  unchanged, so existing string matching keeps working; how much the appended text says
+  depends on the error the native SDK raises. (#276)
+- sample: The store builds and the Android QA build report the embedded SDK version as their
+  version name instead of the Unity default `1.0.0`. The iOS simulator build is unchanged: it
+  never leaves the machine that produced it. (#273)
+- sample: The notification permission prompt no longer appears over the first screen at launch.
+  The iOS project setting that requested authorization on app launch is off, and the sample asks
+  (iOS authorization, Android 13 runtime permission) once the SDK is initialized with Push
+  registration on — after the first Start in Configuration, at launch on a later run that replays
+  a saved profile, or when the switch is turned back on — as the Android sample does. Sample only
+  — no package API changed. (#233)
+
 ## 1.13.0 — 2026-09-17
 
 Legacy `OctopusCommunitySDK.unitypackage` for this version was regenerated with Unity Editor 6000.3.3f1 (`build_legacy_package.sh`, the reference path), not import-tested in a scratch project before the cut. UPM remains the reference install path.

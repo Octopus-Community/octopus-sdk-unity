@@ -14,11 +14,11 @@ public sealed class CreatePostScenario : CommunityScenarioPilot
         new OctopusScenarioField("ctaUrl", "CTA URL"),
         new OctopusScenarioField("groupId", "Target group id (auto selects General / first, none lets member choose)"))
     {
-        Add(1, PresetLabel(1, "Text only"), "true", "false", "false", DefaultText, "Open", "https://octopuscommunity.com/preset", "auto");
-        Add(2, PresetLabel(2, "Text + CTA"), "true", "true", "false", DefaultText, "Open", "https://octopuscommunity.com/preset", "auto");
-        Add(3, PresetLabel(3, "Text + bundled image"), "true", "false", "true", DefaultText, "Open", "https://octopuscommunity.com/preset", "auto");
-        Add(4, PresetLabel(4, "Full (text + CTA + bundled image)"), "true", "true", "true", DefaultText, "Open", "https://octopuscommunity.com/preset", "auto");
-        Add(5, PresetLabel(5, "Image only (bundled)"), "false", "false", "true", DefaultText, "Open", "https://octopuscommunity.com/preset", "auto");
+        Add(1, PresetLabel(1, "Text only"), "true", "false", "false", DefaultText, "Open", "https://octopuscommunity.com/preset", OctopusSampleFixtures.DefaultTopicId ?? string.Empty);
+        Add(2, PresetLabel(2, "Text + CTA"), "true", "true", "false", DefaultText, "Open", "https://octopuscommunity.com/preset", OctopusSampleFixtures.DefaultTopicId ?? string.Empty);
+        Add(3, PresetLabel(3, "Text + bundled image"), "true", "false", "true", DefaultText, "Open", "https://octopuscommunity.com/preset", OctopusSampleFixtures.DefaultTopicId ?? string.Empty);
+        Add(4, PresetLabel(4, "Full (text + CTA + bundled image)"), "true", "true", "true", DefaultText, "Open", "https://octopuscommunity.com/preset", OctopusSampleFixtures.DefaultTopicId ?? string.Empty);
+        Add(5, PresetLabel(5, "Image only (bundled)"), "false", "false", "true", DefaultText, "Open", "https://octopuscommunity.com/preset", OctopusSampleFixtures.DefaultTopicId ?? string.Empty);
     }
 
     public override IReadOnlyList<string> ApiSymbols { get { return new[] { "FetchGroups", "OpenCreatePost" }; } }

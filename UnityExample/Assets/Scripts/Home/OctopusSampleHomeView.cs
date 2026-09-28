@@ -49,6 +49,12 @@ public class OctopusSampleHomeView : MonoBehaviour
     /// <summary>Its CONNECT OK / DISCONNECT OK / CALL FAILED / NO CALL marker.</summary>
     public const string ConnectionStatusId = "home-connection-status";
 
+    /// <summary>The connection card's link to the Connection scenario, where a call is made.</summary>
+    public const string ConnectionScenarioLinkId = "home-connection-scenario-link";
+
+    /// <summary>The catalogue id the link opens.</summary>
+    public const string ConnectionScenarioId = "connection";
+
     /// <summary>Community access and the unseen-notification count — the two live SDK values.</summary>
     public const string CommunityAccessCardId = "home-community-access-card";
 
@@ -107,6 +113,7 @@ public class OctopusSampleHomeView : MonoBehaviour
         SampleUi.Stretch(scrollHost, Vector2.zero, Vector2.one);
         scrollHost.offsetMin = new Vector2(0f, DockHeight);
         _cards = SampleUi.VerticalScroll(scrollHost, SampleUi.ContentPadding());
+        SampleUi.DockFade(_cards);
 
         _cards.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(16f);
         BuildSdkStatusCard(_cards);
@@ -193,7 +200,8 @@ public class OctopusSampleHomeView : MonoBehaviour
         // Only a reported failure uses the error role.
         var session = OctopusSampleState.ConnectionSession;
         Color connectionColor;
-        if (session == OctopusSampleState.Session.Failed) connectionColor = palette.Negative;
+        if (session == OctopusSampleState.Session.Failed ||
+            session == OctopusSampleState.Session.StartupFailed) connectionColor = palette.Negative;
         else connectionColor = palette.Muted;
 
         _connectionDetail.text = ConnectionDetail();
@@ -240,18 +248,26 @@ public class OctopusSampleHomeView : MonoBehaviour
             case OctopusSampleState.Session.ConnectCompleted: return "CONNECT OK";
             case OctopusSampleState.Session.Disconnected: return "DISCONNECT OK";
             case OctopusSampleState.Session.Failed: return "CALL FAILED";
+            case OctopusSampleState.Session.StartupFailed: return "STARTUP FAILED";
             default: return "NO CALL";
         }
     }
 
-    private static string ConnectionDetail()
+    internal static string ConnectionDetail()
     {
         var session = OctopusSampleState.ConnectionSession;
         var detail = OctopusSampleState.SessionDetail;
 
         if (session == OctopusSampleState.Session.None || string.IsNullOrEmpty(detail))
         {
-            return "No connection call yet. Open Scenarios → Connection to connect.";
+            return "No connection call yet. The Connection scenario, linked below, makes one.";
+        }
+
+        if (session == OctopusSampleState.Session.StartupFailed)
+        {
+            // Not a connection call at all: the saved profile could not be replayed at launch.
+            return detail + " — no connection call was made. Choose a profile in Configuration " +
+                   "to start the SDK again.";
         }
 
         if (session == OctopusSampleState.Session.Failed)
@@ -277,9 +293,10 @@ public class OctopusSampleHomeView : MonoBehaviour
         var missing = profile == null;
         var lines = new List<KeyValuePair<string, string>>();
 
-        // The pilots call Initialize with no host, so the SDK targets its own default endpoint.
-        // Named rather than hardcoded to a hostname the sample does not choose.
-        lines.Add(Line("Server environment", "Default Octopus endpoint (no custom host)"));
+        // The pilots always pass a host (the demo backend unless the asset overrides it): the one
+        // the running SDK was initialised or last switched onto, else the one Initialize will get.
+        lines.Add(Line("Server environment", OctopusScenarioSdk.RunningServerHost ??
+            OctopusScenarioSdk.ServerHostFor(missing ? null : profile)));
         // Never the key itself, and never a client name: the community is identified by the key,
         // which is a secret the mirror-export guard scans for. Its source is what a reader can act
         // on.
@@ -291,7 +308,9 @@ public class OctopusSampleHomeView : MonoBehaviour
             : "OctopusExampleConfig (git-ignored asset)"));
         lines.Add(Line("SSO user", missing ? "—" : Describe(profile)));
         lines.Add(Line("Entitlements", "Carried in the SSO token; presets set claims when demo signing is configured"));
-        lines.Add(Line("Theme", OctopusSampleBranding.Theme.ToString()));
+        // "Sample theme": the sample's own appearance (Settings › Appearance), not the SDK theme
+        // the Theme scenario applies to the community screens.
+        lines.Add(Line("Sample theme", OctopusSampleBranding.Theme.ToString()));
         lines.Add(Line("Language", string.IsNullOrEmpty(OctopusSampleState.LocaleOverride)
             ? "System default (no override)"
             : OctopusSampleState.LocaleOverride));
@@ -315,7 +334,7 @@ public class OctopusSampleHomeView : MonoBehaviour
     {
         // The community is the product, so its door stays under the thumb rather than at the end of
         // a scroll — the Android sample's reason, unchanged.
-        var dock = SampleUi.Panel("HomeDock", host, SampleUi.RowBackground);
+        var dock = SampleUi.Panel("HomeDock", host, OctopusSampleBranding.Palette.Dock);
         dock.anchorMin = Vector2.zero;
         dock.anchorMax = new Vector2(1f, 0f);
         dock.pivot = new Vector2(0.5f, 0f);
@@ -337,9 +356,13 @@ public class OctopusSampleHomeView : MonoBehaviour
         identityLayout.childControlWidth = identityLayout.childControlHeight = true;
         identityLayout.childForceExpandWidth = identityLayout.childForceExpandHeight = false;
         identityLayout.childAlignment = TextAnchor.MiddleCenter;
+        bool dark = OctopusSampleBranding.Theme == OctopusSampleTheme.Dark;
         var chip = SampleUi.Panel(PlatformChipId, identity,
-            OctopusSampleBranding.PlatformSlotLight,
-            OctopusSampleBranding.CardRadius, palette.PlatformSlot, OctopusSampleBranding.Stroke);
+            dark ? OctopusSampleBranding.Tint(palette.Accent, palette.Chrome, 0.10f)
+                : OctopusSampleBranding.PlatformSlotLight,
+            OctopusSampleBranding.CardRadius,
+            dark ? OctopusSampleBranding.Tint(palette.Accent, palette.Chrome, 0.28f) : palette.PlatformSlot,
+            OctopusSampleBranding.Stroke);
         var layout = chip.gameObject.AddComponent<HorizontalLayoutGroup>();
         layout.padding = new RectOffset(30, 30, 0, 0);
         layout.childAlignment = TextAnchor.MiddleLeft;
@@ -351,7 +374,7 @@ public class OctopusSampleHomeView : MonoBehaviour
         SampleUi.AppBarItem(chip);
 
         var label = SampleUi.Label("Label", chip, OctopusSampleBranding.PlatformLabel,
-                                   SampleUi.TextBody, palette.OnChrome,
+                                   SampleUi.TextBody, dark ? palette.ChipInk : palette.OnChrome,
                                    TextAnchor.MiddleLeft);
         label.fontStyle = FontStyles.Bold;
         label.textWrappingMode = TextWrappingModes.NoWrap;
@@ -378,7 +401,8 @@ public class OctopusSampleHomeView : MonoBehaviour
 
     private void BuildConfigurationBlock(RectTransform parent)
     {
-        var card = SampleUi.Card(ConfigurationBlockId, parent);
+        // The strong hairline in dark, so the block stands out from the cards around it.
+        var card = SampleUi.Card(ConfigurationBlockId, parent, OctopusSampleBranding.Palette.BorderStrong);
         SampleUi.FlexibleLabel(card, "Current configuration", SampleUi.TextTitle, SampleUi.TitleColor);
         _configurationSummary = SampleUi.FlexibleLabel(card, string.Empty,
             SampleUi.TextBody, SampleUi.TitleColor);
@@ -410,6 +434,18 @@ public class OctopusSampleHomeView : MonoBehaviour
         _connectionDetail = SampleUi.FlexibleLabel(details, string.Empty, SampleUi.TextBody, SampleUi.Muted);
         _connectionDetail.richText = false;
         BuildDisclosure(card, "home-connection-details", details);
+        SampleUi.Button(ConnectionScenarioLinkId, card, "Open Connection scenario",
+            SampleUiButtonVariant.Tertiary, OpenConnectionScenario);
+    }
+
+    /// <summary>
+    /// Opens the Connection scenario over the Scenarios tab. Wired to
+    /// <see cref="ConnectionScenarioLinkId"/>; a no-op outside the shell.
+    /// </summary>
+    public void OpenConnectionScenario()
+    {
+        var shell = GetComponentInParent<OctopusSampleShell>();
+        if (shell != null) shell.OpenScenarioScreen(ConnectionScenarioId);
     }
 
     private static void BuildDisclosure(RectTransform card, string id, RectTransform details)

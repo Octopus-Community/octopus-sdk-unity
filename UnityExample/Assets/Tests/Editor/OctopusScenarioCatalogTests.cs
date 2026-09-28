@@ -6,7 +6,7 @@ using UnityEngine;
 
 /// <summary>
 /// Guards <see cref="OctopusScenarioCatalog"/> against silent drift from
-/// `pm-tools/shared/config/scenarios-catalog.yaml`, the single source of truth for every
+/// the shared QA scenario catalog (internal), the single source of truth for every
 /// Octopus sample and for the QA pipeline (see the class doc comment on the catalogue itself).
 /// </summary>
 public class OctopusScenarioCatalogTests
@@ -149,6 +149,69 @@ public class OctopusScenarioCatalogTests
         var pilot = OctopusScenarioPilots.Create(id);
         CollectionAssert.AreEqual(row.PresetTestIds, pilot.Presets.Select(p => p.TestId).ToArray());
         Assert.AreEqual(row.ResultTestId, pilot.ResultTestId);
+    }
+
+    /// <summary>
+    /// Every card the Scenarios tab can build has the three strings it prints. A scenario added to
+    /// the catalogue and given a pilot, but not the wording, would otherwise render a card headed
+    /// by its catalogue title with no subtitle and no chip — the exact state #129 was filed about,
+    /// reintroduced one row at a time.
+    /// </summary>
+    [Test]
+    public void EveryListedScenarioCarriesItsProductWording()
+    {
+        foreach (var row in OctopusScenarioCatalog.All.Where(OctopusScenarioSections.IsListed))
+        {
+            Assert.IsNotEmpty(row.ProductTitle ?? string.Empty,
+                "Scenario '" + row.Id + "' is listed but has no productTitle.");
+            Assert.IsNotEmpty(row.Subtitle ?? string.Empty,
+                "Scenario '" + row.Id + "' is listed but has no subtitle.");
+            Assert.IsNotEmpty(row.ApiSymbol ?? string.Empty,
+                "Scenario '" + row.Id + "' is listed but has no apiSymbol.");
+            Assert.AreEqual(row.ProductTitle, row.DisplayTitle);
+        }
+    }
+
+    /// <summary>
+    /// The chip names a method the scenario actually calls. Without this the card is free to
+    /// advertise an API the pilot never touches, which is worse than no chip at all: an integrator
+    /// would search the SDK for the symbol the sample promised. Split on "/" so a scenario about a
+    /// pair ("Reset / Stop") is checked on both halves.
+    /// </summary>
+    [Test]
+    public void EveryCardApiSymbolIsCalledByItsPilot()
+    {
+        foreach (var row in OctopusScenarioCatalog.All.Where(OctopusScenarioSections.IsListed))
+        {
+            using (var pilot = OctopusScenarioPilots.Create(row.Id))
+            {
+                var symbols = pilot.ApiSymbols.ToArray();
+                foreach (var half in row.ApiSymbol.Split('/'))
+                {
+                    var token = half.Trim();
+                    Assert.Contains(token, symbols,
+                        "Scenario '" + row.Id + "' advertises '" + token + "' on its card, but its " +
+                        "pilot does not list it in ApiSymbols.");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The wording is display copy, not catalogue data: it must not overwrite the ids and titles
+    /// this file is here to keep verbatim. The four scenarios Unity can never demonstrate stay
+    /// without product copy rather than being given invented wording for a card that is never built.
+    /// </summary>
+    [Test]
+    public void UnlistedScenariosCarryNoProductWording()
+    {
+        foreach (var row in OctopusScenarioCatalog.All.Where(r => !OctopusScenarioSections.IsListed(r)))
+        {
+            Assert.IsNull(row.ProductTitle, "Unlisted scenario '" + row.Id + "' has a productTitle.");
+            Assert.IsNull(row.Subtitle, "Unlisted scenario '" + row.Id + "' has a subtitle.");
+            Assert.IsNull(row.ApiSymbol, "Unlisted scenario '" + row.Id + "' has an apiSymbol.");
+            Assert.AreEqual(row.Title, row.DisplayTitle);
+        }
     }
 
     [Test]

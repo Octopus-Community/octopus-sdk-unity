@@ -19,7 +19,7 @@ public enum OctopusSampleTab
 /// SDK_STANDARDS §5.1, which every Octopus sample carries.
 ///
 /// **Four tabs, not five.** The canonical order is Home → Scenarios → [Explorer] → Community →
-/// Settings, and Explorer is the one platform-conditional tab: Android and iOS only. Its absence
+/// Settings, and Explorer is the one platform-conditional tab: Android only. Its absence
 /// here is a contract, not a gap, so nothing in this file is left half-wired for a fifth tab to
 /// arrive later. The read-only feature-toggles card the Explorer carried on Android has its own home
 /// on Unity, under Settings → Developer tools.
@@ -54,7 +54,7 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
     private const float AppBarHeight = OctopusSampleBranding.AppBarUnits;
 
     /// <summary>Tab bar height: 64dp, so a 48dp target still clears its own padding.</summary>
-    private const float TabBarHeight = 192f;
+    public const float TabBarHeight = 192f;
 
     /// <summary>
     /// How far above the bottom of the screen a floating overlay has to sit to clear the tab bar,
@@ -72,7 +72,7 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
     {
         if (Screen.width <= 0 || Screen.height <= 0) return TabBarHeight;
         var unitsPerPixel = SampleUi.ReferenceWidthFor(SampleUi.ScreenDpWidth()) / Screen.width;
-        return TabBarHeight + Screen.safeArea.yMin * unitsPerPixel;
+        return TabBarHeight + SampleUiSafeArea.ScreenSafeArea().yMin * unitsPerPixel;
     }
 
     private static readonly OctopusSampleTab[] Tabs =
@@ -98,6 +98,7 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
     private OctopusSampleTab _renderedTab;
     private readonly Dictionary<OctopusSampleTab, float> _scrollPositions = new Dictionary<OctopusSampleTab, float>();
     private OctopusScenariosListView.ViewState _listState;
+    private ScenarioSection? _pendingSection;
     private RectTransform _appBar;
     private RectTransform _topBleed, _bottomBleed;
     private RectTransform _debugEntry;
@@ -162,23 +163,6 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
         button.anchoredPosition = new Vector2(-40f, 40f);
     }
 
-    /// <summary>Appearance's theme action, retaining its QA id when Settings mounts it.</summary>
-    public static RectTransform BuildThemeToggle(Transform parent)
-    {
-        RectTransform toggle = null;
-        toggle = SampleUi.Button("shell-theme-toggle", parent,
-            OctopusSampleBranding.Theme == OctopusSampleTheme.Dark ? "Use light theme" : "Use dark theme",
-            SampleUiButtonVariant.Secondary, () =>
-            {
-                var next = OctopusSampleBranding.Theme == OctopusSampleTheme.Dark
-                    ? OctopusSampleTheme.Light : OctopusSampleTheme.Dark;
-                toggle.GetComponentInChildren<TMP_Text>().text = next == OctopusSampleTheme.Dark
-                    ? "Use light theme" : "Use dark theme";
-                OctopusSampleBranding.Theme = next;
-            });
-        return toggle;
-    }
-
     /// <summary>The catalogue id the QA pipeline taps for <paramref name="tab"/>.</summary>
     public static string TestId(OctopusSampleTab tab)
     {
@@ -214,12 +198,46 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
     /// </summary>
     public void Select(OctopusSampleTab tab)
     {
+        SampleUiDetailPage.CloseAll();
         _selected = tab;
         Location.OpenTab(tab);
         OctopusSampleQaLaunch.Log("tab=" + tab.ToString().ToLowerInvariant());
         if (!_built) return;
         if (Application.isPlaying) _rebuildRequested = true;
         else Rebuild();
+    }
+
+    /// <summary>
+    /// Opens the Scenarios tab on <paramref name="section"/>: search cleared, the section expanded
+    /// and scrolled to the top of the list. What a scenario's feature chip links to — landing on
+    /// the list wherever it was last scrolled, possibly with the section collapsed or filtered out,
+    /// left the reader hunting for the switch the chip had just named.
+    /// </summary>
+    public void ShowScenarioSection(ScenarioSection section)
+    {
+        _pendingSection = section;
+        Select(OctopusSampleTab.Scenarios);
+    }
+
+    /// <summary>
+    /// Opens the Scenarios tab on the section of scenario <paramref name="id"/>, then that
+    /// scenario's screen over it, so Back from the screen lands next to the row it came from.
+    /// Null for an id with no pilot.
+    /// </summary>
+    public OctopusScenarioScreenView OpenScenarioScreen(string id)
+    {
+        var pilot = OctopusScenarioPilots.Create(id);
+        if (pilot == null)
+        {
+            Select(OctopusSampleTab.Scenarios);
+            return null;
+        }
+        ShowScenarioSection(OctopusScenarioSections.SectionOf(id));
+        // Open() hands back whatever screen is already up; a link names one scenario, so another
+        // one left open would answer it with the wrong screen.
+        var open = FindAnyObjectByType<OctopusScenarioScreenView>();
+        if (open != null && open.ScenarioId != id) open.Dismiss();
+        return OctopusScenarioScreenView.Open(pilot);
     }
 
     void IOctopusSampleQaNavigation.SelectTab(string id)
@@ -240,6 +258,8 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
 
     bool IOctopusSampleQaNavigation.OpenDestination(string id)
     {
+        if (id == OctopusSampleQaDestinations.Config) { OctopusSampleConfigView.Open(); return true; }
+        if (id == OctopusSampleQaDestinations.Account) { OctopusSampleAccountView.Open(); return true; }
         if (id != OctopusSampleQaDestinations.Arcade) return false;
         OctopusReefRunView.Open();
         return true;
@@ -247,9 +267,17 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
 
     private void Start()
     {
+        if (GetComponent<OctopusSampleSystemBars>() == null) gameObject.AddComponent<OctopusSampleSystemBars>();
         OctopusSamplePushTokenSource.EnsureExists();
         if (!_built) Build();
+        RestoreConfiguration();
         StartCoroutine(OctopusSampleQaLaunch.ShellReady(this));
+    }
+
+    public void RestoreConfiguration()
+    {
+        OctopusScenarioSdk.RestoreInitializedSdk();
+        if (OctopusScenarioSdk.NeedsConfiguration) OctopusSampleConfigView.Open();
     }
 
     private void LateUpdate()
@@ -331,6 +359,7 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
         _built = true;
         Location.OpenTab(_selected);
         Listen();
+        OctopusSampleBackHandler.Attach(this);
         SampleUi.OverlayCanvas(gameObject, SortingOrder);
 
         // The scene supplies the EventSystem, as everywhere else in this sample: the project is
@@ -353,6 +382,17 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
     private void Rebuild()
     {
         CaptureContentState();
+        // Consumed here, after the capture: the list on screen is usually the one being replaced,
+        // and its captured state would otherwise overwrite the section the caller asked for.
+        var focus = _pendingSection;
+        _pendingSection = null;
+        if (_selected != OctopusSampleTab.Scenarios) focus = null;
+        if (focus.HasValue)
+        {
+            if (_listState == null) _listState = new OctopusScenariosListView.ViewState();
+            _listState.Query = "";
+            _listState.Open[focus.Value] = true;
+        }
         ReleaseDebugEntry();
         if (_root != null)
         {
@@ -367,12 +407,14 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
         var root = SampleUi.Panel("Root", transform, SampleUi.Background);
         SampleUi.Stretch(root, Vector2.zero, Vector2.one);
         _root = root.gameObject;
+        // No halo on the Community tab: the SDK's view owns that page, as on the other samples.
+        SampleUi.Halo(root).GetComponent<SampleUiHalo>().Hidden = _selected == OctopusSampleTab.Community;
 
         // The page ground bleeds to the physical edges; the bars' own colours continue into the
         // insets, so a cutout or a gesture bar sits on navy and on the tab bar's surface rather than
         // on a strip of page colour. Only the interactive layout is inset.
-        _topBleed = SampleUi.BuildBleed(root, "TopBleed", OctopusSampleBranding.Palette.Chrome, true);
-        _bottomBleed = SampleUi.BuildBleed(root, "BottomBleed", OctopusSampleBranding.Palette.Surface, false);
+        _topBleed = SampleUi.BuildBleed(root, "TopBleed", OctopusSampleBranding.Palette.Header, true);
+        _bottomBleed = SampleUi.BuildBleed(root, "BottomBleed", OctopusSampleBranding.Palette.TabBar, false);
 
         var safe = BuildSafeArea(root);
 
@@ -382,8 +424,10 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
         _renderedTab = _selected;
         Canvas.ForceUpdateCanvases();
         var scroll = _content.GetComponentInChildren<ScrollRect>();
+        var list = _content.GetComponent<OctopusScenariosListView>();
         float position;
-        if (scroll != null && _scrollPositions.TryGetValue(_selected, out position))
+        if (focus.HasValue && list != null) list.ScrollTo(focus.Value);
+        else if (scroll != null && _scrollPositions.TryGetValue(_selected, out position))
         {
             LayoutRebuilder.ForceRebuildLayoutImmediate(scroll.content);
             scroll.verticalNormalizedPosition = position;
@@ -453,6 +497,8 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
             Mathf.Max(OctopusSampleBranding.Dp(80f), SampleUi.PreferredButtonWidth(entry));
         element.flexibleWidth = 0f;
         SampleUi.AppBarItem(entry);
+        var button = entry.GetComponent<SampleUiButton>();
+        if (button != null) button.SetChromeStyle(true);
     }
 
     /// <summary>A detail route's app bar is taking the entry over; hand it back to its owner.</summary>
@@ -469,6 +515,8 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
     private void ReleaseDebugEntry()
     {
         if (_debugEntry == null) return;
+        var button = _debugEntry.GetComponent<SampleUiButton>();
+        if (button != null) button.SetChromeStyle(false);
         var label = _debugEntry.GetComponentInChildren<TMP_Text>();
         var scaled = label != null ? label.GetComponent<SampleUiScaledText>() : null;
         if (scaled != null) scaled.Configure(_debugBaseSize, _debugBaseLineHeight);
@@ -507,7 +555,12 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
     /// </summary>
     private RectTransform BuildSafeArea(RectTransform root)
     {
-        return SampleUi.SafeArea("SafeArea", root);
+        var safe = SampleUi.SafeArea("SafeArea", root);
+        var layout = safe.GetComponent<SampleUiSafeArea>();
+        // Only the content scrolls on short/keyboard viewports; detail pages share these pinned tabs.
+        layout.KeepBarsPinned = true;
+        layout.Apply(SampleUiSafeArea.ScreenSafeArea(), SampleUiSafeArea.KeyboardArea(), new Vector2(Screen.width, Screen.height));
+        return safe;
     }
 
     private void BuildAppBar(RectTransform root)
@@ -521,7 +574,7 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
 
     private void BuildTabBar(RectTransform root)
     {
-        var bar = SampleUi.Panel("TabBar", root, OctopusSampleBranding.Palette.Surface);
+        var bar = SampleUi.Panel("TabBar", root, OctopusSampleBranding.Palette.TabBar);
         bar.anchorMin = Vector2.zero;
         bar.anchorMax = new Vector2(1f, 0f);
         bar.pivot = new Vector2(0.5f, 0f);
@@ -548,7 +601,7 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
         // The indicator is the accent composited at 15% over the bar's own container, posed
         // explicitly (TOKENS §3): 4.74:1 for the label on it in dark theme, the tightest contrast
         // path in the shell, and 12.70:1 in light.
-        var item = SampleUi.Panel(TestId(tab), bar, palette.Surface);
+        var item = SampleUi.Panel(TestId(tab), bar, palette.TabBar);
         var button = item.gameObject.AddComponent<Button>();
         button.targetGraphic = item.GetComponent<Image>();
         var target = tab;
@@ -561,8 +614,8 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
         element.flexibleWidth = 1f;
 
         var indicator = SampleUi.Panel("Indicator", item,
-            selected ? palette.AccentIndicator : palette.Surface,
-            OctopusSampleBranding.CardRadius, palette.Surface, 0f);
+            selected ? palette.TabIndicator : palette.TabBar,
+            OctopusSampleBranding.CardRadius, palette.TabBar, 0f);
         indicator.GetComponent<Image>().raycastTarget = false;
         indicator.anchorMin = indicator.anchorMax = indicator.pivot = new Vector2(0.5f, 1f);
         indicator.sizeDelta = new Vector2(OctopusSampleBranding.Dp(56f), OctopusSampleBranding.Dp(32f));

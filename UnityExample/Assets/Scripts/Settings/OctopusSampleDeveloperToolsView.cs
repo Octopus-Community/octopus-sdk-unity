@@ -51,6 +51,12 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
     private int _renderedVersion = -1;
     private string _copyText = string.Empty;
 
+    /// <summary>Feature-toggles card link to the Configuration screen, whose profile sets Force login.</summary>
+    public const string ForceLoginConfigLinkId = "devtools-force-login-config-link";
+
+    /// <summary>Feature-toggles card link to Scenarios › Notifications, which holds the Push switch.</summary>
+    public const string PushRegistrationScenariosLinkId = "devtools-push-registration-scenarios-link";
+
     public string CurrentScreen { get; private set; }
 
     public static OctopusSampleDeveloperToolsView Open(Func<int> logVersion,
@@ -73,13 +79,37 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
     public void Back()
     {
         if (CurrentScreen != "developer-tools-screen") ShowIndex();
-        else
-        {
-            // The entry rides in this header: hand it back before the hierarchy goes away.
-            SampleUiDebugEntryHost.ReleaseAll();
-            if (Application.isPlaying) Destroy(gameObject);
-            else DestroyImmediate(gameObject);
-        }
+        else Close();
+    }
+
+    /// <summary>Closes Developer tools, whichever screen it shows.</summary>
+    public void Close()
+    {
+        // The entry rides in this header: hand it back before the hierarchy goes away.
+        SampleUiDebugEntryHost.ReleaseAll();
+        // Inactive at once: a tab switch in the same frame (a link below) runs
+        // SampleUiDetailPage.CloseAll, which skips an inactive page instead of closing it twice.
+        gameObject.SetActive(false);
+        if (Application.isPlaying) Destroy(gameObject);
+        else DestroyImmediate(gameObject);
+    }
+
+    /// <summary>Closes Developer tools and opens Configuration, where Force login is set.</summary>
+    public void OpenForceLoginSource()
+    {
+        Close();
+        OctopusSampleConfigView.Open();
+    }
+
+    /// <summary>
+    /// Closes Developer tools and shows Scenarios › Notifications, where Push registration is
+    /// switched.
+    /// </summary>
+    public void OpenPushRegistrationSource()
+    {
+        Close();
+        var shell = FindAnyObjectByType<OctopusSampleShell>();
+        if (shell != null) shell.ShowScenarioSection(ScenarioSection.Notifications);
     }
 
     public void ShowIndex()
@@ -175,7 +205,12 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
         var badgeLayout = badgeRow.gameObject.AddComponent<HorizontalLayoutGroup>();
         badgeLayout.childControlWidth = badgeLayout.childControlHeight = true;
         badgeLayout.childForceExpandWidth = badgeLayout.childForceExpandHeight = false;
-        var badge = SampleUi.Panel("Chip", badgeRow, SampleUi.RowBackground);
+        var palette = OctopusSampleBranding.Palette;
+        bool dark = OctopusSampleBranding.Theme == OctopusSampleTheme.Dark;
+        var badge = dark
+            ? SampleUi.Panel("Chip", badgeRow, palette.ChipFill, OctopusSampleBranding.FieldRadius,
+                palette.ChipBorder)
+            : SampleUi.Panel("Chip", badgeRow, SampleUi.RowBackground);
         SampleUi.VerticalStack(badge, 0f, new RectOffset(16, 16, 8, 8), true);
         badge.gameObject.AddComponent<LayoutElement>().preferredWidth = 160f;
         var chip = SampleUi.FlexibleLabel(badge, entry.Origin, SampleUi.TextCaption, SampleUi.Accent);
@@ -198,11 +233,13 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
         button.onClick.AddListener(action);
     }
 
-    private static void BuildToggles(RectTransform content)
+    private void BuildToggles(RectTransform content)
     {
         var card = SampleUi.Card("devtools-feature-toggles-card", content);
         SampleUi.FlexibleLabel(card, "Feature toggles", SampleUi.TextTitle, SampleUi.TitleColor);
-        SampleUi.FlexibleLabel(card, "Read-only. Set on Scenarios.", SampleUi.TextCaption, SampleUi.Muted);
+        SampleUi.FlexibleLabel(card,
+            "Read-only here. Force login follows the Configuration profile, applied live; Push registration is switched in Scenarios › Notifications.",
+            SampleUi.TextCaption, SampleUi.Muted);
         ValueRow(card, OctopusSampleFeatureToggles.ForceLoginId,
             OctopusSampleFeatureToggles.ForceLoginLabel,
             ToggleValue(OctopusSampleFeatureToggles.ForceLogin,
@@ -211,6 +248,10 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
             OctopusSampleFeatureToggles.PushRegistrationLabel,
             ToggleValue(OctopusSampleFeatureToggles.PushRegistration,
                 OctopusSampleFeatureToggles.PushRegistrationEffect(OctopusSampleFeatureToggles.PushRegistration)));
+        SampleUi.Button(ForceLoginConfigLinkId, card, "Open Configuration",
+            SampleUiButtonVariant.Tertiary, OpenForceLoginSource);
+        SampleUi.Button(PushRegistrationScenariosLinkId, card, "Open Scenarios › Notifications",
+            SampleUiButtonVariant.Tertiary, OpenPushRegistrationSource);
     }
 
     private static string ToggleValue(bool enabled, string effect)
@@ -233,9 +274,8 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
             else DestroyImmediate(_page.gameObject);
         }
         CurrentScreen = id;
-        _page = SampleUi.Panel("Ground", transform, SampleUi.Background);
-        SampleUi.Stretch(_page, Vector2.zero, Vector2.one);
-        var root = SampleUi.SafeArea(id, _page);
+        _page = SampleUi.DetailPage(id, transform, Close);
+        var root = _page;
         var header = SampleUi.AppBar("Header", root, titleText, Back, "devtools-back");
         SampleUiDebugEntryHost.Attach(header);
         return SampleUi.VerticalScroll(root, SampleUi.OverlayPadding());

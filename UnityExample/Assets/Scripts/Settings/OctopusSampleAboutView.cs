@@ -146,10 +146,7 @@ public class OctopusSampleAboutView : MonoBehaviour
         SampleUi.OverlayCanvas(gameObject, SortingOrder);
 
         // Full-bleed ground; readable and tappable content stays inside the safe area.
-        var ground = SampleUi.Panel("Ground", transform, SampleUi.Background);
-        SampleUi.Stretch(ground, Vector2.zero, Vector2.one);
-
-        var root = SampleUi.SafeArea(ScreenId, ground);
+        var root = SampleUi.DetailPage(ScreenId, transform, Close);
 
         BuildHeader(root);
 

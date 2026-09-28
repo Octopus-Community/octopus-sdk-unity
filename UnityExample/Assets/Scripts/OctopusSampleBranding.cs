@@ -1,15 +1,21 @@
 using UnityEngine;
 
-/// <summary>Which half of the token palette a screen draws with.</summary>
+/// <summary>
+/// Which half of the token palette a screen draws with. The value is persisted as its number under the
+/// <c>OctopusSample.Theme</c> PlayerPrefs key, so the numbers are a stored contract: never renumber
+/// or reorder the members, and give a new one the next free value.
+/// </summary>
 public enum OctopusSampleTheme
 {
-    Light,
-    Dark
+    /// <summary>Light appearance. Persisted as 0 — never renumber.</summary>
+    Light = 0,
+    /// <summary>Dark appearance, the default. Persisted as 1 — never renumber.</summary>
+    Dark = 1
 }
 
 /// <summary>
 /// The sample's own design tokens — the Unity half of the cross-platform sample contract
-/// (`pm-tools/shared/design/samples/TOKENS.md`).
+/// (shared design token catalog, internal).
 ///
 /// Android's `SampleBranding.kt`, Flutter's `branding.dart` and React Native's `branding.ts` carry
 /// the same values under the same names; TOKENS.md asks each platform for exactly this file
@@ -49,7 +55,7 @@ public static class OctopusSampleBranding
     // --- Brand hues ----------------------------------------------------------------------------
 
     /// <summary>
-    /// The sample's chrome colour: app bar in both themes, primary button fill and the whole accent
+    /// The sample's light chrome colour: app bar, primary button fill and the whole accent
     /// role in light theme. 17.28:1 on white, 15.38:1 on <see cref="TintedBackground"/>, 12.70:1 as
     /// a label over its own 15% tint (the navigation indicator).
     /// </summary>
@@ -62,21 +68,11 @@ public static class OctopusSampleBranding
     /// </summary>
     public static readonly Color Accent = Hex(0x1D88FE);
 
-    /// <summary>
-    /// The accent role on dark surfaces — text, icons and fills alike. A lighter step of
-    /// <see cref="Accent"/>, for a measured reason: the dark accent is almost never drawn on the
-    /// bare page but on a raised container or its own tint, and <see cref="Accent"/> falls under the
-    /// floor on all of those. This one holds 7.21:1 on the dark page, 6.35:1 on
-    /// <see cref="DarkSurfaceLow"/>, and 4.74:1 over its own 15% indicator — the tightest path in
-    /// the shell.
-    /// </summary>
-    public static readonly Color AccentDark = Hex(0x6FB2FF);
+    /// <summary>Signal blue-soft: dark links, icons and button fills.</summary>
+    public static readonly Color AccentDark = Hex(0x66B0FF);
 
-    /// <summary>
-    /// The readable ink on an accent fill in both themes: 7.21:1 on <see cref="AccentDark"/>, where
-    /// white would be 2.21:1. Same value as the dark page, so a filled control and the shell agree.
-    /// </summary>
-    public static readonly Color AccentInk = Hex(0x142238);
+    /// <summary>Signal ink on dark accent fills.</summary>
+    public static readonly Color AccentInk = Hex(0x070D17);
 
     /// <summary>Tinted ground for light-theme cards and framed blocks.</summary>
     public static readonly Color TintedBackground = Hex(0xEDF2FA);
@@ -84,21 +80,50 @@ public static class OctopusSampleBranding
     /// <summary>Border for framed blocks and secondary buttons, light theme.</summary>
     public static readonly Color LightBorder = Hex(0xB9C9E0);
 
-    /// <summary>Dark page background and base surface.</summary>
-    public static readonly Color DarkBackground = Hex(0x142238);
-
-    /// <summary>Raised dark surfaces — one and two steps above <see cref="DarkBackground"/>.</summary>
-    public static readonly Color DarkSurfaceLow = Hex(0x1B2C46);
-
-    /// <summary>Two steps above the dark page: fields, and a card on a card.</summary>
-    public static readonly Color DarkSurfaceHigh = Hex(0x223353);
+    // Dark ladder, aligned on the octopuscommunity.com site: ink → navy → navy-2, each step a
+    // bluish navy rather than a neutral grey, so depth reads as depth instead of flat grey slabs.
+    // Flat sRGB; Unity exposes no SDK gray/surface/hover tokens, so only Background, the primary
+    // quadruple and Link reach the native SDK — the rest is the shell's alone.
+    // Page → #070D17 (site --ink) → SDK Background; shell Page / Chrome.
+    // Card / cell → #0F1B2D (brand navy) → shell Surface / SurfaceHigh only.
+    // Hairline → #1E2A3D (site --line) → shell Border only.
+    // Strong hairline → #243349 → shell BorderStrong only (the current-configuration frame).
+    // Elevated → #16243A (site --navy-2) → shell Elevated only (dialogs / sheets / menus).
+    // Card hover / pressed → #1D2E48 → shell CardPressed only.
+    // Headings → #F2F6FC → shell Title / OnChrome only.
+    // Body → #E9F0FA → shell Body only.
+    // Captions / meta → #8C9AB0 → shell Muted only.
+    // Accent → #66B0FF → SDK Primary / Link; shell Accent.
+    // On accent → #070D17 → SDK OnPrimary; shell OnAccent.
+    // Tinted container → #16273C → SDK PrimaryLow; shell AccentIndicator.
+    // Progress / focus → #8FC6FF → SDK PrimaryHigh; shell Focus.
+    // Text ladder measured on page / card / elevated / hover: title 17.95 / 15.94 / 14.37 /
+    // 12.60:1, body 16.97 / 15.07 / 13.59 / 11.92:1, muted 6.83 / 6.06 / 5.46 / 4.79:1.
+    public static readonly Color DarkBackground = Hex(0x070D17);
+    public static readonly Color DarkSurfaceLow = Navy;
+    public static readonly Color DarkElevated = Hex(0x16243A);
+    // Decorative only (1.20:1 on the card) — never the boundary of a control.
+    public static readonly Color DarkBorder = Hex(0x1E2A3D);
+    // One step above DarkBorder for a block that has to stand out; still decorative (1.35:1).
+    public static readonly Color DarkBorderStrong = Hex(0x243349);
+    public static readonly Color DarkCardPressed = Hex(0x1D2E48);
+    public static readonly Color DarkTitle = Hex(0xF2F6FC);
+    public static readonly Color DarkBody = Hex(0xE9F0FA);
+    public static readonly Color DarkMuted = Hex(0x8C9AB0);
 
     /// <summary>
-    /// Border on the dark surface. A flat navy line rather than a tint of the accent: a border
-    /// carries no meaning to read, and drawing it in the accent hue makes it compete with the
-    /// controls that *are* the accent.
+    /// How strongly the dark-theme halo tints the page at its centre: the peak of
+    /// <see cref="DarkHalo"/>, identical on the four samples.
     /// </summary>
-    public static readonly Color DarkBorder = Hex(0x253449);
+    public const float HaloAlpha = 0.12f;
+
+    /// <summary>
+    /// The dark-theme halo: the brand blue at <see cref="HaloAlpha"/>, fading to fully transparent
+    /// over a radius of one screen width from the top-right corner (<see cref="SampleUiHalo"/>).
+    /// At its peak it flattens to #0A1C33 over the page, where <see cref="DarkMuted"/> still
+    /// reads 6.00:1. Decorative — every text block sits on an opaque card above it.
+    /// </summary>
+    public static readonly Color DarkHalo = new Color(Accent.r, Accent.g, Accent.b, HaloAlpha);
 
     /// <summary>
     /// Degraded/warning text — a gap to close. A permanent absence uses muted text instead.
@@ -111,7 +136,7 @@ public static class OctopusSampleBranding
     /// </summary>
     public static readonly Color Amber = Hex(0x92400E);
 
-    /// <summary>Dark-theme half of <see cref="Amber"/>: 9.67:1 on <see cref="DarkSurfaceLow"/>.</summary>
+    /// <summary>Dark-theme warning text.</summary>
     public static readonly Color AmberDark = Hex(0xF1D390);
 
     /// <summary>
@@ -126,9 +151,7 @@ public static class OctopusSampleBranding
     public static readonly Color Success = Hex(0x0F7A2C);
 
     /// <summary>
-    /// Dark-theme half of <see cref="Success"/>: 7.23:1 on <see cref="DarkSurfaceLow"/>, 8.22:1 on
-    /// <see cref="DarkBackground"/>. Split rather than forced through both themes, because
-    /// <see cref="Success"/> measures 2.92:1 on the dark page.
+    /// Dark-theme success text, distinct from the darker light-theme status color.
     /// </summary>
     public static readonly Color SuccessDark = Hex(0x5FD07E);
 
@@ -138,7 +161,7 @@ public static class OctopusSampleBranding
     /// </summary>
     public static readonly Color Danger = Hex(0x9E243F);
 
-    /// <summary>Dark-theme half of <see cref="Danger"/>: 5.35:1 on <see cref="DarkSurfaceLow"/>.</summary>
+    /// <summary>Dark-theme error text.</summary>
     public static readonly Color DangerDark = Hex(0xE98098);
 
     // --- Platform slot hue ---------------------------------------------------------------------
@@ -159,7 +182,7 @@ public static class OctopusSampleBranding
     /// Dark-theme half of the slot hue: the same achromatic recipe with lightness raised to 0.76,
     /// the way Android splits its own pair. <see cref="PlatformSlotLight"/> measures 1.38:1 on the
     /// dark surface — far under the floor — so the pair is split rather than forced through both
-    /// themes. 6.55:1 on <see cref="DarkSurfaceLow"/>, 4.89:1 on its own 15% tint.
+    /// themes. 8.06:1 on <see cref="DarkSurfaceLow"/>, 4.89:1 on its own 15% tint.
     /// </summary>
     public static readonly Color PlatformSlotDark = Hex(0xB1B1B1);
 
@@ -178,25 +201,29 @@ public static class OctopusSampleBranding
     public static readonly Color SdkLightOnPrimary = Hex(0xFFFFFF);
 
     /// <summary>Dark `primaryMain` passed to the SDK.</summary>
-    public static readonly Color SdkDarkPrimaryMain = Hex(0x6FB2FF);
+    public static readonly Color SdkDarkPrimaryMain = AccentDark;
 
     /// <summary>Dark `primaryLow` passed to the SDK.</summary>
-    public static readonly Color SdkDarkPrimaryLow = Hex(0x142238);
+    public static readonly Color SdkDarkPrimaryLow = Hex(0x16273C);
 
     /// <summary>Dark `primaryHigh` passed to the SDK.</summary>
-    public static readonly Color SdkDarkPrimaryHigh = Hex(0xDCE9FC);
+    public static readonly Color SdkDarkPrimaryHigh = Hex(0x8FC6FF);
 
     /// <summary>
     /// Dark `onPrimary`. The dark surface, not black, so SDK controls match the sample shell.
     /// </summary>
-    public static readonly Color SdkDarkOnPrimary = Hex(0x142238);
+    public static readonly Color SdkDarkOnPrimary = DarkBackground;
 
     // Component roles and geometry: sample harmonisation reference, accepted 2026-09-11.
     public static readonly Color LightControlBorder = Hex(0x68768A);
-    public static readonly Color DarkControlBorder = Hex(0x9AA7B8);
+    // off-table: identifiable field/control boundaries need 3:1 (WCAG 1.4.11) on every step of the
+    // ladder: #6A7D9B is 4.65:1 on the page, 4.13:1 on the card, 3.72:1 elevated, 3.27:1 on hover.
+    public static readonly Color DarkControlBorder = Hex(0x6A7D9B);
     public static readonly Color LightWarningSurface = Hex(0xFFF7E6);
+    // off-table: warning-tinted surface; #F1D390 warning text measures 9.47:1 on #382B18.
     public static readonly Color DarkWarningSurface = Hex(0x382B18);
     public static readonly Color LightDangerSurface = Hex(0xFCEEF1);
+    // off-table: error-tinted surface; #E98098 error text measures 5.26:1 on #3B2639.
     public static readonly Color DarkDangerSurface = Hex(0x3B2639);
     public static readonly Color Clear = Color.clear;
     public static readonly Color ShapeInk = Color.white;
@@ -298,6 +325,44 @@ public static class OctopusSampleBranding
 
     private static OctopusSampleTheme _theme = OctopusSampleTheme.Dark;
     private static OctopusSamplePalette _palette = OctopusSamplePalette.Dark();
+    // Enabled at player startup, not by EditMode callers of the palette or Theme setter.
+    private static string _themePreferenceKey;
+    // A QA launch's `qaTheme`: wins over the saved choice for this process, and is never saved.
+    private static OctopusSampleTheme? _launchTheme;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void InitializeTheme()
+    {
+        RestoreTheme("OctopusSample.Theme");
+    }
+
+    // A separate key lets tests exercise the real PlayerPrefs path without changing a user's choice.
+    internal static void RestoreTheme(string preferenceKey)
+    {
+        _themePreferenceKey = preferenceKey;
+        if (_launchTheme.HasValue)
+        {
+            SetTheme(_launchTheme.Value, false);
+            return;
+        }
+        var saved = preferenceKey == null ? (int)OctopusSampleTheme.Dark
+            : PlayerPrefs.GetInt(preferenceKey, (int)OctopusSampleTheme.Dark);
+        SetTheme(saved == (int)OctopusSampleTheme.Light ? OctopusSampleTheme.Light
+            : OctopusSampleTheme.Dark, false);
+    }
+
+    /// <summary>
+    /// Applies a QA launch's theme for this process without saving it, or clears it with null.
+    /// <c>adb install -r</c> keeps PlayerPrefs, so a run that switched to Light would otherwise start
+    /// the next run in Light. Both this and <see cref="RestoreTheme"/> run before the first scene
+    /// in an order Unity leaves undefined, so each honours the other: whichever runs last, the
+    /// launch theme is the one in force.
+    /// </summary>
+    internal static void ApplyLaunchTheme(OctopusSampleTheme? theme)
+    {
+        _launchTheme = theme;
+        if (theme.HasValue) SetTheme(theme.Value, false);
+    }
 
     /// <summary>
     /// Raised after <see cref="Theme"/> changes, so an open screen can rebuild itself. Screens are
@@ -306,23 +371,40 @@ public static class OctopusSampleBranding
     public static event System.Action ThemeChanged;
 
     /// <summary>
-    /// The theme in force. Defaults to <see cref="OctopusSampleTheme.Dark"/>: Unity exposes no
-    /// runtime system-appearance API on the platforms this sample ships to, so a default is chosen
-    /// rather than detected, and this is the one the sample already had.
+    /// The theme in force, restored before the first scene and saved whenever it changes.
+    /// Defaults to <see cref="OctopusSampleTheme.Dark"/> if no valid choice has been saved.
     /// </summary>
     public static OctopusSampleTheme Theme
     {
         get { return _theme; }
-        set
+        set { SetTheme(value, true); }
+    }
+
+    private static void SetTheme(OctopusSampleTheme value, bool persist)
+    {
+        if (value != OctopusSampleTheme.Light && value != OctopusSampleTheme.Dark)
+            throw new System.ArgumentOutOfRangeException("value");
+        if (_theme == value) return;
+        _theme = value;
+        _palette = value == OctopusSampleTheme.Light
+            ? OctopusSamplePalette.Light()
+            : OctopusSamplePalette.Dark();
+        if (persist && _themePreferenceKey != null)
         {
-            if (_theme == value) return;
-            _theme = value;
-            _palette = value == OctopusSampleTheme.Light
-                ? OctopusSamplePalette.Light()
-                : OctopusSamplePalette.Dark();
-            var handler = ThemeChanged;
-            if (handler != null) handler();
+            try
+            {
+                PlayerPrefs.SetInt(_themePreferenceKey, (int)value);
+                PlayerPrefs.Save();
+            }
+            catch (System.Exception)
+            {
+                // Storage failure must not prevent the open screens from adopting the palette.
+                Debug.LogWarning("[Octopus SDK] Sample appearance could not be saved; " +
+                    "the next launch may use the previous theme.");
+            }
         }
+        var handler = ThemeChanged;
+        if (handler != null) handler();
     }
 
     /// <summary>The palette for <see cref="Theme"/>. Every colour a screen draws comes from here.</summary>
@@ -372,32 +454,19 @@ public class OctopusSamplePalette
     /// <summary>Frame around a block or a secondary button. Carries no meaning: exempt from the floor.</summary>
     public readonly Color Border;
 
-    /// <summary>The app bar ground. Navy in both themes — the app bar is what says "Octopus sample".</summary>
+    /// <summary>The app bar ground: navy in light, Signal ink in dark.</summary>
     public readonly Color Chrome;
 
-    /// <summary>Ink on <see cref="Chrome"/>: 17.28:1.</summary>
+    /// <summary>Heading ink on the app bar.</summary>
     public readonly Color OnChrome;
 
-    /// <summary>
-    /// The fill of a control drawn on <see cref="Chrome"/> — the app bar's own buttons.
-    ///
-    /// Deliberately not <see cref="Accent"/>. In light theme the accent role *is* the navy, and the
-    /// app bar is navy in both themes, so an accent-filled pill on the bar is navy on navy: the
-    /// control disappears and only its label survives. On-device QA of this shell caught exactly
-    /// that — the light-theme theme toggle rendered as bare text with no pill at all, while dark
-    /// theme showed a filled button. Android's sample avoids the collision the same way, by drawing
-    /// its app-bar actions as ink-on-chrome icon buttons rather than as accent pills.
-    ///
-    /// A <see cref="OctopusSampleBranding.ChromeControlTint"/> wash of <see cref="OnChrome"/> over
-    /// the bar: 3.31:1 against the bar, with <see cref="OnChrome"/> at 5.22:1 on it. Identical in
-    /// both themes, because the bar is.
-    /// </summary>
+    /// <summary>An opaque text wash over the app bar, distinct from its background.</summary>
     public readonly Color ChromeControl;
 
     /// <summary>Primary text on <see cref="Page"/> and <see cref="Surface"/>.</summary>
     public readonly Color Title;
 
-    /// <summary>Secondary text, at the content opacity floor and never below it.</summary>
+    /// <summary>Secondary text and captions.</summary>
     public readonly Color Muted;
 
     /// <summary>The accent role: selected nav item, primary button fill.</summary>
@@ -406,7 +475,7 @@ public class OctopusSamplePalette
     /// <summary>Readable ink on an <see cref="Accent"/> fill.</summary>
     public readonly Color OnAccent;
 
-    /// <summary>The selected nav item's indicator: the accent at 15% over the bar's own container.</summary>
+    /// <summary>The selected nav item container, tinted from the accent.</summary>
     public readonly Color AccentIndicator;
 
     /// <summary>A gap to close. A permanent absence uses <see cref="Muted"/> instead.</summary>
@@ -434,10 +503,37 @@ public class OctopusSamplePalette
         get { return Page == OctopusSampleBranding.DarkBackground
             ? OctopusSampleBranding.DarkElevationInk : OctopusSampleBranding.LightElevationInk; }
     }
+    public Color TabBar { get { return IsDark ? OctopusSampleBranding.DarkSurfaceLow : Color.white; } }
+    public Color TabIndicator { get { return OctopusSampleBranding.Tint(Accent, TabBar, 0.15f); } }
     public Color DisabledSurface { get { return Surface; } }
     public Color DisabledInk { get { return Muted; } }
-    public Color Focus { get { return Accent; } }
+    private bool IsDark { get { return Page == OctopusSampleBranding.DarkBackground; } }
+    public Color Body { get { return IsDark ? OctopusSampleBranding.DarkBody : Title; } }
+    public Color Elevated { get { return IsDark ? OctopusSampleBranding.DarkElevated : Surface; } }
+    public Color Focus { get { return IsDark ? OctopusSampleBranding.SdkDarkPrimaryHigh : Accent; } }
+    // Resolve alpha in sRGB before uGUI's linear-space rendering.
+    public Color ChipFill { get { return IsDark ? OctopusSampleBranding.Tint(Accent, Surface, 0.10f) : SurfaceHigh; } }
+    public Color ChipBorder { get { return IsDark ? OctopusSampleBranding.Tint(Accent, Surface, 0.28f) : Border; } }
+    public Color ChipInk { get { return IsDark ? Accent : Muted; } }
     public Color Placeholder { get { return Muted; } }
+    /// <summary>Frame of a block that has to stand out from its neighbours; <see cref="Border"/> in light.</summary>
+    public Color BorderStrong { get { return IsDark ? OctopusSampleBranding.DarkBorderStrong : Border; } }
+    /// <summary>
+    /// The halo drawn behind the header: <see cref="OctopusSampleBranding.DarkHalo"/> in dark,
+    /// fully clear in light, where no halo is drawn.
+    /// </summary>
+    public Color Halo { get { return IsDark ? OctopusSampleBranding.DarkHalo : OctopusSampleBranding.Clear; } }
+    /// <summary>
+    /// The app bar ground and its status-bar bleed: <see cref="Chrome"/> in light, clear in dark so
+    /// the halo runs under the header without a hard edge (the dark chrome is the page anyway).
+    /// </summary>
+    public Color Header { get { return IsDark ? OctopusSampleBranding.Clear : Chrome; } }
+    /// <summary>
+    /// The band behind a docked bottom action (Home, Community): <see cref="Surface"/> in light,
+    /// clear in dark, where an opaque navy band would cut a hard edge across the page and the halo.
+    /// Nothing scrolls under a dock (its scroll host stops above it), so clear leaves no overlap.
+    /// </summary>
+    public Color Dock { get { return IsDark ? OctopusSampleBranding.Clear : Surface; } }
 
     private OctopusSamplePalette(Color controlBorder, Color warningSurface, Color dangerSurface,
                                  Color page, Color surface, Color surfaceHigh, Color border,
@@ -458,7 +554,7 @@ public class OctopusSamplePalette
         // Derived here rather than passed in by each factory: it has to track the bar it is drawn
         // on, and a factory free to pass its own value is a factory free to pass the accent again.
         ChromeControl = OctopusSampleBranding.Tint(onChrome, chrome,
-                                                  OctopusSampleBranding.ChromeControlTint);
+            IsDark ? 0.40f : OctopusSampleBranding.ChromeControlTint);
         Title = title;
         Muted = muted;
         Accent = accent;
@@ -504,8 +600,8 @@ public class OctopusSamplePalette
     }
 
     /// <summary>
-    /// The dark palette. The indicator is composited over <see cref="Surface"/>, the bar's own
-    /// container, rather than over the page — 4.74:1, the tightest contrast path in the shell.
+    /// The dark palette on the site's navy ladder: ink page, navy cards and a separate blue accent
+    /// container.
     /// </summary>
     public static OctopusSamplePalette Dark()
     {
@@ -516,15 +612,15 @@ public class OctopusSamplePalette
             OctopusSampleBranding.DarkDangerSurface,
             OctopusSampleBranding.DarkBackground,
             surface,
-            OctopusSampleBranding.DarkSurfaceHigh,
+            surface,
             OctopusSampleBranding.DarkBorder,
-            OctopusSampleBranding.Navy,
-            Color.white,
-            Color.white,
-            MutedInk(Color.white, OctopusSampleBranding.DarkBackground),
+            OctopusSampleBranding.DarkBackground,
+            OctopusSampleBranding.DarkTitle,
+            OctopusSampleBranding.DarkTitle,
+            OctopusSampleBranding.DarkMuted,
             OctopusSampleBranding.AccentDark,
             OctopusSampleBranding.AccentInk,
-            OctopusSampleBranding.Tint(OctopusSampleBranding.AccentDark, surface, 0.15f),
+            OctopusSampleBranding.SdkDarkPrimaryLow,
             OctopusSampleBranding.AmberDark,
             OctopusSampleBranding.SuccessDark,
             OctopusSampleBranding.DangerDark,

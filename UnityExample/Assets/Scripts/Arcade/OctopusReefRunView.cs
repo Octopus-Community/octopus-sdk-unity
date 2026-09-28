@@ -276,6 +276,7 @@ public sealed class OctopusReefRunView : MonoBehaviour
         SampleUi.OverlayCanvas(gameObject, SortingOrder);
         var ground = SampleUi.Panel("Reef Run ground", transform, SampleUi.Background);
         SampleUi.Stretch(ground, Vector2.zero, Vector2.one);
+        SampleUi.Halo(ground);
         var root = SampleUi.SafeArea(ScreenId, ground);
 
         SampleUi.AppBar("Reef Run header", root, "Reef Run", Close, BackId, "Line");

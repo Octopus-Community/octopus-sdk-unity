@@ -44,7 +44,7 @@ public partial class OctopusSDK
             RegisterBridgeListener();
             using (var plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
             {
-                plugin.CallStatic("fetchCommunityData", id, memberId.ProfileId, memberId.ClientUserId);
+                plugin.CallStatic("fetchCommunityData", id, memberId.ProfileId ?? "", memberId.ClientUserId ?? "");
             }
 #elif UNITY_IOS
             OctopusChannel.Initialize();
@@ -81,7 +81,7 @@ public partial class OctopusSDK
             RegisterBridgeListener();
             using (var plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
             {
-                plugin.CallStatic("startObservingCommunityData", memberId.ProfileId, memberId.ClientUserId);
+                plugin.CallStatic("startObservingCommunityData", memberId.ProfileId ?? "", memberId.ClientUserId ?? "");
             }
 #elif UNITY_IOS
             OctopusChannel.Initialize();

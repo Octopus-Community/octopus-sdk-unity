@@ -34,7 +34,7 @@ public sealed class CommunityDataScenario : OctopusScenarioPilot
     }
     public override string ParameterNotice
     {
-        get { return "Client id lookups require exposed client user ids. Public gamification score is normally null. " +
+        get { return "Preset 2 uses the last lookup or user.other when run first. Client id lookups require exposed client user ids. Public gamification score is normally null. " +
             "The C# factories enforce exactly one id by construction. Host profile navigation needs a renderer " +
             "subscribed to HostProfileRequested; the pilot supplies its data, unknown-member and error states."; }
     }
@@ -60,9 +60,10 @@ public sealed class CommunityDataScenario : OctopusScenarioPilot
                 "Nothing was being observed.");
             return;
         }
-        if (action == "fetch-profile" && _lastProfileId == null)
+        var profileId = _lastProfileId ?? OctopusSampleFixtures.OtherUserId;
+        if (action == "fetch-profile" && profileId == null)
         {
-            Report("No profileId known yet — run Preset 1 or 3 first.");
+            Report("Skipped: user.other has no id and no previous lookup is available.");
             return;
         }
         string reason;
@@ -75,7 +76,7 @@ public sealed class CommunityDataScenario : OctopusScenarioPilot
             ? profile.userId : current.ClientUserId;
         try
         {
-            var member = action == "fetch-profile" ? OctopusCommunityMemberId.FromProfileId(_lastProfileId) :
+            var member = action == "fetch-profile" ? OctopusCommunityMemberId.FromProfileId(profileId) :
                 OctopusCommunityMemberId.FromClientUserId(clientUserId);
             if (action == "observe")
             {

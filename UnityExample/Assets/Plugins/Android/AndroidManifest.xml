@@ -1,7 +1,22 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools" package="com.octopuscommunity.sdk.unity.sample" android:versionCode="1" android:versionName="1.0">
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <!-- Keep the Play declarations aligned with the Android sample: no analytics, no advertising ID.
+       These come from Firebase Analytics (removed from the Firebase dependency XMLs) and are
+       stripped here too so a Firebase re-import cannot bring them back unnoticed. -->
+  <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
+  <uses-permission android:name="android.permission.ACCESS_ADSERVICES_AD_ID" tools:node="remove" />
+  <uses-permission android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION" tools:node="remove" />
+  <uses-permission android:name="com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE" tools:node="remove" />
+  <!-- Implied by octopus-example-assets.aar, whose manifest declares no targetSdkVersion. The
+       sample never writes shared storage nor reads the phone state; READ_EXTERNAL_STORAGE
+       (maxSdkVersion 32) stays, octopus-sdk-ui declares it for the image picker. -->
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
+  <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove" />
   <application android:label="@string/app_name" android:icon="@drawable/app_icon">
+    <!-- Inert while firebase-analytics is absent; stops any collection if a re-import restores it. -->
+    <meta-data android:name="firebase_analytics_collection_deactivated" android:value="true" />
+    <meta-data android:name="google_analytics_adid_collection_enabled" android:value="false" />
     <!-- The MessagingUnityPlayerActivity is a class that extends
          UnityPlayerActivity to work around a known issue when receiving
          notification data payloads in the background. -->

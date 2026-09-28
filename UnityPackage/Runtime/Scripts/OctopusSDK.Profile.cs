@@ -12,13 +12,21 @@ public sealed class OctopusProfile
     /// Independent of the setting that exposes other members' client user ids.</summary>
     public string ClientUserId { get; private set; }
 
+    /// <summary>Whether this profile belongs to an anonymous guest rather than a real, authenticated user.
+    /// In forced-login communities a guest session is re-established right after DisconnectUser, so
+    /// CurrentProfile becomes non-null again without the user having authenticated: check this flag to
+    /// gate real-user features. Mirrors iOS <c>OctopusProfile.isGuest</c> and Android
+    /// <c>ConnectionState.Connected.isGuest</c>.</summary>
+    public bool IsGuest { get; private set; }
+
     /// <summary>Creates an immutable profile snapshot. Null entitlements become an empty collection.</summary>
-    public OctopusProfile(IEnumerable<string> entitlements = null, string clientUserId = null)
+    public OctopusProfile(IEnumerable<string> entitlements = null, string clientUserId = null, bool isGuest = false)
     {
         var unique = new HashSet<string>(entitlements ?? new string[0]);
         unique.Remove(null);
         Entitlements = new List<string>(unique).AsReadOnly();
         ClientUserId = clientUserId;
+        IsGuest = isGuest;
     }
 }
 
@@ -36,7 +44,9 @@ internal static class OctopusProfileParsing
                 ? OctopusJson.ParseStringArray(raw) : new List<string>();
             string clientUserId = fields.TryGetValue("clientUserId", out raw)
                 ? OctopusJson.StringFromRaw(raw) : null;
-            return new OctopusProfile(entitlements, clientUserId);
+            // Only a JSON `true` marks a guest; a missing or non-boolean value reads as authenticated.
+            bool isGuest = fields.TryGetValue("isGuest", out raw) && raw != null && raw.Trim() == "true";
+            return new OctopusProfile(entitlements, clientUserId, isGuest);
         }
         catch (FormatException) { return null; }
         catch (ArgumentException) { return null; }

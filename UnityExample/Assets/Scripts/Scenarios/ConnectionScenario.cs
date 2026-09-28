@@ -119,7 +119,7 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
             // Never reach the native SDK here: on iOS, ConnectUser on an Octopus-auth
             // initialisation is a preconditionFailure, not a reportable error.
             Report("ConnectUser NOT called: the SDK is initialised with " + mode +
-                   ". Restart the app and open this screen first.");
+                   ". Apply a profile in Configuration to switch to SSO — no restart needed.");
             return;
         }
 
@@ -191,7 +191,7 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
         if (!OctopusScenarioSdk.IsInPilotMode)
         {
             Report("DisconnectUser NOT called: the SDK is initialised with " + mode +
-                   ". Restart the app and open this screen first.");
+                   ". Apply a profile in Configuration to switch to SSO — no restart needed.");
             return;
         }
 

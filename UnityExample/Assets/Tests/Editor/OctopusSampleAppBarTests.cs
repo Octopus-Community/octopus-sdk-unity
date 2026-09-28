@@ -73,6 +73,132 @@ public class OctopusSampleAppBarTests
         reef.Close();
     }
 
+    [TestCase(OctopusSampleTheme.Light)]
+    [TestCase(OctopusSampleTheme.Dark)]
+    public void AdoptedDebugEntryWearsTheChromeFillAndGivesThePageStyleBack(OctopusSampleTheme theme)
+    {
+        var previous = OctopusSampleBranding.Theme;
+        try
+        {
+            OctopusSampleBranding.Theme = theme;
+            var owner = Container();
+            var entry = SampleUi.Button("debug-open-button", owner, "Debug", () => { });
+            var fill = entry.GetComponent<Image>();
+            var label = entry.GetComponentInChildren<TMP_Text>();
+            var pageFill = fill.color;
+            var pageInk = label.color;
+            Assert.AreEqual(SampleUi.ButtonFill, pageFill);
+
+            SampleUi.RegisterDebugEntry(entry);
+            _shell = OctopusSampleShell.Create();
+            _objects.Add(_shell.gameObject);
+            Assert.AreEqual("AppBar", entry.parent.name);
+            AssertChromeStyled(entry);
+
+            // A pushed route's header takes the entry over, then gives it back to the shell bar.
+            var detail = SampleUi.AppBar("Header", owner, "Detail", () => { });
+            SampleUiDebugEntryHost.Attach(detail);
+            Assert.AreSame(detail, entry.parent);
+            AssertChromeStyled(entry);
+            SampleUiDebugEntryHost.ReleaseAll();
+            Assert.AreEqual("AppBar", entry.parent.name);
+            AssertChromeStyled(entry);
+
+            _shell.Shutdown();
+            Assert.AreSame(owner, entry.parent);
+            Assert.AreEqual(pageFill, fill.color, "Back on the page, the entry keeps its own fill.");
+            Assert.AreEqual(pageInk, label.color);
+            Assert.IsFalse(entry.GetComponent<SampleUiButton>().IsChromeStyled);
+        }
+        finally
+        {
+            OctopusSampleBranding.Theme = previous;
+        }
+    }
+
+    [Test]
+    public void AdoptedDebugEntryFollowsAThemeSwitch()
+    {
+        var previous = OctopusSampleBranding.Theme;
+        try
+        {
+            OctopusSampleBranding.Theme = OctopusSampleTheme.Dark;
+            var owner = Container();
+            var entry = SampleUi.Button("debug-open-button", owner, "Debug", () => { });
+            SampleUi.RegisterDebugEntry(entry);
+            _shell = OctopusSampleShell.Create();
+            _objects.Add(_shell.gameObject);
+            OctopusSampleBranding.Theme = OctopusSampleTheme.Light;
+            Assert.AreEqual("AppBar", entry.parent.name);
+            AssertChromeStyled(entry);
+        }
+        finally
+        {
+            OctopusSampleBranding.Theme = previous;
+        }
+    }
+
+    [TestCase(OctopusSampleTheme.Dark, OctopusSampleTheme.Light)]
+    [TestCase(OctopusSampleTheme.Light, OctopusSampleTheme.Dark)]
+    public void ADebugEntryBackOnThePageTakesTheThemeChosenWhileItWasOnTheBar(
+        OctopusSampleTheme before, OctopusSampleTheme after)
+    {
+        var previous = OctopusSampleBranding.Theme;
+        try
+        {
+            OctopusSampleBranding.Theme = before;
+            var owner = Container();
+            var entry = SampleUi.Button("debug-open-button", owner, "Debug", () => { });
+            SampleUi.RegisterDebugEntry(entry);
+            _shell = OctopusSampleShell.Create();
+            _objects.Add(_shell.gameObject);
+            AssertChromeStyled(entry);
+
+            OctopusSampleBranding.Theme = after;
+            _shell.Shutdown();
+            Assert.AreSame(owner, entry.parent);
+            Color fill, ink, border;
+            SampleUi.VariantColors(SampleUiButtonVariant.Primary, out fill, out ink, out border);
+            Assert.AreEqual(fill, entry.GetComponent<Image>().color,
+                "Back on the page, the entry kept the colours of the theme it left.");
+            Assert.AreEqual(ink, entry.GetComponentInChildren<TMP_Text>().color);
+        }
+        finally
+        {
+            OctopusSampleBranding.Theme = previous;
+        }
+    }
+
+    [TestCase(OctopusSampleTheme.Light)]
+    [TestCase(OctopusSampleTheme.Dark)]
+    public void ChromeControlFillStandsOutFromTheAppBar(OctopusSampleTheme theme)
+    {
+        var previous = OctopusSampleBranding.Theme;
+        try
+        {
+            OctopusSampleBranding.Theme = theme;
+            var palette = OctopusSampleBranding.Palette;
+            Assert.AreNotEqual(palette.Chrome, palette.ChromeControl);
+            if (theme == OctopusSampleTheme.Light)
+                Assert.AreEqual(palette.Chrome, palette.Accent,
+                    "The light accent is the navy chrome: an accent fill cannot sit on the app bar.");
+        }
+        finally
+        {
+            OctopusSampleBranding.Theme = previous;
+        }
+    }
+
+    private static void AssertChromeStyled(RectTransform entry)
+    {
+        var palette = OctopusSampleBranding.Palette;
+        Assert.IsTrue(entry.GetComponent<SampleUiButton>().IsChromeStyled);
+        Assert.AreEqual(SampleUi.ChromeButtonFill, entry.GetComponent<Image>().color);
+        Assert.AreNotEqual(palette.Chrome, entry.GetComponent<Image>().color,
+            "The entry must not blend into the app bar.");
+        Assert.AreEqual(SampleUi.ChromeButtonInk, entry.GetComponentInChildren<TMP_Text>().color);
+    }
+
     [Test]
     public void IdentityAndInjectedDebugShareHeightAndCenterAndRestoreTheOwnerLayout()
     {

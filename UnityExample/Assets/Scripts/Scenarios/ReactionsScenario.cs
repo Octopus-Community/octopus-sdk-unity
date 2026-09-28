@@ -3,24 +3,23 @@ using System.Collections.Generic;
 
 public sealed class ReactionsScenario : CommunityScenarioPilot
 {
-    public const string FallbackPostId = "unity-demo-fake-post-id";
 
     public ReactionsScenario() : base("reactions",
         new OctopusScenarioField("postId", "Post id"),
         new OctopusScenarioField("reaction", "Reaction (heart, joy, null, mouthOpen, clap, cry, rage)"))
     {
-        Add(1, PresetLabel(1, "React heart ❤️"), FallbackPostId, "heart");
-        Add(2, PresetLabel(2, "Change reaction to joy 😂"), FallbackPostId, "joy");
-        Add(3, PresetLabel(3, "Unreact (null)"), FallbackPostId, "null");
-        Add(4, PresetLabel(4, "React mouthOpen 😮"), FallbackPostId, "mouthOpen");
-        Add(5, PresetLabel(5, "React clap 👏"), FallbackPostId, "clap");
-        Add(6, PresetLabel(6, "React cry 😢"), FallbackPostId, "cry");
-        Add(7, PresetLabel(7, "React rage 😡"), FallbackPostId, "rage");
+        Add(1, PresetLabel(1, "React heart ❤️"), OctopusSampleFixtures.PostReactionStackId ?? string.Empty, "heart");
+        Add(2, PresetLabel(2, "Change reaction to joy 😂"), OctopusSampleFixtures.PostReactionStackId ?? string.Empty, "joy");
+        Add(3, PresetLabel(3, "Unreact (null)"), OctopusSampleFixtures.PostReactionStackId ?? string.Empty, "null");
+        Add(4, PresetLabel(4, "React mouthOpen 😮"), OctopusSampleFixtures.PostReactionStackId ?? string.Empty, "mouthOpen");
+        Add(5, PresetLabel(5, "React clap 👏"), OctopusSampleFixtures.PostReactionStackId ?? string.Empty, "clap");
+        Add(6, PresetLabel(6, "React cry 😢"), OctopusSampleFixtures.PostReactionStackId ?? string.Empty, "cry");
+        Add(7, PresetLabel(7, "React rage 😡"), OctopusSampleFixtures.PostReactionStackId ?? string.Empty, "rage");
     }
 
     public override IReadOnlyList<string> ApiSymbols { get { return new[] { "SetReaction" }; } }
     public override string ParameterNotice
-    { get { return "Presets use an intentionally fake post id to exercise PostNotFound. Customize can target a real post. Connection and authentication failures use ReactionError in Unity."; } }
+    { get { return "Presets use the shared post.reactionStack fixture. Customize can target another post. Connection and authentication failures use ReactionError in Unity."; } }
 
     protected override void Run(OctopusScenarioFields fields)
     {

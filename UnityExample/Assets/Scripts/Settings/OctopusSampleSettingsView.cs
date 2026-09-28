@@ -4,8 +4,8 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Settings is an index of preferences, support and local reset. Unity has no Account or Change
-/// Configuration route (D6). Reset sample state clears observations, not SDK configuration;
+/// Settings is an index of account, configuration, preferences, support and local reset.
+/// Reset sample state clears observations, not SDK configuration;
 /// legacy scenes stay reachable until their scenarios migrate.
 /// </summary>
 public class OctopusSampleSettingsView : MonoBehaviour
@@ -29,8 +29,16 @@ public class OctopusSampleSettingsView : MonoBehaviour
     /// <summary>The built-in row opening <see cref="OctopusSampleAboutView"/>.</summary>
     public const string AboutRowId = "settings-about-row";
 
-    /// <summary>The Reset group.</summary>
+    /// <summary>
+    /// The Reset group: one card holding both resets — the sample's recorded state
+    /// (<see cref="ResetStateSectionId"/>) and the saved configuration
+    /// (<see cref="ResetConfigCardId"/>). Two cards both headed "Reset" read as one action drawn
+    /// twice.
+    /// </summary>
     public const string ResetCardId = "settings-reset-card";
+
+    /// <summary>The recorded-state half of the Reset card.</summary>
+    public const string ResetStateSectionId = "settings-reset-state";
 
     /// <summary>The control that asks for a reset. The catalogue's id, kept across the rename.</summary>
     public const string ResetButtonId = "settings-reset-button";
@@ -40,6 +48,17 @@ public class OctopusSampleSettingsView : MonoBehaviour
 
     /// <summary>The control that backs out of a reset.</summary>
     public const string ResetCancelId = "settings-reset-cancel";
+    public const string AccountRowId = "settings-account-row";
+    public const string ConfigRowId = "settings-reconfigure-button";
+    /// <summary>
+    /// The configuration half of the Reset card. A section inside <see cref="ResetCardId"/> since
+    /// the two cards merged; the name is kept so a QA step that scoped itself to it still resolves.
+    /// </summary>
+    public const string ResetConfigCardId = "settings-reset-config-card";
+    public const string ResetConfigButtonId = "settings-reset-config-button";
+    public const string ResetConfigConfirmId = "settings-reset-config-confirm";
+    public const string ResetConfigCancelId = "settings-reset-config-cancel";
+    public const string ResetConfigResultId = "settings-reset-config-result";
 
     /// <summary>The footer stating what this build is.</summary>
     public const string VersionLabelId = "settings-version-label";
@@ -58,7 +77,10 @@ public class OctopusSampleSettingsView : MonoBehaviour
 
     private RectTransform _content;
     private RectTransform _supportCard;
-    private RectTransform _resetCard;
+    private RectTransform _resetState;
+    private RectTransform _resetConfigCard;
+    private bool _confirmingConfigReset;
+    private string _configResetResult;
     private bool _confirmingReset;
     private string _resetResult = string.Empty;
     private TMP_Text _language;
@@ -66,6 +88,12 @@ public class OctopusSampleSettingsView : MonoBehaviour
 
     public const string AppearanceRowId = "settings-appearance-row";
     public const string LanguageRowId = "settings-language-row";
+
+    /// <summary>The Language row's link to the Locale scenario, the one place the override is set.</summary>
+    public const string LanguageLinkId = "settings-language-locale-link";
+
+    /// <summary>The catalogue id of the scenario that sets the language override.</summary>
+    public const string LocaleScenarioId = "locale";
     public const string ResetResultId = "settings-reset-result";
     public string ResetResult { get { return _resetResult; } }
 
@@ -177,6 +205,28 @@ public class OctopusSampleSettingsView : MonoBehaviour
         RepaintReset();
     }
 
+    public void RequestConfigurationReset()
+    {
+        _confirmingConfigReset = true;
+        _configResetResult = null;
+        RepaintConfigurationReset();
+    }
+
+    public void CancelConfigurationReset()
+    {
+        _confirmingConfigReset = false;
+        RepaintConfigurationReset();
+    }
+
+    public void ConfirmConfigurationReset()
+    {
+        if (!_confirmingConfigReset) return;
+        var cleared = OctopusScenarioSdk.ResetConfiguration(out _configResetResult);
+        _confirmingConfigReset = false;
+        RepaintConfigurationReset();
+        if (cleared) OctopusSampleConfigView.Open();
+    }
+
     private void OnDestroy()
     {
         OctopusSampleSettingsRows.Changed -= OnRowsChanged;
@@ -219,6 +269,10 @@ public class OctopusSampleSettingsView : MonoBehaviour
         _content.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg);
         var intro = SampleUi.Card(IntroCardId, _content);
         SampleUi.FlexibleLabel(intro, "Sample", SampleUi.TextBody, SampleUi.TitleColor);
+        SampleUi.ListRow(AccountRowId, intro, "Account", "SSO sign-in and connection state",
+            () => OctopusSampleAccountView.Open());
+        SampleUi.ListRow(ConfigRowId, intro, "Change configuration", "Choose a configured sample profile",
+            () => OctopusSampleConfigView.Open());
         var appearance = SampleUi.ListRow(AppearanceRowId, intro, "Appearance", AppearanceText(),
             () => OctopusSampleAppearanceView.Open());
         // ListRow's Copy contains the title followed by its current-value line.
@@ -230,7 +284,9 @@ public class OctopusSampleSettingsView : MonoBehaviour
         SampleUi.FlexibleLabel(language, "Language", SampleUi.TextBody, SampleUi.TitleColor);
         _language = SampleUi.FlexibleLabel(language, LanguageText(), SampleUi.TextCaption, SampleUi.Muted);
         _language.gameObject.name = "settings-language-value";
-        SampleUi.FlexibleLabel(language, "Read-only · set through the Locale scenario.", SampleUi.TextCaption, SampleUi.Muted);
+        SampleUi.FlexibleLabel(language, "Read-only here · set through the Locale scenario.", SampleUi.TextCaption, SampleUi.Muted);
+        SampleUi.Button(LanguageLinkId, language, "Open Locale scenario", SampleUiButtonVariant.Tertiary,
+            OpenLocaleScenario);
 
         _supportCard = SampleUi.Card(SupportCardId, _content);
         SampleUi.FlexibleLabel(_supportCard, "Support", SampleUi.TextTitle, SampleUi.TitleColor)
@@ -300,44 +356,90 @@ public class OctopusSampleSettingsView : MonoBehaviour
         if (_appearance != null) _appearance.text = AppearanceText();
     }
 
+    /// <summary>Opens the Locale scenario over the Scenarios tab. Wired to <see cref="LanguageLinkId"/>.</summary>
+    public void OpenLocaleScenario()
+    {
+        var shell = GetComponentInParent<OctopusSampleShell>();
+        if (shell != null) shell.OpenScenarioScreen(LocaleScenarioId);
+    }
+
     private void BuildResetCard()
     {
-        _resetCard = SampleUi.Card(ResetCardId, _content);
+        var card = SampleUi.Card(ResetCardId, _content);
+        SampleUi.FlexibleLabel(card, "Reset", SampleUi.TextTitle, SampleUi.TitleColor);
+        _resetState = ResetSection(ResetStateSectionId, card);
+        _resetConfigCard = ResetSection(ResetConfigCardId, card);
         RepaintReset();
+        RepaintConfigurationReset();
+    }
+
+    // A plain stack inside the card, not a nested card: one frame for the group, one repaint
+    // target per reset.
+    private static RectTransform ResetSection(string id, RectTransform card)
+    {
+        var section = SampleUi.Panel(id, card, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(section, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm), new RectOffset(), false);
+        return section;
+    }
+
+    private void RepaintConfigurationReset()
+    {
+        if (_resetConfigCard == null) return;
+        for (var i = _resetConfigCard.childCount - 1; i >= 0; i--)
+        {
+            var child = _resetConfigCard.GetChild(i).gameObject;
+            if (child.name == SampleUi.StrokeName) continue;
+            child.SetActive(false);
+            child.transform.SetParent(null, false);
+            if (Application.isPlaying) Destroy(child); else DestroyImmediate(child);
+        }
+        SampleUi.FlexibleLabel(_resetConfigCard, "Configuration", SampleUi.TextBody, SampleUi.TitleColor);
+        SampleUi.FlexibleLabel(_resetConfigCard,
+            "Clears the saved profile choice and returns to Configuration. Recorded results, appearance and the current SDK session are kept. Nothing is deleted on the server.",
+            SampleUi.TextCaption, SampleUi.Muted);
+        if (!string.IsNullOrEmpty(_configResetResult))
+            SampleUi.FlexibleLabel(_resetConfigCard, _configResetResult, SampleUi.TextCaption, SampleUi.Attention)
+                .gameObject.name = ResetConfigResultId;
+        if (_confirmingConfigReset)
+        {
+            SampleUiBackCancel.Mark(SampleUi.Button(ResetConfigCancelId, _resetConfigCard, "Cancel", SampleUiButtonVariant.Secondary, CancelConfigurationReset));
+            SampleUi.Button(ResetConfigConfirmId, _resetConfigCard, "Reset configuration", SampleUiButtonVariant.Destructive, ConfirmConfigurationReset);
+        }
+        else SampleUi.Button(ResetConfigButtonId, _resetConfigCard, "Reset configuration", SampleUiButtonVariant.Destructive, RequestConfigurationReset);
     }
 
     private void RepaintReset()
     {
-        if (_resetCard == null) return;
+        if (_resetState == null) return;
 
-        for (var i = _resetCard.childCount - 1; i >= 0; i--)
+        for (var i = _resetState.childCount - 1; i >= 0; i--)
         {
-            var child = _resetCard.GetChild(i).gameObject;
+            var child = _resetState.GetChild(i).gameObject;
             if (child.name == SampleUi.StrokeName) continue;
             child.SetActive(false);
             child.transform.SetParent(null, false);
             if (Application.isPlaying) Destroy(child); else DestroyImmediate(child);
         }
 
-        SampleUi.FlexibleLabel(_resetCard, "Reset", SampleUi.TextBody, SampleUi.TitleColor);
-        SampleUi.FlexibleLabel(_resetCard,
+        SampleUi.FlexibleLabel(_resetState, "Sample state", SampleUi.TextBody, SampleUi.TitleColor);
+        SampleUi.FlexibleLabel(_resetState,
             "Clears recorded connection results and unseen counts; refreshes community access from the SDK. " +
             "SDK configuration, " +
             "language and appearance stay as they are. No server data is deleted.",
             SampleUi.TextCaption, SampleUi.Muted);
 
         if (!string.IsNullOrEmpty(_resetResult))
-            SampleUi.FlexibleLabel(_resetCard, _resetResult, SampleUi.TextCaption, SampleUi.TitleColor)
+            SampleUi.FlexibleLabel(_resetState, _resetResult, SampleUi.TextCaption, SampleUi.TitleColor)
                 .gameObject.name = ResetResultId;
 
         if (!_confirmingReset)
         {
-            SampleUi.Button(ResetButtonId, _resetCard, "Reset sample state", SampleUiButtonVariant.Destructive, RequestReset);
+            SampleUi.Button(ResetButtonId, _resetState, "Reset sample state", SampleUiButtonVariant.Destructive, RequestReset);
             return;
         }
 
-        SampleUi.FlexibleLabel(_resetCard, "Reset the sample's recorded state?", SampleUi.TextBody, SampleUi.Attention);
-        SampleUi.Button(ResetCancelId, _resetCard, "Cancel", SampleUiButtonVariant.Secondary, CancelReset);
-        SampleUi.Button(ResetConfirmId, _resetCard, "Reset", SampleUiButtonVariant.Destructive, ConfirmReset);
+        SampleUi.FlexibleLabel(_resetState, "Reset the sample's recorded state?", SampleUi.TextBody, SampleUi.Attention);
+        SampleUiBackCancel.Mark(SampleUi.Button(ResetCancelId, _resetState, "Cancel", SampleUiButtonVariant.Secondary, CancelReset));
+        SampleUi.Button(ResetConfirmId, _resetState, "Reset", SampleUiButtonVariant.Destructive, ConfirmReset);
     }
 }

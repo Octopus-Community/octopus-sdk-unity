@@ -59,6 +59,48 @@ public class OctopusSampleDeveloperToolsViewTests
     }
 
     [Test]
+    public void TheForceLoginLinkClosesToolsAndOpensConfiguration()
+    {
+        OctopusScenarioSdk.Use(new OctopusRecordingScenarioSdk
+        {
+            Profile = new OctopusExampleConfig.ExampleProfile { apiKey = "test-key" },
+        });
+        try
+        {
+            Click(OctopusSampleDeveloperToolsView.ForceLoginConfigLinkId);
+            Assert.IsTrue(_view == null, "Developer tools stayed open over Configuration.");
+            var config = Object.FindAnyObjectByType<OctopusSampleConfigView>();
+            Assert.IsNotNull(config, "The Force login link opened no Configuration screen.");
+            Object.DestroyImmediate(config.gameObject);
+        }
+        finally
+        {
+            OctopusScenarioSdk.Use(null);
+        }
+    }
+
+    [Test]
+    public void ThePushRegistrationLinkClosesToolsOnScenariosNotifications()
+    {
+        var shell = OctopusSampleShell.Create();
+        try
+        {
+            shell.Select(OctopusSampleTab.Home);
+            Click(OctopusSampleDeveloperToolsView.PushRegistrationScenariosLinkId);
+            Assert.IsTrue(_view == null, "Developer tools stayed open over Scenarios.");
+            Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
+            var list = shell.GetComponentInChildren<OctopusScenariosListView>();
+            Assert.IsNotNull(list);
+            Assert.AreEqual(ScenarioSection.Notifications, list.FocusedSection,
+                "The link did not bring the section holding the Push switch into view.");
+        }
+        finally
+        {
+            Object.DestroyImmediate(shell.gameObject);
+        }
+    }
+
+    [Test]
     public void DetailLayerKeepsDebugEntryConsoleAndFeedbackAboveIt()
     {
         Assert.AreEqual(SampleUi.DetailSortingOrder, _view.GetComponent<Canvas>().sortingOrder);

@@ -115,3 +115,7 @@ Assets/google-services.json.meta
 Assets/StreamingAssets/google-services-desktop.json
 Assets/StreamingAssets/google-services-desktop.json.meta
 Assets/Plugins/Android/FirebaseApp.androidlib/res/values/google-services.xml
+# Ruby bundle, installed locally by Scripts/store/publish-ios.sh (BUNDLE_PATH). Never a
+# system gem path, so a publishing run needs no sudo and leaves nothing behind outside here.
+/vendor/
+/.bundle/

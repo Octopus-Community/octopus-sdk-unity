@@ -31,10 +31,26 @@ public class OctopusExampleConfig : ScriptableObject
         // Snapshot of the owning config's secret. Never serialized per profile; native token
         // callbacks can read this plain C# value without loading a Unity resource off-thread.
         [System.NonSerialized] internal string signingSecret = "";
+
+        // Snapshot of the owning config's backend host, for the same reason. Empty means the
+        // demo backend: see OctopusExampleConfig.ResolveApiServerHost.
+        [System.NonSerialized] internal string apiServerHost = "";
     }
 
     [Tooltip("Demo only: local HS256 secret for SSO and bridge posts, shared by all profiles. Empty uses authToken for SSO; bridge posts need a host signer. Never ship in production.")]
     public string ssoTokenSecret = "";
+
+    /// <summary>
+    /// The backend the sample's demo keys, SSO secret and bridge-post configuration live on — the
+    /// same host the Android sample's demo flavor, the Flutter sample and the React Native sample
+    /// target. The native SDKs default to the production host, where the demo community exists
+    /// with the same key but without its bridge-post setup, so initialising without a host made
+    /// every bridge preset fail with "Bridge posts are not configured for this community".
+    /// </summary>
+    public const string DemoApiServerHost = "api-demo2.8pus.io";
+
+    [Tooltip("Backend host passed to OctopusSDK.Initialize and SwitchCommunity. Host only: no scheme, port or path (e.g. api.example.test, never https://api.example.test:443). Empty targets the demo backend (" + DemoApiServerHost + "), where the demo keys live. Set it only to point the sample at another environment.")]
+    [SerializeField] string apiServerHost = "";
 
     [Header("Default profile (OctopusAuth examples)")]
     [SerializeField] ExampleProfile defaultProfile = new ExampleProfile();
@@ -73,10 +89,20 @@ public class OctopusExampleConfig : ScriptableObject
             bio = identity.bio,
             picture = identity.picture,
             entitlements = (string[])(identity.entitlements ?? new string[0]).Clone(),
-            signingSecret = ssoTokenSecret
+            signingSecret = ssoTokenSecret,
+            apiServerHost = ApiServerHost
         };
     }
     public string DesignReferenceUrl => designReferenceUrl;
+
+    /// <summary>The host the sample initialises the SDK against: the override, else the demo backend.</summary>
+    public string ApiServerHost => ResolveApiServerHost(apiServerHost);
+
+    /// <summary>Trimmed <paramref name="configured"/>, or <see cref="DemoApiServerHost"/> when blank.</summary>
+    public static string ResolveApiServerHost(string configured)
+    {
+        return string.IsNullOrWhiteSpace(configured) ? DemoApiServerHost : configured.Trim();
+    }
 
     private static OctopusExampleConfig _instance;
 

@@ -190,6 +190,8 @@ public class OctopusHostNotificationsScenarioTests
         CollectionAssert.AreEqual(new[] { "SwitchCommunity" }, _sdk.ScenarioMethods);
         Assert.AreEqual("qa-alternate-key", _sdk.Calls[0].Args[0]);
         Assert.AreEqual("sso", ((ConnectionMode)_sdk.Calls[0].Args[1]).Mode);
+        Assert.AreEqual(OctopusExampleConfig.DemoApiServerHost, _sdk.Calls[0].Args[2],
+            "A switch without the host lands the demo session on production (#391).");
         StringAssert.DoesNotContain("qa-alternate-key", pilot.Result);
         _sdk.Clear();
         Tap(new ConnectionScenario(), 0);
@@ -265,18 +267,18 @@ public class OctopusHostNotificationsScenarioTests
     {
         var pilot = new PushNotificationsScenario();
         pilot.Presets[0].Fill(pilot.Fields);
-        Assert.AreEqual("octopus-demo-post-id-unset", pilot.Fields.Get("postId"));
+        Assert.AreEqual(OctopusSampleFixtures.PostTextId, pilot.Fields.Get("postId"));
         Assert.IsEmpty(_sdk.Calls);
         Warm();
         Tap(pilot, 0);
         CollectionAssert.AreEqual(new[] { "IsOctopusNotification", "GetOctopusNotification", "OpenNotification" }, _sdk.ScenarioMethods);
         var payload = (IDictionary<string, string>)_sdk.Calls[0].Args[0];
         Assert.AreEqual("true", payload["is_octopus_notification"]);
-        Assert.AreEqual("post/octopus-demo-post-id-unset", payload["link_path"]);
-        Assert.AreEqual("octopus-demo-post-id-unset", payload["post_id"]);
+        Assert.AreEqual("post/" + OctopusSampleFixtures.PostTextId, payload["link_path"]);
+        Assert.AreEqual(OctopusSampleFixtures.PostTextId, payload["post_id"]);
         var notification = (OctopusNotification)_sdk.Last.Args[0];
-        Assert.AreEqual("octopus-sdk://post/octopus-demo-post-id-unset", notification.DeepLink);
-        StringAssert.Contains("not-found placeholder", pilot.Result);
+        Assert.AreEqual("octopus-sdk://post/" + OctopusSampleFixtures.PostTextId, notification.DeepLink);
+        StringAssert.Contains(OctopusSampleFixtures.PostTextId, pilot.Result);
         Assert.IsFalse(pilot.IsRunning);
     }
     [TestCase(false, false, 1)] [TestCase(true, true, 2)]

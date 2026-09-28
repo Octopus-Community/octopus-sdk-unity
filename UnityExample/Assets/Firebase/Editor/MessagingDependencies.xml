@@ -4,6 +4,9 @@ FirebaseMessaging iOS and Android Dependencies.
 -->
 
 <dependencies>
+  <!-- Octopus sample: firebase-analytics removed on purpose. The sample uses Messaging only, and
+       Analytics pulls in AD_ID, the adservices and install-referrer permissions. Re-importing
+       the Firebase Unity SDK restores it: delete that androidPackage again. -->
   <remoteSwiftPackage url="https://github.com/firebase/firebase-ios-sdk.git" version="12.8.0">
     <swiftPackage name="FirebaseMessaging" replacesPod="Firebase/Messaging"/>
   </remoteSwiftPackage>
@@ -13,8 +16,6 @@ FirebaseMessaging iOS and Android Dependencies.
   </iosPods>
   <androidPackages>
     <androidPackage spec="com.google.firebase:firebase-messaging:25.0.1">
-    </androidPackage>
-    <androidPackage spec="com.google.firebase:firebase-analytics:23.0.0">
     </androidPackage>
     <androidPackage spec="com.google.firebase:firebase-iid:21.1.0">
     </androidPackage>

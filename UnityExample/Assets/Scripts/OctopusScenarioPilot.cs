@@ -130,7 +130,7 @@ public sealed class OctopusScenarioPreset
 ///
 /// Ids are never spelled here: <see cref="ResultTestId"/> and <see cref="PresetTestId"/> read the
 /// matching row of <see cref="OctopusScenarioCatalog"/>, which is itself the verbatim mirror of
-/// `shared/config/scenarios-catalog.yaml` in pm-tools. One transcription, one place to drift, one
+/// the shared QA scenario catalog (internal). One transcription, one place to drift, one
 /// test guarding it — rather than the same string typed into a pilot, a screen and a test.
 ///
 /// Nothing in a pilot's construction reaches the SDK. The SDK is touched from
@@ -161,8 +161,12 @@ public abstract class OctopusScenarioPilot : IDisposable
     /// <summary>The catalogue id, e.g. "connection".</summary>
     public string Id { get { return _row.Id; } }
 
-    /// <summary>The catalogue title, e.g. "Connection".</summary>
-    public string Title { get { return _row.Title; } }
+    /// <summary>
+    /// The title the screen shows, e.g. "Sign in and out as the demo user" — the same string as
+    /// the card that opened it, so a tap never renames what you are looking at. The catalogue's
+    /// own spelling stays reachable as <see cref="OctopusScenario.Title"/>.
+    /// </summary>
+    public string Title { get { return _row.DisplayTitle; } }
 
     /// <summary>The catalogue's (abridged) capability line.</summary>
     public virtual string Capability { get { return _row.Capability; } }
@@ -269,7 +273,7 @@ public abstract class OctopusScenarioPilot : IDisposable
         return true;
     }
 
-    /// <summary>The catalogue's nth preset test id, 1-based, exactly as pm-tools spells it.</summary>
+    /// <summary>The catalogue's nth preset test id, 1-based, exactly as the shared catalog spells it.</summary>
     protected string PresetTestId(int oneBasedIndex)
     {
         var ids = _row.PresetTestIds;

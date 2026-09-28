@@ -84,6 +84,15 @@ OctopusSDK.OnModifyUser += (ProfileField? field) =>
 };
 ```
 
+`OnModifyUser` has a second trigger, independent of app-managed fields and of the connection
+mode: with Unified Profile active (`NavigateToProfileHandler` set), the **"Edit my profile"**
+item of a member's Activity screen raises it with a `null` field — no specific field, the user
+just asked for your profile editor. Octopus is dismissed before delivery, as for a profile tap.
+
+On iOS that menu item is offered only while `OnModifyUser` has a subscriber, so it never
+dead-ends; on Android the native SDK always offers it. Subscribe to `OnModifyUser` whenever you
+set `NavigateToProfileHandler` and both platforms behave identically.
+
 If your SSO setup requires forced login (contact us for this setting), listen for the login-required event:
 
 ```csharp

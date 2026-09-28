@@ -45,7 +45,7 @@ public class OctopusCommunityScenarioTests
         var pilot = Pilot<GroupsScenario>();
         pilot.Presets[0].Fill(pilot.Fields);
         Assert.AreEqual("fetch", pilot.Fields.Get("action"));
-        Assert.AreEqual("none", pilot.Fields.Get("groupId"));
+        Assert.AreEqual(OctopusSampleFixtures.DefaultTopicId, pilot.Fields.Get("groupId"));
         Assert.IsEmpty(_sdk.Calls);
         _sdk.Groups.Add(new OctopusGroup { Id = "group-1", Name = "Sample group", CanAccess = true });
         pilot.Presets[0].Run(pilot.Fields);
@@ -261,7 +261,7 @@ public class OctopusCommunityScenarioTests
     {
         var pilot = Pilot<ReactionsScenario>();
         pilot.Presets[index].Fill(pilot.Fields);
-        Assert.AreEqual("unity-demo-fake-post-id", pilot.Fields.Get("postId"));
+        Assert.AreEqual(OctopusSampleFixtures.PostReactionStackId, pilot.Fields.Get("postId"));
         Assert.AreEqual(value, pilot.Fields.Get("reaction"));
         Assert.IsEmpty(_sdk.Calls);
         pilot.Fields.Set("postId", "chosen-post");
@@ -375,7 +375,7 @@ public class OctopusCommunityScenarioTests
         Assert.AreEqual(CreatePostScenario.DefaultText, pilot.Fields.Get("text"));
         Assert.AreEqual("Open", pilot.Fields.Get("ctaLabel"));
         Assert.AreEqual("https://octopuscommunity.com/preset", pilot.Fields.Get("ctaUrl"));
-        Assert.AreEqual("auto", pilot.Fields.Get("groupId"));
+        Assert.AreEqual(OctopusSampleFixtures.DefaultTopicId, pilot.Fields.Get("groupId"));
         Assert.IsEmpty(_sdk.Calls);
         _sdk.Groups.Add(new OctopusGroup { Id = "first", Name = "First" });
         _sdk.Groups.Add(new OctopusGroup { Id = "general", Name = "General" });
@@ -387,7 +387,7 @@ public class OctopusCommunityScenarioTests
         Assert.AreEqual(cta ? "https://octopuscommunity.com/preset" : null, prefill.CtaUrl);
         Assert.AreEqual(image ? "/sample-cache/scenario-share.png" : null, prefill.ImagePath);
         Assert.AreEqual(image, prefill.SignBridgeShare != null);
-        Assert.AreEqual("general", prefill.TopicId);
+        Assert.AreEqual(OctopusSampleFixtures.DefaultTopicId, prefill.TopicId);
         StringAssert.Contains("Publishing requires a connected member", pilot.Result);
     }
 
@@ -556,6 +556,28 @@ public class OctopusCommunityScenarioTests
     }
 
     [Test]
+    public void HostBridgeShareSignerIsObservableWithoutChangingTheFallback()
+    {
+        Assert.IsFalse(OctopusScenarioSdk.HasHostBridgeShareSigner,
+            "No host signer is installed, so the sample is on its demo fallback.");
+        Assert.IsNotNull(OctopusScenarioSdk.BridgeShareSigner,
+            "The fallback is what makes the getter non-null; that is what hides the state.");
+
+        OctopusScenarioSdk.BridgeShareSigner = fingerprint =>
+            System.Threading.Tasks.Task.FromResult("host-result:" + fingerprint);
+        try
+        {
+            Assert.IsTrue(OctopusScenarioSdk.HasHostBridgeShareSigner);
+            Assert.AreEqual("host-result:sample-fingerprint",
+                OctopusScenarioSdk.BridgeShareSigner("sample-fingerprint").Result);
+        }
+        finally { OctopusScenarioSdk.BridgeShareSigner = null; }
+
+        Assert.IsFalse(OctopusScenarioSdk.HasHostBridgeShareSigner,
+            "Clearing the host signer must restore the demo fallback AND say so.");
+    }
+
+    [Test]
     public void LiveSignerFollowsCommunitySwitchAndForgetsTheSecretOnStop()
     {
         _sdk.Profile = ProfileWithSigningSecret("unit-test-only-secret");
@@ -563,7 +585,7 @@ public class OctopusCommunityScenarioTests
         // These lifecycle hooks are internal to the sample assembly; invoke them without widening its API.
         var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
         typeof(OctopusScenarioSdk).GetMethod("CommunitySwitched", flags).Invoke(null,
-            new object[] { ProfileWithSigningSecret("another-unit-test-secret") });
+            new object[] { ProfileWithSigningSecret("another-unit-test-secret"), 1 });
         var live = new OctopusLiveScenarioSdk();
         var before = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var token = live.SignBridgeShare("sample-fingerprint").GetAwaiter().GetResult();

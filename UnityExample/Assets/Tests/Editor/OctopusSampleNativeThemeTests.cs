@@ -68,6 +68,13 @@ public class OctopusSampleNativeThemeTests
         Assert.AreEqual(OctopusSampleBranding.SdkDarkPrimaryLow, dark.PrimaryLow);
         Assert.AreEqual(OctopusSampleBranding.SdkDarkPrimaryHigh, dark.PrimaryHigh);
         Assert.AreEqual(OctopusSampleBranding.SdkDarkOnPrimary, dark.OnPrimary);
+        Assert.AreEqual(OctopusSamplePalette.Dark().Page, dark.Background,
+            "The community body and native app bar must use the shell page background.");
+        Assert.AreEqual(unchecked((int)0xFF070D17), OctopusSDK.ColorToInt(dark.Background),
+            "The Android bridge must receive the opaque Signal page color.");
+        Assert.AreEqual(dark.Primary, dark.Link);
+        Assert.AreNotEqual(dark.Background, dark.PrimaryLow,
+            "Tinted SDK containers must stand apart from the page.");
         Assert.AreNotEqual(light.Primary, dark.Primary, "Both appearances share one primary.");
     }
 
@@ -88,7 +95,11 @@ public class OctopusSampleNativeThemeTests
         Assert.AreEqual(2, theme.Count, "Expected ApplyTheme then SetColorSchemeType.");
         Assert.AreEqual("ApplyTheme", theme[0].Method);
         Assert.AreEqual(OctopusSampleBranding.SdkLightPrimaryMain, ((OctopusColorScheme)theme[0].Args[0]).Primary);
-        Assert.AreEqual(OctopusSampleBranding.SdkDarkPrimaryMain, ((OctopusColorScheme)theme[0].Args[1]).Primary);
+        var dark = (OctopusColorScheme)theme[0].Args[1];
+        Assert.AreEqual(OctopusSampleBranding.SdkDarkPrimaryMain, dark.Primary);
+        Assert.AreEqual(OctopusSampleBranding.DarkBackground, dark.Background,
+            "ApplyTheme must preserve the background used by the native body and app bar.");
+        Assert.AreEqual(OctopusSampleBranding.AccentDark, dark.Link);
         Assert.AreEqual("SetColorSchemeType", theme[1].Method);
         Assert.AreEqual(1, theme[1].Args[0]);
         Assert.AreEqual("Initialize", _sdk.Calls[0].Method, "The theme must be sent after Initialize.");

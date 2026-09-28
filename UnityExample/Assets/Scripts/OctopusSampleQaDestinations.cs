@@ -5,7 +5,7 @@ using System.Collections.Generic;
 /// catalogue's scenarios.
 ///
 /// Why a second list rather than a 28th row in <see cref="OctopusScenarioCatalog"/>: that catalogue
-/// is a verbatim mirror of pm-tools' `scenarios-catalog.yaml`, the cross-platform contract every
+/// is a verbatim mirror of the shared QA scenario catalog (internal), the cross-platform contract every
 /// SDK sample answers to, and its own tests pin it at 27 entries with a preset and a result id
 /// each. Reef Run is this sample's own screen, not an SDK scenario the other platforms owe — so it
 /// gets its own list here, and the QA command line stays exactly what it would have been.
@@ -14,9 +14,11 @@ public static class OctopusSampleQaDestinations
 {
     /// <summary>Reef Run, the sample's in-app game.</summary>
     public const string Arcade = "arcade";
+    public const string Config = "config";
+    public const string Account = "account";
 
     /// <summary>The destination ids this sample can open. Disjoint from the catalogue's ids.</summary>
-    public static readonly IReadOnlyList<string> Ids = new List<string> { Arcade };
+    public static readonly IReadOnlyList<string> Ids = new List<string> { Arcade, Config, Account };
 
     /// <summary>Whether <paramref name="id"/> is a destination of this sample.</summary>
     public static bool Has(string id)
@@ -31,6 +33,6 @@ public static class OctopusSampleQaDestinations
     /// <summary>The tab a destination is reached from, so QA lands on the same screen a player does.</summary>
     public static string TabOf(string id)
     {
-        return id == Arcade ? "home" : null;
+        return id == Arcade ? "home" : id == Config || id == Account ? "settings" : null;
     }
 }

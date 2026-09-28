@@ -145,16 +145,18 @@ public class OctopusSampleFeatureTogglesTests
     [Test]
     public void OnceTheSdkIsUpTheSwitchSaysWhyItStoppedDeciding()
     {
-        // This sample initialises once per process, so a flip after that changes nothing until a
-        // restart. The header says so; the alternative — a live-looking switch with no effect — is
-        // the defect the contract names.
+        // Once the SDK is up the switch no longer decides anything: the Configuration screen does,
+        // live, by switching community with the profile's mode. The header sends the tester there
+        // rather than to a restart that is not needed; the alternative — a live-looking switch with
+        // no effect — is the defect the contract names.
         Assert.AreEqual(string.Empty, OctopusSampleFeatureToggles.ForceLoginLockedNote(),
             "The switch claims to be locked before anything initialised it.");
 
         OctopusSampleState.ReportInitialized("SSO");
 
-        StringAssert.Contains("Restart", OctopusSampleFeatureToggles.ForceLoginLockedNote(),
-            "The switch is dead and the header does not say why.");
+        var note = OctopusSampleFeatureToggles.ForceLoginLockedNote();
+        StringAssert.Contains("Configuration", note, "The switch is dead and the header does not say where to go.");
+        StringAssert.DoesNotContain("Restart", note, "Configuration applies the profile live; no restart is needed.");
     }
 
     [Test]
@@ -185,11 +187,15 @@ public class OctopusSampleFeatureTogglesTests
         shell.Select(OctopusSampleTab.Scenarios);
         Assert.IsNull(Find(shell.transform, OctopusScenariosListView.ForceLoginLockedNoteId),
             "The switch claims to be locked before anything initialised the SDK.");
+        Assert.IsNull(Find(shell.transform, OctopusScenariosListView.ForceLoginConfigLinkId),
+            "The link to Configuration shows while the switch still decides.");
 
         OctopusSampleState.ReportInitialized("SSO");
 
         Assert.IsNotNull(Find(shell.transform, OctopusScenariosListView.ForceLoginLockedNoteId),
             "A scenario brought the SDK up and the switch behind it still looks live.");
+        Assert.IsNotNull(Find(shell.transform, OctopusScenariosListView.ForceLoginConfigLinkId),
+            "The locked note names Configuration without linking to it.");
     }
 
     [Test]

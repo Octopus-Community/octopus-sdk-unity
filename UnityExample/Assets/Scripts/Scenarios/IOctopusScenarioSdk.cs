@@ -60,7 +60,8 @@ public interface IOctopusScenarioSdk
     event Action<bool> OnHasAccessToCommunityChanged;
     void OverrideCommunityAccess(bool hasAccess, Action onCompleted, Action<string> onError);
     OctopusExampleConfig.ExampleProfile AlternateProfile { get; }
-    void SwitchCommunity(string apiKey, ConnectionMode mode, Action onCompleted, Action<string> onError);
+    /// <summary>`OctopusSDK.SwitchCommunity(apiKey, mode, apiServerHost, 443, ...)` — the host overload, so a switch stays on the backend Initialize targeted (#391).</summary>
+    void SwitchCommunity(string apiKey, ConnectionMode mode, string apiServerHost, Action onCompleted, Action<string> onError);
     void Reset(Action onCompleted, Action<string> onError);
     void Stop(Action onCompleted, Action<string> onError);
     event Action<int> OnNotSeenNotificationsCount;
@@ -68,8 +69,8 @@ public interface IOctopusScenarioSdk
     bool IsOctopusNotification(IDictionary<string, string> payload);
     OctopusNotification GetOctopusNotification(IDictionary<string, string> payload);
     void Open(OctopusNotification notification);
-    /// <summary>`OctopusSDK.Initialize(apiKey, mode)`.</summary>
-    void Initialize(string apiKey, ConnectionMode mode);
+    /// <summary>`OctopusSDK.Initialize(apiKey, mode, apiServerHost)`.</summary>
+    void Initialize(string apiKey, ConnectionMode mode, string apiServerHost);
 
     /// <summary>`OctopusSDK.ConnectUser(...)`. The task completes when the call returns.</summary>
     Task ConnectUser(string userId, string nickname, string bio, string picture,
@@ -107,6 +108,13 @@ public interface IOctopusScenarioSdk
     void DebugOverrideTermsAcceptanceMode(OctopusTermsAcceptanceMode? mode);
     /// <summary>Reads effective configuration asynchronously; a null result means unavailable.</summary>
     void DebugGetCommunityConfig(Action<OctopusCommunityConfig> onResult, Action<string> onError);
+    /// <summary>Debug override of exposeClientUserId; null restores the backend value.</summary>
+    void DebugOverrideExposeClientUserId(bool? enabled);
+    /// <summary>
+    /// Routes member-avatar taps whose clientUserId is exposed to the host; null restores native
+    /// navigation to the SDK profile.
+    /// </summary>
+    void SetNavigateToProfileHandler(Action<string> handler);
     /// <summary>Debug override; null restores backend field locks.</summary>
     void DebugOverrideProfileFieldsLock(OctopusProfileFieldsLock fieldsLock);
     /// <summary>Fetches a public member snapshot; a null result means unknown or unavailable.</summary>
@@ -241,8 +249,9 @@ public sealed class OctopusLiveScenarioSdk : IOctopusScenarioSdk
             return config == null ? null : (OctopusSampleFeatureToggles.ForceLogin ? config.Default : config.ForcedLogin);
         }
     }
-    public void SwitchCommunity(string apiKey, ConnectionMode mode, Action onCompleted, Action<string> onError)
-    { OctopusSDK.SwitchCommunity(apiKey, mode, onCompleted, onError); }
+    /// <inheritdoc/>
+    public void SwitchCommunity(string apiKey, ConnectionMode mode, string apiServerHost, Action onCompleted, Action<string> onError)
+    { OctopusSDK.SwitchCommunity(apiKey, mode, apiServerHost, 443, onCompleted, onError); }
     public void Reset(Action onCompleted, Action<string> onError) { OctopusSDK.Reset(onCompleted, onError); }
     public void Stop(Action onCompleted, Action<string> onError) { OctopusSDK.Stop(onCompleted, onError); }
     public event Action<int> OnNotSeenNotificationsCount
@@ -255,9 +264,9 @@ public sealed class OctopusLiveScenarioSdk : IOctopusScenarioSdk
     public OctopusNotification GetOctopusNotification(IDictionary<string, string> payload) { return OctopusSDK.GetOctopusNotification(payload); }
     public void Open(OctopusNotification notification) { OctopusSDK.Open(notification); }
     /// <inheritdoc/>
-    public void Initialize(string apiKey, ConnectionMode mode)
+    public void Initialize(string apiKey, ConnectionMode mode, string apiServerHost)
     {
-        OctopusSDK.Initialize(apiKey, mode);
+        OctopusSDK.Initialize(apiKey, mode, apiServerHost);
     }
 
     /// <inheritdoc/>
@@ -317,6 +326,14 @@ public sealed class OctopusLiveScenarioSdk : IOctopusScenarioSdk
     public void DebugGetCommunityConfig(Action<OctopusCommunityConfig> onResult, Action<string> onError)
     {
         OctopusSDK.DebugGetCommunityConfig(onResult, onError);
+    }
+    public void DebugOverrideExposeClientUserId(bool? enabled)
+    {
+        OctopusSDK.DebugOverrideExposeClientUserId(enabled);
+    }
+    public void SetNavigateToProfileHandler(Action<string> handler)
+    {
+        OctopusSDK.NavigateToProfileHandler = handler;
     }
     public void DebugOverrideProfileFieldsLock(OctopusProfileFieldsLock fieldsLock)
     {

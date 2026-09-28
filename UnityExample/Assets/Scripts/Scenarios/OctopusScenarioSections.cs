@@ -57,7 +57,7 @@ public class ScenarioSectionGroup
 ///
 /// The listed cards follow <see cref="OctopusScenarioPilots.Ids"/>, one per driven scenario.
 /// Remaining platform coverage is tracked where TOKENS §1 puts it — in
-/// `pm-tools/shared/config/scenarios-catalog.yaml`, whose `pending.unity` entries the QA analyzer
+/// the shared QA scenario catalog (internal), whose `pending.unity` entries the QA analyzer
 /// and `sample-coverage-guard` read.
 /// </summary>
 public static class OctopusScenarioSections
@@ -170,18 +170,31 @@ public static class OctopusScenarioSections
 
     /// <summary>
     /// Whether <paramref name="scenario"/> survives <paramref name="query"/>: a blank query keeps
-    /// everything, and otherwise the title, the capability line and the id are matched
-    /// case-insensitively — the same three fields Android, Flutter and React Native match, minus
-    /// the subtitle this sample folds into its capability line. The section title is deliberately
-    /// not matched: a query that hit a head would return cards that do not contain it.
+    /// everything, and otherwise every string the card can show — the displayed title, the
+    /// subtitle, the API symbol — plus the id and the capability line behind it are matched
+    /// case-insensitively. Android matches title, subtitle, api and id; the capability line is
+    /// this sample's own addition and stays, because it is what the Scenarios tab matched on
+    /// before the cards were reworded and a search that used to find a row should keep finding it.
+    /// The section title is deliberately not matched: a query that hit a head would return cards
+    /// that do not contain it.
     /// </summary>
     public static bool Matches(OctopusScenario scenario, string query)
     {
         if (string.IsNullOrEmpty(query) || query.Trim().Length == 0) return true;
         var needle = query.Trim().ToLowerInvariant();
-        return scenario.Title.ToLowerInvariant().Contains(needle)
-               || scenario.Capability.ToLowerInvariant().Contains(needle)
-               || scenario.Id.ToLowerInvariant().Contains(needle);
+        return Hit(scenario.DisplayTitle, needle)
+               || Hit(scenario.Subtitle, needle)
+               || Hit(scenario.ApiSymbol, needle)
+               || Hit(scenario.Title, needle)
+               || Hit(scenario.Capability, needle)
+               || Hit(scenario.Id, needle);
+    }
+
+    /// <summary>A null-tolerant contains: the four unlisted scenarios carry no product wording.</summary>
+    private static bool Hit(string haystack, string lowercaseNeedle)
+    {
+        return !string.IsNullOrEmpty(haystack)
+               && haystack.ToLowerInvariant().Contains(lowercaseNeedle);
     }
 
     /// <summary>

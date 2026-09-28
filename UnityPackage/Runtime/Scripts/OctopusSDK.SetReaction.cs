@@ -91,7 +91,7 @@ public partial class OctopusSDK
     /// Pass null or None to remove it. Unknown and invalid enum values fail with UnknownReaction.
     /// Call on the Unity main thread after Initialize; callbacks run on a subsequent player update
     /// and wait while the native UI pauses Unity. Connection and bridge failures use ReactionError.
-    /// On iOS 1.13.2, removing an absent reaction can return ReactionError.</summary>
+    /// On iOS 1.14.0, removing an absent reaction can return ReactionError.</summary>
     public static void SetReaction(string contentId, OctopusReactionKind? kind,
         Action onCompleted, Action<OctopusSetReactionError> onError)
     {

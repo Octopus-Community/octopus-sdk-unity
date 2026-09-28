@@ -22,6 +22,10 @@
 //    OctopusScenarioSdk.BridgeShareSigner; static authToken cannot sign them.
 // 4. Optional designReferenceUrl supplies the About screen's Design reference link.
 //    Empty hides the row.
+// 5. Optional apiServerHost overrides the backend OctopusSDK.Initialize and SwitchCommunity
+//    target. Host only: no scheme, port or path (api.example.test, not https://…:443). Empty uses the
+//    demo backend (api-demo2.8pus.io), where the demo keys, secret and bridge-post setup live;
+//    the native SDKs' own default is production, where bridge posts are not configured.
 //
 // The generated Resources/OctopusExampleConfig.asset is gitignored. Keep its
 // credentials local. Production apps obtain tokens from their backend and never

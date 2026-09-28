@@ -17,11 +17,11 @@ using UnityEngine;
 // Invocation (once a licensed Editor is available):
 //   Unity -batchmode -quit -projectPath UnityExample \
 //         -executeMethod BuildScript.BuildAndroid -logFile -
-//   Unity -batchmode -quit -projectPath UnityExample \
+//   Unity -batchmode -quit -projectPath UnityExample -buildTarget iOS \
 //         -executeMethod BuildScript.BuildIOS -logFile -
 //   Unity -batchmode -nographics -projectPath UnityExample \
 //         -executeMethod BuildScript.BuildAndroidDebug -logFile -      (QA debug APK, no secrets)
-//   Unity -batchmode -nographics -quit -projectPath UnityExample \
+//   Unity -batchmode -nographics -quit -projectPath UnityExample -buildTarget iOS \
 //         -executeMethod BuildScript.BuildIOSSimulator -logFile -
 //
 // Every build input arrives through an environment variable, never a command-line argument
@@ -62,6 +62,7 @@ public static class BuildScript
             PlayerSettings.Android.keyaliasPass = keyPassword;
             PlayerSettings.Android.useCustomKeystore = true;
             PlayerSettings.Android.bundleVersionCode = versionCode;
+            ApplySdkVersionName();
 
             // Play Console no longer accepts new APK uploads for this applicationId — an AAB
             // is mandatory. EditorUserBuildSettings, not a BuildOptions flag: buildAppBundle
@@ -92,7 +93,7 @@ public static class BuildScript
         }
     }
 
-    // Unsigned debug APK for on-device QA (pm-tools `qa/qa.sh unity build`, which invokes
+    // Unsigned debug APK for on-device QA (the internal QA runner invokes
     // `-executeMethod BuildScript.BuildAndroidDebug` from the repo root and then installs
     // UnityExample/build/android/UnityExample.apk). No keystore, no version code, no secret:
     // the debug keystore Unity ships is used and restored afterwards, so this never leaves the
@@ -109,6 +110,7 @@ public static class BuildScript
         var buildAppBundle = EditorUserBuildSettings.buildAppBundle;
         var target = NamedBuildTarget.Android;
         var previousDefines = PlayerSettings.GetScriptingDefineSymbols(target);
+        var previousVersionName = PlayerSettings.bundleVersion;
         try
         {
             var outputPath = Environment.GetEnvironmentVariable("OUTPUT_PATH");
@@ -116,6 +118,7 @@ public static class BuildScript
 
             PlayerSettings.Android.useCustomKeystore = false;
             EditorUserBuildSettings.buildAppBundle = false;
+            ApplySdkVersionName();
             PlayerSettings.SetScriptingDefineSymbols(target, WithInternalDefine(
                 previousDefines, Environment.GetEnvironmentVariable("OCTOPUS_INTERNAL")));
 
@@ -123,22 +126,24 @@ public static class BuildScript
             options.options = BuildOptions.Development;
             var report = BuildPipeline.BuildPlayer(options);
 
-            RestoreAndroidDebugSettings(useCustomKeystore, buildAppBundle, previousDefines);
+            RestoreAndroidDebugSettings(useCustomKeystore, buildAppBundle, previousDefines, previousVersionName);
             ExitOnResult(report);
         }
         catch (Exception e)
         {
-            RestoreAndroidDebugSettings(useCustomKeystore, buildAppBundle, previousDefines);
+            RestoreAndroidDebugSettings(useCustomKeystore, buildAppBundle, previousDefines, previousVersionName);
             Debug.LogError($"[BuildScript] BuildAndroidDebug failed: {e}");
             EditorApplication.Exit(1);
         }
     }
 
-    private static void RestoreAndroidDebugSettings(bool useCustomKeystore, bool buildAppBundle, string defines)
+    private static void RestoreAndroidDebugSettings(bool useCustomKeystore, bool buildAppBundle, string defines,
+        string versionName)
     {
         PlayerSettings.Android.useCustomKeystore = useCustomKeystore;
         EditorUserBuildSettings.buildAppBundle = buildAppBundle;
         PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.Android, defines);
+        PlayerSettings.bundleVersion = versionName;
     }
 
     // Pure so EditMode tests can check both directions without changing PlayerSettings.
@@ -168,12 +173,14 @@ public static class BuildScript
     // lane alongside `match` and `build_app`, one step after this method returns.
     public static void BuildIOS()
     {
+        if (!RequireActiveIOSTarget(nameof(BuildIOS))) return;
         try
         {
             var buildNumber = RequireEnv("APP_BUILD_NUMBER");
             var outputPath = RequireEnv("OUTPUT_PATH"); // e.g. build/ios (a directory)
 
             PlayerSettings.iOS.buildNumber = buildNumber;
+            ApplySdkVersionName();
 
             var report = BuildPipeline.BuildPlayer(BuildPlayerOptionsFor(BuildTarget.iOS, outputPath));
             ExitOnResult(report);
@@ -190,6 +197,7 @@ public static class BuildScript
     // Build and install the exported workspace separately with signing disabled.
     public static void BuildIOSSimulator()
     {
+        if (!RequireActiveIOSTarget(nameof(BuildIOSSimulator))) return;
         try
         {
             var outputPath = Environment.GetEnvironmentVariable("OUTPUT_PATH");
@@ -197,6 +205,10 @@ public static class BuildScript
 
             var previousSdk = PlayerSettings.iOS.sdkVersion;
             var previousSimulatorArch = PlayerSettings.iOS.simulatorSdkArchitecture;
+            // IOSSimulatorDefine, an IPreprocessBuildWithReport, adds IOS_SIMULATOR to the iOS
+            // defines during the build and nothing took it back out: every simulator export left
+            // the tracked ProjectSettings.asset modified (#253).
+            var previousDefines = PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.iOS);
             UnityEditor.Build.Reporting.BuildReport report;
             try
             {
@@ -213,6 +225,7 @@ public static class BuildScript
                 // Restore before ExitOnResult exits the Editor, including on build failure.
                 PlayerSettings.iOS.sdkVersion = previousSdk;
                 PlayerSettings.iOS.simulatorSdkArchitecture = previousSimulatorArch;
+                PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.iOS, previousDefines);
             }
             ExitOnResult(report);
         }
@@ -224,6 +237,46 @@ public static class BuildScript
     }
 
     // ===== Shared =====
+
+    // The two iOS entry points are worthless unless the Editor is already ON the iOS target.
+    // UnityPackage/Editor/iOSBuildPostProcessor.cs is guarded by `#if UNITY_EDITOR && UNITY_IOS`,
+    // so an Editor launched without `-buildTarget iOS` starts on the previously active platform,
+    // never compiles that post-processor, and never runs patch_xcode_proj.rb. The export then
+    // SUCCEEDS and hands back an Xcode project that cannot resolve the Octopus / OctopusCore /
+    // OctopusUI modules, with no error at export time to say so (#253).
+    //
+    // Refusing is deliberate rather than switching the target here: a switch triggers a script
+    // recompile and a domain reload, and what would have to survive that reload is the very
+    // method making the call.
+    private static bool RequireActiveIOSTarget(string method)
+    {
+#if UNITY_IOS
+        return true;
+#else
+        Debug.LogError($"[BuildScript] {method} needs the iOS build target to be active — the Editor " +
+            "is on another platform, so the iOS build post-processor is not compiled and the exported " +
+            "Xcode project would not link the Octopus Swift package. Relaunch with -buildTarget iOS.");
+        EditorApplication.Exit(1);
+        return false;
+#endif
+    }
+
+    // What Play and TestFlight display (versionName / CFBundleShortVersionString) is
+    // PlayerSettings.bundleVersion, and ProjectSettings.asset keeps it at the Unity default
+    // 1.0.0 — so every store build of the sample announced 1.0.0 whatever SDK it embedded
+    // (#273). Set it at build time from the package's own constant rather than from a value
+    // committed next to it: `ci/native-pins/verify-native-pins.sh`, required on every PR,
+    // already fails when that constant and UnityPackage/package.json disagree byte for byte,
+    // so this cannot drift and there is no second place to bump at release time.
+    //
+    // This dirties ProjectSettings.asset, exactly like the keystore fields above. The two store
+    // scripts restore that file from a snapshot on every exit path (see
+    // Scripts/store/common.sh); BuildAndroidDebug, which no script wraps, puts the previous
+    // value back itself.
+    private static void ApplySdkVersionName()
+    {
+        PlayerSettings.bundleVersion = OctopusSDK.Version;
+    }
 
     private static BuildPlayerOptions BuildPlayerOptionsFor(BuildTarget target, string outputPath)
     {

@@ -15,7 +15,7 @@ public sealed class OctopusReactionCount
     }
 }
 
-/// <summary>The public post snapshot shared by Android 1.13.4 and iOS 1.13.2.
+/// <summary>The public post snapshot shared by Android 1.14.1 and iOS 1.14.0.
 /// These native interfaces do not expose text, author or creation date.</summary>
 public sealed class OctopusPost
 {
