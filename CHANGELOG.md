@@ -6,6 +6,20 @@ section when a release is cut (format inspired by
 
 ## Unreleased
 
+## 1.14.1 — 2026-10-02
+
+Hotfix on the 1.14 line: it carries only the fix below on top of 1.14.0. Native SDKs unchanged
+(Android 1.14.1, iOS 1.14.0), no C# API change. Legacy `OctopusCommunitySDK.unitypackage` for this
+version was regenerated with Unity Editor 6000.3.3f1 (`build_legacy_package.sh`, the reference
+path), not import-tested in a scratch project before the cut. UPM remains the reference install
+path.
+
+### Fixed
+- bridge: On Android, the game no longer shows through the community during screen transitions.
+  The community window keeps its translucent theme; its screens now sit on an opaque layer in the
+  community background color, which follows forced light/dark and the system theme. Needs the
+  rebuilt bridge AAR shipped with this package.
+
 ## 1.14.0 — 2026-09-28
 
 Legacy `OctopusCommunitySDK.unitypackage` for this version was regenerated with Unity Editor 6000.3.3f1 (`build_legacy_package.sh`, the reference path), not import-tested in a scratch project before the cut. UPM remains the reference install path.
