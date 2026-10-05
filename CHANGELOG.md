@@ -6,6 +6,31 @@ section when a release is cut (format inspired by
 
 ## Unreleased
 
+## 1.14.2 — 2026-10-05
+
+Hotfix on the 1.14 line: it only moves the native SDKs on top of 1.14.1 (Android 1.14.1 → 1.14.2,
+iOS 1.14.0 → 1.14.1). No C# API change, bridge code unchanged (the AAR was rebuilt against Android
+1.14.2 and is byte-identical). Unity 2019.4 minimum unchanged. Legacy
+`OctopusCommunitySDK.unitypackage` for this version was regenerated with Unity Editor 6000.3.3f1
+(`build_legacy_package.sh`, the reference path), not import-tested in a scratch project before the
+cut. UPM remains the reference install path.
+
+### Changed
+- iOS: native SDK pinned to 1.14.1. It fixes the build error with Swift 6.2 / Xcode 26.2 and a
+  crash on Apple Silicon Macs when a sheet is presented.
+- Android: native SDK pinned to 1.14.2. It shows the right message to a user banned through SSO,
+  keeps the nickname on an SSO profile sync, and makes concurrent initialize/stop calls safe.
+  Android 1.14.2 deprecates a few empty-state icon slots that have not been rendered since 1.14.0
+  (screen states replaced them); the bridge still sets them, with no visible effect.
+
+### Fixed
+- iOS: an Xcode project exported in Append mode now gets its Swift package pin updated to the
+  current native version; it used to keep the version from the first export.
+- Requirements: the documented Android minimum is now API 23. The native Android SDK depends on
+  Media3 Compose, which requires API 23, so an app below API 23 already failed manifest merging on
+  earlier versions; the API 21 listed until now was never buildable. Nothing changes for apps that
+  build today.
+
 ## 1.14.1 — 2026-10-02
 
 Hotfix on the 1.14 line: it carries only the fix below on top of 1.14.0. Native SDKs unchanged

@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-PACKAGE_VERSION = '1.14.0'
+PACKAGE_VERSION = '1.14.1'
 PACKAGE_URL     = 'https://github.com/Octopus-Community/octopus-sdk-swift.git'
 PRODUCTS        = ['Octopus', 'OctopusUI']
 
@@ -68,12 +68,14 @@ package =
 unless package
   package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
   package.repositoryURL = PACKAGE_URL
-  package.requirement = {
-    'kind' => 'exactVersion',
-    'version' => PACKAGE_VERSION
-  }
   pbxproj.package_references << package
 end
+# Always (re)write the requirement: an Xcode project exported in Append mode keeps the
+# reference from the previous SDK version, and leaving it untouched would pin the old one.
+package.requirement = {
+  'kind' => 'exactVersion',
+  'version' => PACKAGE_VERSION
+}
 
 # ------------------------------------------------------------
 # 2. Resolve UnityFramework target
