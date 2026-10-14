@@ -6,6 +6,22 @@ section when a release is cut (format inspired by
 
 ## Unreleased
 
+## 1.14.3 — 2026-10-13
+
+Hotfix on the 1.14 line: it carries only the iOS fix below on top of 1.14.2. Native SDKs unchanged
+(Android 1.14.2, iOS 1.14.1), no C# API change, bridge AAR unchanged. Unity 2019.4 minimum
+unchanged. Legacy `OctopusCommunitySDK.unitypackage` for this version was regenerated with Unity
+Editor 6000.3.3f1 (`build_legacy_package.sh`, the reference path), not import-tested in a scratch
+project before the cut. UPM remains the reference install path.
+
+### Fixed
+- iOS: terminating the app while the Octopus UI is presented no longer crashes in
+  `BackgroundJobQueue::CreateMainThreadGroup()`. Unity's `applicationWillTerminate:` tears the
+  engine down, then dismisses the still-presented Octopus controller, whose `viewDidDisappear`
+  resumed the destroyed player. The bridge now stops pausing or resuming Unity once termination
+  starts; presenting, dismissing and backgrounding behave as before. Affected 1.12.2 through
+  1.14.2 (from a customer report on Unity 6000.3).
+
 ## 1.14.2 — 2026-10-05
 
 Hotfix on the 1.14 line: it only moves the native SDKs on top of 1.14.1 (Android 1.14.1 → 1.14.2,

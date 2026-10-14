@@ -25,9 +25,19 @@
 #define OCTOPUS_UNITY_HAS_SET_PLAYER_PAUSE 0
 #endif
 
+// Set once the app starts terminating, and never cleared. Unity's applicationWillTerminate: runs
+// UnityCleanup() and then UnityCleanupTrampoline(), which sets the window's rootViewController to
+// nil: that dismisses a still-presented Octopus controller synchronously, and its viewDidDisappear
+// would resume a player that no longer exists (EXC_BAD_ACCESS in
+// BackgroundJobQueue::CreateMainThreadGroup). The flag is raised by the applicationWillTerminate:
+// swizzle below, before Unity's own implementation runs, so it does not depend on whether UIKit
+// posts UIApplicationWillTerminateNotification before or after calling the delegate.
+static BOOL gOctopusAppTerminating = NO;
+
 extern "C" {
 
 void OctopusUnityPause(void) {
+    if (gOctopusAppTerminating) return;                // Unity is being torn down: never touch it again
     if (UnityIsPaused()) return;                       // idempotent
     UnityAppController *controller = GetAppController();
     // Flush the scheduled OnApplicationPause(true) through one player-loop tick before stopping the
@@ -55,6 +65,7 @@ void OctopusUnityPause(void) {
 }
 
 void OctopusUnityResume(void) {
+    if (gOctopusAppTerminating) return;                // Unity is being torn down: never touch it again
     if (!UnityIsPaused()) return;                      // idempotent
 #if OCTOPUS_UNITY_HAS_SET_PLAYER_PAUSE
     // Resume the loop with OnApplicationPause(false) scheduled for the next tick — what the 6000.5
@@ -110,6 +121,38 @@ void OctopusSetForcedOrientationMask(NSUInteger mask) { gOctopusForcedMask = mas
             // the build post-processor already patches to include the forced orientation.
             NSLog(@"[Octopus SDK] supportedInterfaceOrientationsForWindow: not found on UnityAppController "
                   @"(origM=%p swizM=%p); relying on Info.plist for forced orientation", origM, swizM);
+        }
+    });
+}
+
+@end
+
+// Raises gOctopusAppTerminating (see above) before Unity's applicationWillTerminate: tears the
+// engine down. A subclass installed with IMPL_APP_CONTROLLER_SUBCLASS reaches this through super;
+// one that skips super also skips UnityCleanupTrampoline, so it never dismisses our controller.
+@interface UnityAppController (OctopusTermination)
+@end
+
+@implementation UnityAppController (OctopusTermination)
+
+- (void)octopus_applicationWillTerminate:(UIApplication *)application {
+    gOctopusAppTerminating = YES;
+    // After the exchange this selector points at Unity's original implementation.
+    [self octopus_applicationWillTerminate:application];
+}
+
++ (void)load {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        Class cls = [UnityAppController class];
+        Method origM = class_getInstanceMethod(cls, @selector(applicationWillTerminate:));
+        Method swizM = class_getInstanceMethod(cls, @selector(octopus_applicationWillTerminate:));
+        if (origM != NULL && swizM != NULL) {
+            method_exchangeImplementations(origM, swizM);
+        } else {
+            NSLog(@"[Octopus SDK] applicationWillTerminate: not found on UnityAppController "
+                  @"(origM=%p swizM=%p); the Unity loop is not guarded against resume on termination",
+                  origM, swizM);
         }
     });
 }
