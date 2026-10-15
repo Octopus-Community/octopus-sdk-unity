@@ -4,7 +4,14 @@ public class CustomThemesExample : MonoBehaviour
 {
     void Start()
     {
-        OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.OctopusAuth());
+        MainMenu.RegisterSsoLoginRoute();
+        OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.SSO(),
+            OctopusExampleConfig.Instance.ApiServerHost);
+    }
+
+    void OnDestroy()
+    {
+        MainMenu.UnregisterSsoLoginRoute();
     }
 
     public void Light()

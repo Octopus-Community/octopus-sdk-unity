@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using NUnit.Framework;
+using UnityEditor;
 
 public class BuildScriptDefineTests
 {
@@ -38,6 +39,26 @@ public class BuildScriptDefineTests
         var actual = WithInternalDefine(defines, environmentValue);
         Assert.AreEqual(expected, actual);
         Assert.AreEqual(expected, WithInternalDefine(actual, environmentValue));
+    }
+
+    [TestCase(null, BuildOptions.Development)]
+    [TestCase("", BuildOptions.Development)]
+    [TestCase("true", BuildOptions.Development)]
+    [TestCase("TRUE", BuildOptions.Development)]
+    [TestCase("0", BuildOptions.Development)]
+    [TestCase(" false ", BuildOptions.Development)]
+    [TestCase("false", BuildOptions.None)]
+    [TestCase("False", BuildOptions.None)]
+    [TestCase("FALSE", BuildOptions.None)]
+    public void AndroidDebugBuildIsDevelopmentUnlessTheEnvironmentSaysFalse(
+        string environmentValue, BuildOptions expected)
+    {
+        var type = Type.GetType("BuildScript, Assembly-CSharp-Editor");
+        Assert.IsNotNull(type, "BuildScript is missing from Assembly-CSharp-Editor.");
+        var method = type.GetMethod("AndroidDebugBuildOptions", BindingFlags.Public | BindingFlags.Static);
+        Assert.IsNotNull(method, "The pure Android debug build options helper is missing or renamed.");
+        // Compare values, not names: Mono's Enum.ToString() also lists the obsolete aliases equal to 0.
+        Assert.AreEqual(expected, (BuildOptions)method.Invoke(null, new object[] { environmentValue }));
     }
 
     [Test]

@@ -8,7 +8,7 @@ public sealed class OctopusProfile
     /// <summary>Held entitlement identifiers, unique and unordered. Display only; access is resolved by the backend.</summary>
     public IReadOnlyCollection<string> Entitlements { get; private set; }
 
-    /// <summary>The host user id supplied in SSO mode; null for guests and Octopus authentication.
+    /// <summary>The host user id supplied through ConnectUser; null for guests and restored sessions without a host identity.
     /// Independent of the setting that exposes other members' client user ids.</summary>
     public string ClientUserId { get; private set; }
 

@@ -25,16 +25,14 @@ public partial class OctopusSDK
     /// <summary>Refreshes the specified member's public community data. ClientUserId requires the
     /// community to expose client user ids; ProfileId selects the Octopus profile directly.
     /// Call on the Unity main thread after initialization; callbacks run on that thread.
-    /// Native failures surfaced as null remain null; thrown failures use onError.
+    /// Successful lookups with no member data return null via onResult; native lookup failures use onError.
     /// Lifecycle changes cancel pending requests via onError.</summary>
     /// <exception cref="ArgumentNullException">memberId is null.</exception>
     public static void FetchCommunityData(OctopusCommunityMemberId memberId,
         Action<OctopusCommunityData> onResult, Action<string> onError)
     {
         if (memberId == null) throw new ArgumentNullException("memberId");
-        OctopusMainThread.EnsureExists();
-        int id = RegisterCommunityDataRequest(onResult, onError);
-        try
+        DispatchCommunityDataFetch(onResult, onError, id =>
         {
 #if UNITY_EDITOR
             Mock.Record("FetchCommunityData", memberId.ProfileId, memberId.ClientUserId);
@@ -52,10 +50,21 @@ public partial class OctopusSDK
 #else
             CompleteCommunityDataRequest(id, null, "Unsupported platform.");
 #endif
-        }
-        catch (Exception)
+        });
+    }
+
+    internal static void DispatchCommunityDataFetch(Action<OctopusCommunityData> onResult,
+        Action<string> onError, Action<int> dispatch)
+    {
+        OctopusMainThread.EnsureExists();
+        int id = RegisterCommunityDataRequest(onResult, onError);
+        try
         {
-            CompleteCommunityDataRequest(id, null, "Could not fetch community data.");
+            dispatch(id);
+        }
+        catch (Exception e)
+        {
+            CompleteCommunityDataRequest(id, null, "Could not start community data fetch. Details: " + e.GetType().Name);
         }
     }
 

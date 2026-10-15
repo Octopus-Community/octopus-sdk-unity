@@ -102,6 +102,75 @@ public static class SampleUi
         if (DebugEntryClaimed != null) DebugEntryClaimed(claimant);
     }
 
+    /// <summary>The bug glyph the shell's app bar draws in place of the entry's "Debug" text.</summary>
+    public const string DebugEntryIconName = "BugIcon";
+
+    /// <summary>
+    /// Draws the injected Debug entry as Android's app-bar icon button — a 24dp bug glyph in a
+    /// 48dp target — or gives it its text back. The label keeps its GameObject and colour, only its
+    /// renderer is switched off, so the entry's QA name and its text stay readable to a dump.
+    /// Returns false, and leaves the text, when the glyph is not available.
+    /// </summary>
+    public static bool SetDebugEntryIcon(RectTransform entry, bool on)
+    {
+        return SetDebugEntryIcon(entry, on, ChromeButtonInk);
+    }
+
+    /// <summary>
+    /// <see cref="SetDebugEntryIcon(RectTransform, bool)"/> with the glyph drawn in
+    /// <paramref name="ink"/>: the app bar's own content colour, which is not the navy chrome's on
+    /// a bar that sits on the page.
+    /// </summary>
+    public static bool SetDebugEntryIcon(RectTransform entry, bool on, Color ink)
+    {
+        if (entry == null) return false;
+        var label = entry.GetComponentInChildren<TMP_Text>(true);
+        var existing = entry.Find(DebugEntryIconName);
+        if (!on)
+        {
+            if (existing != null)
+            {
+                existing.gameObject.SetActive(false);
+                // Detached before the destroy: at runtime Destroy only lands at the end of the
+                // frame, and a shell rebuild re-adopts the entry within that same frame — a Find
+                // would hand it this doomed glyph back, and the entry would end the frame with its
+                // text hidden and no icon at all (an empty disc on device).
+                existing.SetParent(null, false);
+                existing.name = DebugEntryIconName + " (released)";
+                if (Application.isPlaying) Object.Destroy(existing.gameObject);
+                else Object.DestroyImmediate(existing.gameObject);
+            }
+            if (label != null) label.enabled = true;
+            return true;
+        }
+        var icon = existing != null ? (RectTransform)existing : Panel(DebugEntryIconName, entry, OctopusSampleBranding.Clear);
+        icon.gameObject.SetActive(true);
+        var image = icon.GetComponent<Image>();
+        if (!SampleUiIcons.Apply(image, "bug_report", ink))
+        {
+            if (existing == null)
+            {
+                if (Application.isPlaying) Object.Destroy(icon.gameObject);
+                else Object.DestroyImmediate(icon.gameObject);
+            }
+            if (label != null) label.enabled = true;
+            return false;
+        }
+        image.raycastTarget = false;
+        var ignore = icon.GetComponent<LayoutElement>();
+        if (ignore == null) ignore = icon.gameObject.AddComponent<LayoutElement>();
+        ignore.ignoreLayout = true;
+        icon.anchorMin = icon.anchorMax = icon.pivot = new Vector2(0.5f, 0.5f);
+        icon.sizeDelta = Vector2.one * OctopusSampleBranding.Dp(24f);
+        icon.anchoredPosition = Vector2.zero;
+        if (label != null) label.enabled = false;
+        var element = entry.GetComponent<LayoutElement>();
+        if (element == null) element = entry.gameObject.AddComponent<LayoutElement>();
+        element.minWidth = element.preferredWidth = OctopusSampleBranding.MinTouchUnits;
+        element.flexibleWidth = 0f;
+        return true;
+    }
+
     /// <summary>The 1080x1920 canvas reference every code-built screen here is measured in.</summary>
     public static readonly Vector2 CanvasReference = new Vector2(1080f, 1920f);
 
@@ -112,16 +181,22 @@ public static class SampleUi
     public const float ReferenceDpWidth = 360f;
 
     /// <summary>A screen title, 22sp.</summary>
-    public const int TextTitleXl = 66;
+    public const int TextTitleXl = OctopusSampleBranding.TitleTextUnits;
 
-    /// <summary>A section or card title, 16sp.</summary>
-    public const int TextTitle = 48;
+    /// <summary>A section or card title, 18sp.</summary>
+    public const int TextTitle = OctopusSampleBranding.HeadlineTextUnits;
 
-    /// <summary>Body copy, 14sp.</summary>
-    public const int TextBody = 42;
+    /// <summary>Body copy, 16sp.</summary>
+    public const int TextBody = OctopusSampleBranding.BodyTextUnits;
 
     /// <summary>Secondary copy, 12sp — the TOKENS §2 floor itself, never anything below it.</summary>
-    public const int TextCaption = 36;
+    public const int TextCaption = OctopusSampleBranding.CaptionTextUnits;
+
+    /// <summary>Row subtitles and section headers, 14sp (Material bodyMedium / titleSmall).</summary>
+    public const int TextLabel = OctopusSampleBranding.LabelTextUnits;
+
+    /// <summary>The name of a summary group's inset divider; never a QA id.</summary>
+    public const string DividerName = "Divider";
 
     /// <summary>The screen ground.</summary>
     public static Color Background { get { return OctopusSampleBranding.Palette.Page; } }
@@ -139,7 +214,7 @@ public static class SampleUi
     public static Color Muted { get { return OctopusSampleBranding.Palette.Muted; } }
 
     /// <summary>
-    /// This platform's identity hue. TOKENS §7 reserves it for the Home chip and the launcher badge
+    /// This platform's identity hue. TOKENS §7 reserves it for the platform identity and the launcher badge
     /// — never for a semantic element, and never for a screen title, which is what it used to dress
     /// here. Titles take <see cref="TitleColor"/>; the accent role is <see cref="Accent"/>.
     /// </summary>
@@ -152,7 +227,7 @@ public static class SampleUi
     public static Color Attention { get { return OctopusSampleBranding.Palette.Attention; } }
 
     /// <summary>A button's ground: the accent, with <see cref="ButtonInk"/> on top.</summary>
-    public static Color ButtonFill { get { return OctopusSampleBranding.Palette.Accent; } }
+    public static Color ButtonFill { get { return OctopusSampleBranding.Palette.ButtonBackground; } }
 
     /// <summary>The readable ink on <see cref="ButtonFill"/> — white would be 2.21:1 in dark theme.</summary>
     public static Color ButtonInk { get { return OctopusSampleBranding.Palette.OnAccent; } }
@@ -275,8 +350,9 @@ public static class SampleUi
         label.parseCtrlCharacters = false;
         label.fontStyle = size >= TextTitle ? FontStyles.Bold : FontStyles.Normal;
         // Authored line heights are preserved by the TMP scale adapter.
-        float lineDp = size >= TextTitleXl ? 28f : size >= TextTitle ? 22f
-            : size > TextCaption ? 20f : 18f;
+        float lineDp = size >= TextTitleXl ? OctopusSampleBranding.TitleLineSp : size >= TextTitle ? OctopusSampleBranding.HeadlineLineSp
+            : size == TextLabel ? OctopusSampleBranding.LabelLineSp
+            : size > TextCaption ? OctopusSampleBranding.BodyLineSp : OctopusSampleBranding.CaptionLineSp;
         go.AddComponent<SampleUiScaledText>().Configure(size, OctopusSampleBranding.Dp(lineDp), tabLabel);
         label.color = color;
         label.alignment = Alignment(anchor);
@@ -294,8 +370,6 @@ public static class SampleUi
     public static TMP_Text FlexibleLabel(Transform parent, string text, int size, Color color)
     {
         var palette = OctopusSampleBranding.Palette;
-        if (OctopusSampleBranding.Theme == OctopusSampleTheme.Dark && size == TextBody &&
-            (color == palette.Title || color == palette.Muted)) color = palette.Body;
         var label = Label("Line", parent, text, size, color, TextAnchor.UpperLeft);
         label.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
         return label;
@@ -324,8 +398,8 @@ public static class SampleUi
     public static void VariantColors(SampleUiButtonVariant variant, out Color fill, out Color ink, out Color border)
     {
         var p = OctopusSampleBranding.Palette;
-        fill = variant == SampleUiButtonVariant.Primary ? p.Accent
-            : variant == SampleUiButtonVariant.Destructive ? p.DangerSurface : p.SurfaceHigh;
+        fill = variant == SampleUiButtonVariant.Primary ? p.ButtonBackground
+            : variant == SampleUiButtonVariant.Destructive ? p.DangerSurface : p.Surface;
         ink = variant == SampleUiButtonVariant.Primary ? p.OnAccent
             : variant == SampleUiButtonVariant.Destructive ? p.Negative : p.Accent;
         border = variant == SampleUiButtonVariant.Secondary ? p.ControlBorder
@@ -490,6 +564,7 @@ public static class SampleUi
         var rect = Panel(name, parent, p.Surface, OctopusSampleBranding.CardRadius, p.Border, 0f);
         var stroke = Stroke(rect, OctopusSampleBranding.CardRadius, p.Border, OctopusSampleBranding.Stroke);
         TouchLayout(rect, string.IsNullOrEmpty(subtitle) ? OctopusSampleBranding.MinTouchDp
+            : name.StartsWith("scenarios-", System.StringComparison.Ordinal) ? OctopusSampleBranding.ScenarioRowHeight
             : OctopusSampleBranding.RowWithSubtitleHeight);
         var layout = rect.gameObject.AddComponent<HorizontalLayoutGroup>();
         layout.padding = ContentPadding();
@@ -517,6 +592,88 @@ public static class SampleUi
         button.Configure(rect.GetComponent<Image>(), stroke, label, p.Surface, p.Title, p.Border,
             OctopusSampleBranding.CardRadius, false, detail);
         return rect;
+    }
+
+    /// <summary>
+    /// A flat, full-width Settings row — Android's <c>SummaryRow</c>: no card and no stroke, 16dp
+    /// side padding, a 24dp leading icon at 16dp so the text starts at 56dp, a regular-weight
+    /// title over a 14sp subtitle, and a trailing chevron. 56dp is a floor; a subtitle that wraps
+    /// grows the row (the three-line Developer tools row is 73dp). The copy stays under a child
+    /// named <c>Copy</c> holding <c>Label</c> then the subtitle, the shape callers already read.
+    /// <paramref name="destructive"/> inks the icon and title in the palette's negative colour.
+    /// </summary>
+    public static RectTransform SummaryRow(string name, Transform parent, string icon, string title,
+                                           string subtitle, UnityEngine.Events.UnityAction onClick,
+                                           bool destructive = false)
+    {
+        var p = OctopusSampleBranding.Palette;
+        var ink = destructive ? p.Negative : p.Title;
+        var rect = Panel(name, parent, OctopusSampleBranding.Clear);
+        // Transparent at rest, but the whole row is the touch target, gaps included.
+        var fill = rect.GetComponent<Image>();
+        fill.raycastTarget = true;
+        TouchLayout(rect, OctopusSampleBranding.RowWithSubtitleHeight);
+        var layout = rect.gameObject.AddComponent<HorizontalLayoutGroup>();
+        int side = Mathf.RoundToInt(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg));
+        int vertical = Mathf.RoundToInt(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm));
+        layout.padding = new RectOffset(side, side, vertical, vertical);
+        layout.spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg);
+        layout.childControlWidth = layout.childControlHeight = true;
+        layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+        layout.childAlignment = TextAnchor.MiddleLeft;
+        var glyph = Panel("Icon", rect, OctopusSampleBranding.Clear);
+        SampleUiIcons.Apply(glyph.GetComponent<Image>(), icon, destructive ? p.Negative : p.Muted);
+        var glyphSize = glyph.gameObject.AddComponent<LayoutElement>();
+        glyphSize.minWidth = glyphSize.preferredWidth = OctopusSampleBranding.Dp(24f);
+        glyphSize.minHeight = glyphSize.preferredHeight = OctopusSampleBranding.Dp(24f);
+        var copy = Panel("Copy", rect, OctopusSampleBranding.Clear);
+        copy.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+        VerticalStack(copy, OctopusSampleBranding.Dp(2f), new RectOffset(), false);
+        var label = Label("Label", copy, title, TextBody, ink, TextAnchor.MiddleLeft);
+        TMP_Text detail = null;
+        if (!string.IsNullOrEmpty(subtitle)) detail = FlexibleLabel(copy, subtitle, TextLabel, p.Muted);
+        var chevron = Label("Chevron", rect, "\u203A", TextTitle, p.Muted, TextAnchor.MiddleCenter);
+        chevron.fontStyle = FontStyles.Normal;
+        var chevronSize = chevron.gameObject.AddComponent<LayoutElement>();
+        chevronSize.minWidth = chevronSize.preferredWidth = OctopusSampleBranding.Dp(24f);
+        var button = rect.gameObject.AddComponent<SampleUiButton>();
+        button.targetGraphic = fill;
+        if (onClick != null) button.onClick.AddListener(onClick);
+        button.Configure(fill, null, label, OctopusSampleBranding.Clear, ink, OctopusSampleBranding.Clear,
+            0f, false, detail);
+        return rect;
+    }
+
+    /// <summary>
+    /// A Settings section header — Android's <c>SummaryGroupHeader</c>: 14sp bold (semibold on Android) in the
+    /// title ink, 16dp side margins, 24dp above and 8dp below. Returns the label, named
+    /// <paramref name="name"/>.
+    /// </summary>
+    public static TMP_Text SummaryGroupHeader(string name, Transform parent, string title)
+    {
+        var holder = Panel(name, parent, OctopusSampleBranding.Clear);
+        int side = Mathf.RoundToInt(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg));
+        VerticalStack(holder, 0f, new RectOffset(side, side,
+            Mathf.RoundToInt(OctopusSampleBranding.Dp(24f)),
+            Mathf.RoundToInt(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm))), false);
+        var label = FlexibleLabel(holder, title, TextLabel, OctopusSampleBranding.Palette.Title);
+        // The sample's Inter asset ships regular and bold only; bold stands in for semibold.
+        label.fontStyle = FontStyles.Bold;
+        return label;
+    }
+
+    /// <summary>A 1dp divider between two summary rows, inset 52dp from the start like Android.</summary>
+    public static RectTransform SummaryDivider(Transform parent)
+    {
+        var holder = Panel(DividerName, parent, OctopusSampleBranding.Clear);
+        var size = holder.gameObject.AddComponent<LayoutElement>();
+        size.minHeight = size.preferredHeight = OctopusSampleBranding.Dp(OctopusSampleBranding.Stroke);
+        var line = Panel("Line", holder, OctopusSampleBranding.Palette.Border);
+        Stretch(line, Vector2.zero, Vector2.one);
+        line.offsetMin = new Vector2(OctopusSampleBranding.Dp(OctopusSampleBranding.SummaryDividerInsetDp), 0f);
+        line.offsetMax = Vector2.zero;
+        line.GetComponent<Image>().raycastTarget = false;
+        return holder;
     }
 
     /// <summary>

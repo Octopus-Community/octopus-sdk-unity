@@ -11,7 +11,7 @@ public partial class OctopusSDK
     /// </summary>
     internal static partial class MockBackend
     {
-        internal static void Initialize(string apiKey, ConnectionMode mode)
+        internal static void Initialize(string apiKey, ConnectionMode mode, string initializationOptionsJson)
         {
             // An OctopusMockSettings asset, if present, seeds the toggles. Otherwise keep
             // whatever the host set in code (OctopusSDK.Mock.Enabled / .ShowOverlay) — defaults
@@ -25,7 +25,7 @@ public partial class OctopusSDK
             // Note: when Enabled is false, Record() suppresses, so this Initialize
             // call won't appear in Mock.Calls — intentional (mirrors a no-op SDK).
             LifecycleInitialized = true;
-            Mock.Record("Initialize", apiKey, mode.Mode);
+            Mock.Record("Initialize", apiKey, mode.Mode, initializationOptionsJson);
             InitializeProfileMock(mode);
             // Create the overlay whenever mock is on; ShowOverlay (checked in OnGUI) governs
             // whether it actually draws, so it can be toggled live during Play.
@@ -141,7 +141,7 @@ public partial class OctopusSDK
             };
         }
         internal static void SetLogo() => Mock.Record("SetLogo");
-        internal static void SetAppName(string appName) => Mock.Record("SetAppName", appName ?? "");
+        internal static void SetAppName(string appName) => Mock.Record("SetAppName", appName);
         internal static void SetNavBarUsesPrimaryColor(bool usesPrimary) => Mock.Record("SetNavBarUsesPrimaryColor", usesPrimary);
         internal static void SetColorSchemeType(int colorSchemeType) => Mock.Record("SetColorSchemeType", colorSchemeType);
         internal static void SetForcedOrientation(int forcedOrientation) => Mock.Record("SetForcedOrientation", forcedOrientation);

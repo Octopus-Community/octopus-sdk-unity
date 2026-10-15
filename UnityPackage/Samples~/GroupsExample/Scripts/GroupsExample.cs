@@ -9,7 +9,8 @@ public class GroupsExample : MonoBehaviour
 
     void Start()
     {
-        OctopusSDK.Initialize(API_KEY, ConnectionMode.OctopusAuth());
+        // Connect your host user with a backend token provider before authenticated group actions.
+        OctopusSDK.Initialize(API_KEY, ConnectionMode.SSO());
         OctopusSDK.OnGroupsChanged += groups =>
             Debug.Log($"Groups updated: {groups.Count}");
     }

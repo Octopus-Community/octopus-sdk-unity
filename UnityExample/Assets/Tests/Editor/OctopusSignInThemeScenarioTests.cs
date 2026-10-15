@@ -116,7 +116,8 @@ public class OctopusSignInThemeScenarioTests
     {
         var pilot = new CommunityDataScenario();
         pilot.Presets[index].Fill(pilot.Fields);
-        CollectionAssert.AreEqual(new[] { action, member }, pilot.Fields.All.Select(f => f.Value).ToArray());
+        CollectionAssert.AreEqual(new[] { action, member, OctopusSampleFixtures.OtherUserId },
+            pilot.Fields.All.Select(f => f.Value).ToArray());
         Assert.IsEmpty(_sdk.Calls);
         Assert.AreEqual(0, _sdk.CommunityDataListenerCount);
     }
@@ -342,6 +343,18 @@ public class OctopusSignInThemeScenarioTests
         pilot.Dispose();
     }
 
+    [Test]
+    public void ThemeDemonstratesClearTextAlongsideScreenStateIcons()
+    {
+        var pilot = new ThemeScenario();
+        Tap(pilot, 0);
+        var call = _sdk.Calls.Single(c => c.Method == "SetIcons");
+        var icons = (OctopusIcons)call.Args[0];
+        Assert.IsNotNull(icons.Get(OctopusIconSlot.CommonClearText));
+        Tap(pilot, 4);
+        Assert.IsNull(_sdk.Calls.Last(c => c.Method == "SetIcons").Args[0]);
+    }
+
     [TestCase(0, "brand", "unset", "unset", "unset", "theme_blueberry_logo")]
     [TestCase(1, "brand", "unset", "unset", "unset", "theme_blueberry_logo")]
     [TestCase(2, "brand", "#1B1035", "#FFC857", "22", "theme_blueberry_logo")]
@@ -352,12 +365,12 @@ public class OctopusSignInThemeScenarioTests
     {
         var pilot = new ThemeScenario();
         pilot.Presets[index].Fill(pilot.Fields);
-        CollectionAssert.AreEqual(new[] { primary, background, link, size, logo },
+        CollectionAssert.AreEqual(new[] { primary, background, link, size, logo, logo == "unset" ? "unset" : "screenStates" },
             pilot.Fields.All.Select(f => f.Value).ToArray());
         Assert.IsEmpty(_sdk.Calls);
         Tap(pilot, index);
         CollectionAssert.AreEqual(new[] { "Initialize", "ApplyTheme", "SetColorSchemeType",
-            "ApplyTheme", "SetLogo", "SetFonts" }, _sdk.Methods);
+            "ApplyTheme", "SetLogo", "SetIcons", "SetFonts" }, _sdk.Methods);
         var schemes = _sdk.Calls.Last(c => c.Method == "ApplyTheme");
         for (var i = 0; i < 2; i++)
         {

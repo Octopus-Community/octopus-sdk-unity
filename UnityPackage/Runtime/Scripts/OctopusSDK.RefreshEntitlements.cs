@@ -6,7 +6,7 @@ using UnityEngine;
 /// <summary>Failure categories returned by the native entitlements refresh.</summary>
 public enum OctopusRefreshEntitlementsErrorKind
 {
-    /// <summary>Refresh requires SSO mode and a client token provider.</summary>
+    /// <summary>Call ConnectUser with a token provider before refreshing, including after a relaunch.</summary>
     NoClientTokenProvider,
     /// <summary>No connected non-guest user.</summary>
     UserNotConnected,
@@ -18,12 +18,14 @@ public enum OctopusRefreshEntitlementsErrorKind
     ServerError
 }
 
-/// <summary>A typed entitlements refresh failure preserving the native message.</summary>
+/// <summary>A typed entitlements refresh failure preserving the backend ban reason.</summary>
 public sealed class OctopusRefreshEntitlementsError
 {
     /// <summary>The failure category.</summary>
     public OctopusRefreshEntitlementsErrorKind Kind { get; private set; }
-    /// <summary>The native error message; empty when unavailable.</summary>
+    /// <summary>Native callbacks preserve the backend ban reason for UserBanned.
+    /// Other native failures carry a fixed message with an optional recognized category.
+    /// Empty when unavailable.</summary>
     public string Message { get; private set; }
     /// <summary>Creates a refresh error, including for editor simulation.</summary>
     public OctopusRefreshEntitlementsError(OctopusRefreshEntitlementsErrorKind kind, string message = null)
@@ -75,6 +77,13 @@ public partial class OctopusSDK
     public static void RefreshEntitlements(Action onSuccess, Action<OctopusRefreshEntitlementsError> onError)
     {
         int id = RegisterEntitlementsRequest(onSuccess, onError);
+        if (TokenProvider == null)
+        {
+            CompleteEntitlementsRequest(id, new OctopusRefreshEntitlementsError(
+                OctopusRefreshEntitlementsErrorKind.NoClientTokenProvider,
+                "Call ConnectUser with a token provider before refreshing entitlements."));
+            return;
+        }
         try
         {
 #if UNITY_EDITOR

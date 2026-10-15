@@ -258,8 +258,8 @@ public class OctopusClientObjectRelatedPostTests
             {
                 case "reset": OctopusSDK.Reset(); break;
                 case "stop": OctopusSDK.Stop(); break;
-                case "switch": OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.OctopusAuth()); break;
-                case "initialize": OctopusSDK.Initialize("YOUR_API_KEY", ConnectionMode.OctopusAuth()); break;
+                case "switch": OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.SSO()); break;
+                case "initialize": OctopusSDK.Initialize("YOUR_API_KEY", ConnectionMode.SSO()); break;
                 default: OctopusSDK.Mock.Reset(); break;
             }
             Drain();

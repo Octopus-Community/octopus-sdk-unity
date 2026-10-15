@@ -59,7 +59,7 @@ public sealed class NotSeenNotificationsScenario : OctopusScenarioPilot
     private void Finish(string result) { _outcome = result; Report(result + CountLine()); }
     internal override void ObservationsChanged()
     {
-        if (!IsRunning) Report((_outcome ?? "Ready — no SDK call made by this pilot yet.") + CountLine());
+        if (!IsRunning) Report((_outcome ?? "Not run yet — no SDK call made by this pilot yet.") + CountLine());
     }
     private static string CountLine()
     {

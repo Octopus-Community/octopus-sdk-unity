@@ -20,6 +20,41 @@ public static class OctopusSampleNativeTheme
     // Process lifetime subscription to a process lifetime event; only the current initialized SDK
     // receives updates. A future SwitchCommunity scenario must re-apply after its asset theme pass.
     private static bool _following;
+    private static bool _navy = true;
+    private static int? _appearance;
+    private static bool _configuring;
+
+    public static bool NavyTheme { get { return _navy; } }
+
+    public static int CurrentAppearance { get { return _appearance ?? SchemeTypeFor(OctopusSampleBranding.Theme); } }
+
+    internal static void ResetConfiguration() { _navy = true; _appearance = null; }
+
+    internal static void Configure(bool navy, int? appearance)
+    {
+        _navy = navy;
+        _appearance = appearance;
+        _configuring = true;
+        try
+        {
+            var choice = appearance ?? SchemeTypeFor(OctopusSampleBranding.Theme);
+            OctopusSampleBranding.Theme = choice == 0 ? OctopusSampleSystemAppearance.Read()
+                : choice == LightSchemeType ? OctopusSampleTheme.Light : OctopusSampleTheme.Dark;
+            OctopusSampleBranding.RefreshViews();
+        }
+        finally { _configuring = false; }
+    }
+
+
+    public static void RefreshSystemAppearance()
+    {
+        if (_appearance != 0) return;
+        var theme = OctopusSampleSystemAppearance.Read();
+        if (theme == OctopusSampleBranding.Theme) return;
+        _configuring = true;
+        try { OctopusSampleBranding.Theme = theme; }
+        finally { _configuring = false; }
+    }
 
     /// <summary>The light scheme passed to the SDK, built from the TOKENS §4 colors.</summary>
     public static OctopusColorScheme LightScheme
@@ -50,8 +85,8 @@ public static class OctopusSampleNativeTheme
     }
 
     /// <summary>
-    /// The native scheme type matching <paramref name="theme"/>. The sample has no "system"
-    /// appearance: its theme is an explicit Light / Dark choice, so the SDK is forced the same way.
+    /// The native scheme type matching an explicit Light / Dark choice. System is tracked
+    /// separately as 0, while the shell palette resolves to the current platform appearance.
     /// </summary>
     public static int SchemeTypeFor(OctopusSampleTheme theme)
     {
@@ -67,7 +102,10 @@ public static class OctopusSampleNativeTheme
         if (sdk == null) throw new ArgumentNullException("sdk");
         OctopusSampleLog.Current.LogApiCall("OctopusSDK.SetLightColorScheme", "brand scheme");
         OctopusSampleLog.Current.LogApiCall("OctopusSDK.SetDarkColorScheme", "brand scheme");
-        sdk.ApplyTheme(LightScheme, DarkScheme);
+        // A nonnull scheme with all slots unset resets both native palettes to SDK defaults.
+        var defaults = new OctopusColorScheme(OctopusSampleBranding.Clear, OctopusSampleBranding.Clear,
+            OctopusSampleBranding.Clear, OctopusSampleBranding.Clear);
+        sdk.ApplyTheme(_navy ? LightScheme : defaults, _navy ? DarkScheme : defaults);
         SendSchemeType(sdk, OctopusSampleBranding.Theme);
         if (_following) return;
         _following = true;
@@ -78,13 +116,14 @@ public static class OctopusSampleNativeTheme
     {
         // The SDK forgets its theme with the process, so an appearance change before (or without)
         // an initialisation has nothing to update; Apply sends the current one when it runs.
-        if (!OctopusSampleState.IsInitialized) return;
+        if (!OctopusSampleState.IsInitialized || _configuring) return;
+        _appearance = SchemeTypeFor(OctopusSampleBranding.Theme);
         SendSchemeType(OctopusScenarioSdk.Current, OctopusSampleBranding.Theme);
     }
 
     private static void SendSchemeType(IOctopusScenarioSdk sdk, OctopusSampleTheme theme)
     {
-        var type = SchemeTypeFor(theme);
+        var type = _appearance ?? SchemeTypeFor(theme);
         OctopusSampleLog.Current.LogApiCall("OctopusSDK.SetColorSchemeType", theme.ToString());
         sdk.SetColorSchemeType(type);
     }

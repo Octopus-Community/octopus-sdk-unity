@@ -2,7 +2,6 @@ using TMPro;
 using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEngine;
-using UnityEngine.UI;
 
 /// <summary>
 /// The Home dashboard's three load-bearing claims, each of which is a bug the moment it stops
@@ -61,29 +60,29 @@ public class OctopusSampleHomeViewTests
     }
 
     [Test]
-    public void TheHomeTabCarriesEveryDashboardId()
+    public void SettingsCarriesTheSummaryCardThatReplacedTheDashboard()
     {
+        // Android's Settings is a summary, not the retired Home dashboard: the catalogue retired
+        // every home-* id and names only the Settings handles below (shell.settings).
         var shell = Create();
-        shell.Select(OctopusSampleTab.Home);
+        shell.Select(OctopusSampleTab.Settings);
 
         foreach (var id in new[]
                  {
-                     OctopusSampleHomeView.PlatformChipId,
-                     OctopusSampleHomeView.SdkStatusCardId,
-                     OctopusSampleHomeView.SdkStatusId,
-                     OctopusSampleHomeView.ConfigurationBlockId,
-                     OctopusSampleHomeView.ConnectionCardId,
-                     OctopusSampleHomeView.ConnectionStatusId,
-                     OctopusSampleHomeView.ConnectionScenarioLinkId,
-                     OctopusSampleHomeView.CommunityAccessCardId,
-                     OctopusSampleHomeView.OpenCommunityId,
+                     "settings-community-block",
+                     "settings-sdk-status",
+                     OctopusSampleSettingsView.ConfigRowId,
+                     OctopusSampleSettingsView.ResetButtonId,
+                     OctopusSampleSettingsView.VersionLabelId,
                  })
         {
             Assert.IsNotNull(Find(shell.transform, id),
-                "The Home tab has no GameObject named '" + id + "'. Unity renders into one opaque " +
+                "Settings has no GameObject named '" + id + "'. Unity renders into one opaque " +
                 "surface with no accessibility tree, so a name that moves takes the QA script with " +
                 "it.");
         }
+        Assert.IsNull(Find(shell.transform, OctopusSampleHomeView.SdkStatusCardId),
+            "The retired dashboard is back inside Settings.");
     }
 
     [Test]
@@ -97,7 +96,7 @@ public class OctopusSampleHomeViewTests
 
         var shell = Create();
         shell.Select(OctopusSampleTab.Scenarios);
-        shell.Select(OctopusSampleTab.Home);
+        shell.Select(OctopusSampleTab.Settings);
 
         // Both halves matter. The seam is the load-bearing one — it is the object the pilots call
         // into, so an empty recording means Home reached no SDK entry point at all. The log probe
@@ -169,9 +168,9 @@ public class OctopusSampleHomeViewTests
         OctopusSampleState.ReportUnseenNotifications(7);
 
         var shell = Create();
-        shell.Select(OctopusSampleTab.Home);
+        shell.Select(OctopusSampleTab.Settings);
         shell.Select(OctopusSampleTab.Scenarios);
-        shell.Select(OctopusSampleTab.Home);
+        shell.Select(OctopusSampleTab.Settings);
 
         Assert.AreEqual(7, OctopusSampleState.UnseenNotifications,
             "The count was forgotten across a rebuild, and nothing in the sample can ask for it " +
@@ -179,31 +178,28 @@ public class OctopusSampleHomeViewTests
     }
 
     [Test]
-    public void TheDashboardRepaintsWhenTheSampleStateChanges()
+    public void TheSettingsSummaryRepaintsWhenTheSampleStateChanges()
     {
         var shell = Create();
-        shell.Select(OctopusSampleTab.Home);
-        // Identity, not presence: the id below survives a dashboard that never heard the event,
-        // which is precisely the failure worth catching. The marker is rebuilt on every refresh, so
-        // a new object is proof the handler ran.
-        var before = Find(shell.transform, OctopusSampleHomeView.SdkStatusId);
-        Assert.IsNotNull(before);
+        shell.Select(OctopusSampleTab.Settings);
+        var status = Find(shell.transform, "settings-sdk-status").GetComponent<TMP_Text>();
+        Assert.AreEqual(OctopusSampleSettingsView.StatusText(), status.text);
+        StringAssert.Contains("Not initialized", status.text);
 
         OctopusSampleState.ReportInitialized("SSO");
 
-        var after = Find(shell.transform, OctopusSampleHomeView.SdkStatusId);
-        Assert.IsNotNull(after, "The refresh left no status marker.");
-        Assert.AreNotSame(before, after,
-            "The marker is the same object as before the state changed — the dashboard never heard " +
-            "OctopusSampleState.Changed, and is still showing Not initialized on an initialized SDK. In edit " +
-            "mode Unity calls no OnEnable, so the subscription has to be made from the build path.");
+        // In edit mode Unity calls no OnEnable, so the subscription has to be made from the
+        // build path; a summary that never heard the event still reads Not initialized.
+        Assert.AreEqual(OctopusSampleSettingsView.StatusText(), status.text,
+            "Settings never heard OctopusSampleState.Changed.");
+        StringAssert.Contains("Initialized (sample record)", status.text);
     }
 
     [Test]
     public void ADestroyedDashboardStopsListening()
     {
         var shell = Create();
-        shell.Select(OctopusSampleTab.Home);
+        shell.Select(OctopusSampleTab.Settings);
         Object.DestroyImmediate(shell.gameObject);
         _spawned.Clear();
 
@@ -231,12 +227,12 @@ public class OctopusSampleHomeViewTests
     }
 
     [Test]
-    public void MissingSsoCredentialsReachTheHomeErrorTextAndSampleLog()
+    public void MissingSsoCredentialsReachTheConnectionLabelAndSampleLog()
     {
         _sdk.Profile.authToken = "";
         var probe = new ProbeLog();
         OctopusSampleLog.Current = probe;
-        var shell = Create();
+        Create();
         var pilot = new ConnectionScenario();
         var preset = pilot.Presets[0];
         preset.Fill(pilot.Fields);
@@ -247,37 +243,10 @@ public class OctopusSampleHomeViewTests
         Assert.AreEqual(OctopusSampleState.Session.Failed, OctopusSampleState.ConnectionSession);
         Assert.AreEqual(pilot.Result, OctopusSampleState.SessionDetail);
         Assert.AreEqual("CALL FAILED", OctopusSampleHomeView.ConnectionStatusLabel());
-        Assert.IsTrue(System.Array.Exists(shell.GetComponentsInChildren<TMP_Text>(true),
-            label => label.text.Contains(pilot.Result)), "Home must render the actionable refusal.");
         Assert.IsTrue(probe.StateChanges.Exists(entry =>
             entry.headline == "[OctopusQA] scenario=connection state=refused" && entry.detail == pilot.Result));
         CollectionAssert.DoesNotContain(_sdk.ScenarioMethods, "ConnectUser");
         StringAssert.DoesNotContain(SecretApiKey, pilot.Result);
-    }
-
-    [Test]
-    public void TheConnectionLinkOpensTheConnectionScenarioOverItsSection()
-    {
-        // The card used to say "Open Scenarios → Connection" in plain text; the link has to land on
-        // that scenario's screen, not on the list root the reader would then search.
-        var shell = Create();
-        shell.Select(OctopusSampleTab.Home);
-        var home = shell.GetComponentInChildren<OctopusSampleHomeView>();
-        Assert.IsNotNull(home, "The Home tab built no view.");
-
-        Find(shell.transform, OctopusSampleHomeView.ConnectionScenarioLinkId)
-            .GetComponent<Button>().onClick.Invoke();
-
-        var screen = Object.FindAnyObjectByType<OctopusScenarioScreenView>();
-        Assert.IsNotNull(screen, "The link opened no scenario screen.");
-        _spawned.Add(screen.gameObject);
-        Assert.AreEqual(OctopusSampleHomeView.ConnectionScenarioId, screen.ScenarioId);
-        Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected,
-            "Back from the scenario would land on Home instead of the list it belongs to.");
-        var list = shell.GetComponentInChildren<OctopusScenariosListView>();
-        Assert.IsNotNull(list);
-        Assert.AreEqual(ScenarioSection.SignIn, list.FocusedSection);
-        Assert.IsTrue(list.IsSectionOpen(ScenarioSection.SignIn));
     }
 
     [Test]
@@ -315,85 +284,6 @@ public class OctopusSampleHomeViewTests
         }
     }
 
-    [TestCase(OctopusSampleTheme.Light)]
-    [TestCase(OctopusSampleTheme.Dark)]
-    public void ColdStatusIsNeutralAndCardsKeepTheAcceptedOrder(OctopusSampleTheme theme)
-    {
-        OctopusSampleBranding.Theme = theme;
-        var shell = Create();
-        var marker = Find(shell.transform, OctopusSampleHomeView.SdkStatusId).Find("Marker");
-        Assert.AreEqual(SampleUi.Muted, marker.GetComponent<Image>().color);
-        var ids = new[] { OctopusSampleHomeView.SdkStatusCardId,
-            OctopusSampleHomeView.ConfigurationBlockId, OctopusSampleHomeView.ConnectionCardId,
-            OctopusSampleHomeView.CommunityAccessCardId };
-        var previous = -1;
-        foreach (var id in ids)
-        {
-            var card = Find(shell.transform, id);
-            Assert.Greater(card.GetSiblingIndex(), previous);
-            previous = card.GetSiblingIndex();
-        }
-    }
-
-    [Test]
-    public void ConfigurationDetailsRemainReadableAndCollapseAfterNavigation()
-    {
-        var shell = Create();
-        var card = Find(shell.transform, OctopusSampleHomeView.ConfigurationBlockId);
-        Assert.IsFalse(card.Find("Details").gameObject.activeSelf);
-        Find(shell.transform, "home-configuration-details").GetComponent<Button>().onClick.Invoke();
-        Assert.IsTrue(card.Find("Details").gameObject.activeSelf);
-        foreach (var value in card.Find("Details").GetComponentsInChildren<TMP_Text>())
-        {
-            Assert.IsFalse(value.enableAutoSizing);
-            Assert.AreEqual(TextWrappingModes.Normal, value.textWrappingMode);
-        }
-        shell.Select(OctopusSampleTab.Scenarios);
-        shell.Select(OctopusSampleTab.Home);
-        OctopusSampleBranding.Theme = OctopusSampleTheme.Light;
-        card = Find(shell.transform, OctopusSampleHomeView.ConfigurationBlockId);
-        Assert.IsFalse(card.Find("Details").gameObject.activeSelf);
-        Assert.IsEmpty(_sdk.ScenarioMethods);
-    }
-
-    [TestCase(OctopusSampleHomeView.SdkStatusCardId, "home-sdk-status-details")]
-    [TestCase(OctopusSampleHomeView.ConfigurationBlockId, "home-configuration-details")]
-    [TestCase(OctopusSampleHomeView.ConnectionCardId, "home-connection-details")]
-    [TestCase(OctopusSampleHomeView.CommunityAccessCardId, "home-community-access-details")]
-    public void EveryCardStartsCollapsedAndItsDisclosureIsLocalToTheVisit(string cardId, string toggleId)
-    {
-        var shell = Create();
-        var details = Find(shell.transform, cardId).Find("Details");
-        Assert.IsFalse(details.gameObject.activeSelf);
-        var toggle = Find(shell.transform, toggleId).GetComponent<Button>();
-        Assert.AreEqual("Show details", toggle.GetComponentInChildren<TMP_Text>().text);
-        toggle.onClick.Invoke();
-        Assert.IsTrue(details.gameObject.activeSelf);
-        Assert.AreEqual("Hide details", toggle.GetComponentInChildren<TMP_Text>().text);
-        OctopusSampleState.ReportUnseenNotifications(12);
-        Assert.IsTrue(details.gameObject.activeSelf, "A state update must not collapse a card being read.");
-        toggle.onClick.Invoke();
-        Assert.IsFalse(details.gameObject.activeSelf);
-        Assert.AreEqual("Show details", toggle.GetComponentInChildren<TMP_Text>().text);
-        toggle.onClick.Invoke();
-        shell.Select(OctopusSampleTab.Settings);
-        shell.Select(OctopusSampleTab.Home);
-        Assert.IsFalse(Find(shell.transform, cardId).Find("Details").gameObject.activeSelf);
-        Assert.IsEmpty(_sdk.ScenarioMethods);
-    }
-
-    [Test]
-    public void SdkCardShowsThePackageVersionAndCapturedNativeBuildPins()
-    {
-        var shell = Create();
-        var card = Find(shell.transform, OctopusSampleHomeView.SdkStatusCardId);
-        Assert.AreEqual("SDK " + OctopusSDK.Version, Find(card, "home-sdk-version").GetComponent<TMP_Text>().text);
-        Assert.AreEqual("Native build pins · " + OctopusSampleNativePins.ReadSources(),
-            Find(card, "home-sdk-native-pins").GetComponent<TMP_Text>().text);
-        Assert.IsTrue(Find(card, "home-sdk-version").gameObject.activeInHierarchy);
-        Assert.IsFalse(Find(card, "home-sdk-native-pins").gameObject.activeInHierarchy);
-    }
-
     [Test]
     public void NativeBuildPinsAreWrittenToTheGeneratedResourceBeforeABuild()
     {
@@ -414,6 +304,7 @@ public class OctopusSampleHomeViewTests
     private OctopusSampleShell Create()
     {
         var shell = OctopusSampleShell.Create();
+        shell.Select(OctopusSampleTab.Settings);
         _spawned.Add(shell.gameObject);
         return shell;
     }

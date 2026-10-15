@@ -607,7 +607,7 @@ public sealed class OctopusReefRunView : MonoBehaviour
         if (_hud == null || _shownScore == Run.Score) return;
         _shownScore = Run.Score;
         if (Target.HasValue) _hud.SetText("{0}   best {1}   target {2}", Run.Score, _best, Target.Value);
-        else _hud.SetText("{0}   best {1}", Run.Score, _best);
+        else _hud.SetText("{0}   best {1}", (float)Run.Score, (float)_best); // float overload: Unity 6000.6 TMP adds an ambiguous span one
     }
 
     private void Report(string message)

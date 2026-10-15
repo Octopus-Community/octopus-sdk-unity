@@ -125,27 +125,27 @@ public class OctopusSampleTextScaleTests
         OctopusSampleTextScale.Provider = () => 2f;
         label.GetComponent<SampleUiScaledText>().RefreshScale();
         Reflow(column);
-        Assert.AreEqual(84, label.fontSize);
+        Assert.AreEqual(OctopusSampleBranding.BodyTextUnits * 2, label.fontSize);
         AssertFits(label);
         OctopusSampleTextScale.Provider = () => 1f;
         label.GetComponent<SampleUiScaledText>().RefreshScale();
         Reflow(column);
-        Assert.AreEqual(42, label.fontSize);
+        Assert.AreEqual(SampleUi.TextBody, label.fontSize);
     }
 
     [TestCase(1f)]
     [TestCase(1.3f)]
     [TestCase(2f)]
-    public void OnlyTheFourShellTabLabelsAreCapped(float scale)
+    public void OnlyTheThreeShellTabLabelsAreCapped(float scale)
     {
         OctopusSampleTextScale.Provider = () => scale;
         _shell = OctopusSampleShell.Create();
         Reflow((RectTransform)_shell.transform.Find("Root"));
-        float tabWidth = ((RectTransform)Find(_shell.transform, "home-tab")).rect.width;
+        float tabWidth = ((RectTransform)Find(_shell.transform, "scenarios-tab")).rect.width;
         foreach (OctopusSampleTab tab in Enum.GetValues(typeof(OctopusSampleTab)))
         {
             var item = Find(_shell.transform, OctopusSampleShell.TestId(tab));
-            Assert.AreEqual(tabWidth, ((RectTransform)item).rect.width, 1f, "All four tabs keep equal widths.");
+            Assert.AreEqual(tabWidth, ((RectTransform)item).rect.width, 1f, "All three tabs keep equal widths.");
             var label = item.Find("Label").GetComponent<TMP_Text>();
             Assert.AreEqual(Mathf.RoundToInt(SampleUi.TextCaption * Mathf.Min(scale, 1.3f)), label.fontSize);
             AssertFits(label);
@@ -208,7 +208,7 @@ public class OctopusSampleTextScaleTests
         button.anchoredPosition = Vector2.zero;
         button.sizeDelta = new Vector2(600f, 144f);
         safe.GetComponent<SampleUiSafeArea>().Apply(new Rect(0f, 60f, width, height - 120f),
-            new Rect(0f, 0f, width, keyboard), new Vector2(width, height));
+            new Rect(0f, height - keyboard, width, keyboard), new Vector2(width, height));
         Reflow(root);
         var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(root, button);
         Assert.GreaterOrEqual(bounds.min.y, root.rect.yMin + keyboard - 1f);
@@ -232,7 +232,7 @@ public class OctopusSampleTextScaleTests
         button.sizeDelta = new Vector2(0f, 144f);
         SampleUi.VerticalScroll(safe, new RectOffset(0, 0, 192, 144));
         safe.GetComponent<SampleUiSafeArea>().Apply(new Rect(0f, 0f, 1080f, 600f),
-            new Rect(0f, 0f, 1080f, 300f), new Vector2(1080f, 600f));
+            new Rect(0f, 300f, 1080f, 300f), new Vector2(1080f, 600f));
         Reflow(root);
         var scroll = safe.parent.GetComponent<ScrollRect>();
         Assert.IsTrue(scroll.vertical);

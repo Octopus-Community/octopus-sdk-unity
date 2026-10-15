@@ -3,46 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// The Scenarios tab: the searchable, sectioned list of scenario cards SDK_STANDARDS §5.1 asks
-/// every sample for, rendered into <see cref="OctopusSampleShell"/>'s content area.
-///
-/// Built entirely in code, with no prefab and no scene wiring — through the shared
-/// <see cref="SampleUi"/> builders, which this screen's own styles became. That is deliberate: a
-/// list that has to track a catalogue living in another repo is the last thing that should be
-/// maintained as serialized YAML. Anything that only exists in code can be diffed and reviewed.
-///
-/// **The list holds only what this sample can demonstrate.** Which scenarios those are, how they
-/// are grouped and how a query filters them is <see cref="OctopusScenarioSections"/>, as data, so
-/// the grammar of this screen is testable without touching a `UnityEngine.UI` type. Read the rule
-/// and its source (TOKENS §1) there. The visible consequence: until this PR the tab rendered all 27
-/// catalogue rows, 24 of them saying "Not implemented" with a shortcut to a legacy `*Example`
-/// scene; it now renders the three that have a scenario screen, and grows by one card per scenario
-/// PR.
-///
-/// Losing those shortcuts loses no route and fixes a hazard. The legacy scenes are still reachable
-/// from the Settings tab (`BuildLegacyScenesRoute`, which goes away with the last of them, issue
-/// #100), and a shortcut on a scenario card was a one-way door: `SceneManager.LoadScene` replaced
-/// the whole shell — with no way back short of relaunching — and re-initialised the SDK in whatever
-/// mode that scene chose, behind the pilots' backs, which is issue #100 itself.
-///
-/// What each part of the screen is named, and why it is named that:
-/// - the search field is `scenarios-search-input`, the shared catalogue's own id;
-/// - a card is `scenarios-&lt;id&gt;-card`, likewise;
-/// - a section head is `scenarios-section-&lt;name&gt;`, which the catalogue does not define — see
-///   <see cref="OctopusScenarioSections.HeaderIdOf"/>;
-/// - the Sign-in section's feature switch is `scenarios-toggle-force-login`, which the catalogue
-///   does not define either — it is Android's own test tag, reused verbatim so one QA step reads
-///   the same on both platforms;
-/// - the Notifications switch is `scenarios-toggle-push-registration`, also Android's test tag;
-/// - the Sign-in section's nested Unified Profile section is `scenarios-unified-profile`, its three
-///   choices `expose-override-backend` / `-on` / `-off` (Android's test tags) and its read-out line
-///   `unified-profile-live-value`, and its host-profile-route switch `unified-profile-route-toggle`
-///   (row `unified-profile-route`);
-/// - the empty state is `scenarios-empty`.
-/// Unity renders into one opaque surface with no accessibility tree, so a name that moves takes the
-/// QA script with it.
-/// </summary>
+/// <summary>Searchable scenario groups; search input survives all list updates.</summary>
 public class OctopusScenariosListView : MonoBehaviour
 {
     /// <summary>The shared catalogue's id for the search field.</summary>
@@ -66,37 +27,66 @@ public class OctopusScenariosListView : MonoBehaviour
     public const string PushRegistrationRowId = "scenarios-toggle-push-registration-row";
     public const string PushRegistrationLockedNoteId = "scenarios-toggle-push-registration-locked";
 
-    /// <summary>The nested Unified Profile section's head, which expands and collapses it.</summary>
+    // Existing QA handles move with Unified Profile to its dedicated detail screen.
     public const string UnifiedProfileId = "scenarios-unified-profile";
     public const string UnifiedProfileBackendId = "expose-override-backend";
     public const string UnifiedProfileForceOnId = "expose-override-on";
     public const string UnifiedProfileForceOffId = "expose-override-off";
-
-    /// <summary>The "Unified Profile ✓ on / ✗ off" line inside the section.</summary>
     public const string UnifiedProfileLiveValueId = "unified-profile-live-value";
-
-    /// <summary>The row, then the switch, that wires or unwires the host profile route (#393).</summary>
     public const string UnifiedProfileRouteRowId = "unified-profile-route";
     public const string UnifiedProfileRouteToggleId = "unified-profile-route-toggle";
 
+    /// <summary>
+    /// The height of the block pinned above the scroll, in dp: the 48dp large title — which, under
+    /// the 64dp app bar, makes Android's 112dp large top app bar — a 16dp gap and the 56dp outlined
+    /// search field.
+    /// </summary>
+    public const float TopBlockDp = 120f;
+
+    /// <summary>The large title's block under the app bar, in dp: 64 + 48 = Android's 112dp.</summary>
+    public const float TitleBlockDp = 48f;
+
+    /// <summary>Android's group row: 48dp, one caption line at most.</summary>
+    public const float GroupRowMinDp = 48f;
+
+    /// <summary>The Open-the-community tiles, Android's 48dp pills.</summary>
+    public const float TileDp = 48f;
+
+    /// <summary>The count badge: a 20dp filled pill, Android's `CountPill`.</summary>
+    public const float CountBadgeDp = 20f;
+    private const float SearchDp = 56f;
+    private const float HeadRadiusDp = OctopusSampleBranding.CardRadius;
+
     private RectTransform _list;
+    private RectTransform _live;
+    private RectTransform _configBody;
     private bool _listening;
     private bool _lockedAsDrawn;
-    private bool _unifiedProfileOpen;
-    private bool _unifiedProfileDrawn;
+    private bool _initAsDrawn;
+    private bool _repaintRequested;
+    private float _queryChangedAt;
     private string _query = "";
     private TMP_InputField _searchField;
+
+    private enum ConfigPhase { Idle, Loading, Loaded, Unavailable, Failed }
+    private ConfigPhase _configPhase;
+    private int _configGen;
+    private int _communityAsDrawn;
+    private float _configStartedAt;
+    private TMP_Text _openStatus;
+    private readonly OctopusSampleNativeRequest _native = new OctopusSampleNativeRequest();
+    private string _configError = "";
+    private List<KeyValuePair<string, string>> _configLines;
 
     public sealed class ViewState
     {
         public string Query = "";
-        public bool UnifiedProfileOpen;
         public readonly Dictionary<ScenarioSection, bool> Open = new Dictionary<ScenarioSection, bool>();
     }
 
     public ViewState CaptureState()
     {
-        var state = new ViewState { Query = _query, UnifiedProfileOpen = _unifiedProfileOpen };
+        var state = new ViewState { Query = _query };
         foreach (var pair in _open) state.Open[pair.Key] = pair.Value;
         return state;
     }
@@ -111,11 +101,15 @@ public class OctopusScenariosListView : MonoBehaviour
         if (state != null)
         {
             view._query = state.Query;
-            view._unifiedProfileOpen = state.UnifiedProfileOpen;
             foreach (var pair in state.Open) view._open[pair.Key] = pair.Value;
         }
-        var content = SampleUi.VerticalScroll(host, SampleUi.ContentPadding());
-        content.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(16f);
+        BuildLargeTitle(host);
+        view._searchField = BuildSearch(host, view._query);
+        view._searchField.onValueChanged.AddListener(view.QueueQuery);
+        var padding = SampleUi.ContentPadding();
+        padding.top += Mathf.RoundToInt(OctopusSampleBranding.Dp(TopBlockDp));
+        var content = SampleUi.VerticalScroll(host, padding);
+        content.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceMd);
         view.Build(content);
         return view;
     }
@@ -131,31 +125,116 @@ public class OctopusScenariosListView : MonoBehaviour
     {
         if (Searching) return true;
         bool open;
-        return !_open.TryGetValue(section, out open) || open;
+        return _open.TryGetValue(section, out open) && open;
     }
 
     /// <summary>Collapses an open section, or opens a collapsed one, and repaints the list.</summary>
     public void ToggleSection(ScenarioSection section)
     {
-        // Reads through IsSectionOpen so the default (open) is stated in one place, and writes the
+        // Reads through IsSectionOpen so the default (collapsed) is stated in one place, and writes the
         // remembered position rather than the effective one: a toggle made while searching would
         // otherwise persist "open" for every section it touched.
         _open[section] = !IsSectionOpen(section);
         Repaint();
     }
 
-    /// <summary>
-    /// Whether the Sign-in section's nested Unified Profile section shows its choices. Collapsed by
-    /// default, as on Android, and remembered across tab switches through <see cref="ViewState"/>.
-    /// </summary>
-    public bool IsUnifiedProfileOpen { get { return _unifiedProfileOpen; } }
+    // Retained for callers of the previous list entry; it now navigates to a screen.
+    public void ToggleUnifiedProfile() { OpenScenario("unifiedProfile"); }
 
-    /// <summary>Expands or collapses the Unified Profile section; expanding reads the flag afresh.</summary>
-    public void ToggleUnifiedProfile()
+    public void ResetForTabSwitch()
     {
-        _unifiedProfileOpen = !_unifiedProfileOpen;
+        _open.Clear();
+        SetQuery("");
+    }
+
+    private void QueueQuery(string query)
+    {
+        _query = query ?? "";
+        _queryChangedAt = Time.unscaledTime;
+        _repaintRequested = true;
+    }
+
+    private void LateUpdate()
+    {
+        ExpireConfigRead(Time.realtimeSinceStartup);
+        HoldTop(Time.unscaledTime);
+        if (!_repaintRequested || Time.unscaledTime - _queryChangedAt < 0.12f) return;
+        _repaintRequested = false;
         Repaint();
-        if (_unifiedProfileOpen) OctopusSampleUnifiedProfile.RefreshEffective();
+        ScrollToTop();
+    }
+
+    /// <summary>How long a query's return to the top is held against a late layout or viewport change.</summary>
+    public const float TopHoldSeconds = 0.6f;
+
+    private float _holdTopUntil = -1f;
+    private bool _holdTopNextFrame;
+    private Vector2 _heldViewport;
+
+    /// <summary>
+    /// Back to the top of the list after a query change: the filtered list is shorter, and an
+    /// offset kept from the full one would leave its results above the viewport.
+    ///
+    /// The layout is rebuilt first, so the position is set against the filtered list rather than
+    /// the one it replaces, then held for <see cref="TopHoldSeconds"/>: re-applied on the next
+    /// frame and whenever the viewport changes size. Typing with the soft keyboard open used to
+    /// leave the results area blank until a scroll gesture (device QA), the reset having run
+    /// before the list and the keyboard-shrunk viewport settled.
+    /// </summary>
+    private void ScrollToTop()
+    {
+        FocusedSection = null;
+        var scroll = GetComponentInChildren<ScrollRect>(true);
+        if (scroll == null) return;
+        PinTop(scroll, false);
+        _heldViewport = ViewportSize(scroll);
+        _holdTopNextFrame = true;
+        _holdTopUntil = Time.unscaledTime + TopHoldSeconds;
+    }
+
+    /// <summary>
+    /// Re-applies a pending return to the top, once on the frame after it and again on any viewport
+    /// resize, until <see cref="TopHoldSeconds"/> have passed or the reader scrolls. True when it
+    /// re-applied. Called every frame; <paramref name="now"/> is unscaled time.
+    /// </summary>
+    internal bool HoldTop(float now)
+    {
+        if (_holdTopUntil < 0f) return false;
+        var scroll = GetComponentInChildren<ScrollRect>(true);
+        // A drag or a fling is the reader taking over: stop holding.
+        if (scroll == null || now > _holdTopUntil || scroll.velocity.sqrMagnitude > 1f)
+        {
+            _holdTopUntil = -1f;
+            return false;
+        }
+        var viewport = ViewportSize(scroll);
+        if (!_holdTopNextFrame && viewport == _heldViewport) return false;
+        _holdTopNextFrame = false;
+        _heldViewport = viewport;
+        PinTop(scroll, true);
+        return true;
+    }
+
+    private static void PinTop(ScrollRect scroll, bool recull)
+    {
+        scroll.StopMovement();
+        if (scroll.content != null) LayoutRebuilder.ForceRebuildLayoutImmediate(scroll.content);
+        scroll.verticalNormalizedPosition = 1f;
+        if (!recull) return;
+        // Cards rebuilt under a clip rect that did not move can keep a stale cull state until the
+        // content moves; re-registering them with the mask clips and culls them afresh.
+        var mask = scroll.viewport != null ? scroll.viewport.GetComponent<RectMask2D>() : null;
+        if (mask != null && mask.enabled)
+        {
+            mask.enabled = false;
+            mask.enabled = true;
+        }
+    }
+
+    private static Vector2 ViewportSize(ScrollRect scroll)
+    {
+        var viewport = scroll.viewport != null ? scroll.viewport : (RectTransform)scroll.transform;
+        return viewport.rect.size;
     }
 
     /// <summary>
@@ -174,6 +253,10 @@ public class OctopusScenariosListView : MonoBehaviour
         var card = SectionCard(section);
         var scroll = GetComponentInChildren<ScrollRect>();
         if (card == null || scroll == null || scroll.content == null) return false;
+        // Takes over from the pending return to the top that SetQuery("") arms on the way here:
+        // left armed, the next frame would pin the list back on its first card.
+        _holdTopUntil = -1f;
+        _holdTopNextFrame = false;
         FocusedSection = section;
         Canvas.ForceUpdateCanvases();
         LayoutRebuilder.ForceRebuildLayoutImmediate(scroll.content);
@@ -199,7 +282,7 @@ public class OctopusScenariosListView : MonoBehaviour
         for (var i = 0; i < _list.childCount; i++)
         {
             var card = _list.GetChild(i);
-            if (card.gameObject.activeSelf && card.Find(headerId) != null) return (RectTransform)card;
+            if (card.gameObject.activeSelf && card.Find("HeadSlot/" + headerId) != null) return (RectTransform)card;
         }
         return null;
     }
@@ -209,7 +292,9 @@ public class OctopusScenariosListView : MonoBehaviour
     {
         _query = query ?? "";
         if (_searchField != null) _searchField.SetTextWithoutNotify(_query);
+        _repaintRequested = false;
         Repaint();
+        ScrollToTop();
     }
 
     /// <summary>The empty state's exact wording, echoing the query the way React Native's does.</summary>
@@ -222,22 +307,376 @@ public class OctopusScenariosListView : MonoBehaviour
 
     private void Build(RectTransform content)
     {
-        SampleUi.FlexibleLabel(content, "Search scenarios", SampleUi.TextCaption, SampleUi.Muted);
-        _searchField = SampleUi.Field(SearchInputId, content, _query, placeholder: "Search scenarios");
-        _searchField.onValueChanged.AddListener(SetQuery);
-        SampleUi.FlexibleLabel(content, "Explore the capabilities available in this sample.",
-            SampleUi.TextCaption, SampleUi.Muted);
+        // The two Android cards above the groups: how to open the community, and what the SDK
+        // resolved for it. Hidden while searching — a query only ever matches scenario cards.
+        _live = SampleUi.Panel("LiveCommunity", content, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(_live, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceMd), new RectOffset(), false);
+        BuildOpenCommunityCard(_live);
+        BuildCommunityConfigPreview(_live);
 
         // Its own container, so a query repaints the list without touching the search field — which
         // would take the caret and the text with it on every keystroke.
         _list = SampleUi.Panel("SectionList", content, Color.clear);
-        SampleUi.VerticalStack(_list, OctopusSampleBranding.Dp(16f), new RectOffset(), false);
+        SampleUi.VerticalStack(_list, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceMd), new RectOffset(), false);
 
         // Subscribed from here rather than only from OnEnable, for the reason the Home dashboard
         // gives: in edit mode Unity never calls OnEnable, so a test that initialises the SDK after
         // building would watch a list that never hears about it. Listen() is idempotent.
         Listen();
         Repaint();
+    }
+
+    /// <summary>
+    /// Android's large top app bar title: a 48dp block under the 64dp compact bar (112dp in all),
+    /// its 28sp title in Title ink on the page colour, 16dp from the edge. The shell hides its own
+    /// compact title on this tab and draws its bar on the page colour too.
+    /// </summary>
+    private static void BuildLargeTitle(RectTransform host)
+    {
+        var p = OctopusSampleBranding.Palette;
+        var block = SampleUi.Panel("LargeTitle", host, p.PageHeader);
+        SampleUiHalo.PaintPage(block.GetComponent<Image>());
+        SampleUi.Stretch(block, new Vector2(0f, 1f), Vector2.one);
+        block.pivot = new Vector2(0.5f, 1f);
+        block.anchoredPosition = Vector2.zero;
+        block.sizeDelta = new Vector2(0f, OctopusSampleBranding.Dp(TitleBlockDp));
+        var title = SampleUi.Label("Title", block, "Scenarios", 84, p.Title, TextAnchor.MiddleLeft);
+        title.fontStyle = FontStyles.Bold;
+        title.textWrappingMode = TextWrappingModes.NoWrap;
+        title.overflowMode = TextOverflowModes.Ellipsis;
+        var scaled = title.GetComponent<SampleUiScaledText>();
+        if (scaled != null) scaled.Configure(84, OctopusSampleBranding.Dp(36f), singleLine: true);
+        SampleUi.Stretch(title.rectTransform, Vector2.zero, Vector2.one);
+        float side = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg);
+        title.rectTransform.offsetMin = new Vector2(side, 0f);
+        title.rectTransform.offsetMax = new Vector2(-side, 0f);
+    }
+
+    /// <summary>
+    /// Android's outlined search field: 56dp, no fill, a leading magnifier, 16dp from both edges and
+    /// 16dp under the large title. The sample ships no search glyph, so the magnifier is drawn: a
+    /// stroked ring and a handle.
+    /// </summary>
+    private static TMP_InputField BuildSearch(RectTransform host, string query)
+    {
+        var p = OctopusSampleBranding.Palette;
+        var search = SampleUi.Panel("Search", host, OctopusSampleBranding.Clear);
+        SampleUi.Stretch(search, new Vector2(0f, 1f), Vector2.one);
+        search.pivot = new Vector2(0.5f, 1f);
+        search.anchoredPosition = new Vector2(0f, -OctopusSampleBranding.Dp(TitleBlockDp + OctopusSampleBranding.SpaceLg));
+        search.sizeDelta = new Vector2(0f, OctopusSampleBranding.Dp(SearchDp));
+        int side = Mathf.RoundToInt(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg));
+        SampleUi.VerticalStack(search, 0f, new RectOffset(side, side, 0, 0), false);
+
+        var field = SampleUi.Field(SearchInputId, search, query, placeholder: "Search scenarios");
+        var size = field.GetComponent<LayoutElement>();
+        size.minHeight = size.preferredHeight = OctopusSampleBranding.Dp(SearchDp);
+        size.layoutPriority = 2;
+        var elevation = field.GetComponent<SampleUiElevation>();
+        if (elevation != null)
+        {
+            if (Application.isPlaying) Destroy(elevation); else DestroyImmediate(elevation);
+        }
+        var styled = field as SampleUiInputField;
+        if (styled != null) { styled.Outlined = true; styled.RefreshVisuals(); }
+        if (field.textViewport != null)
+            field.textViewport.offsetMin = new Vector2(OctopusSampleBranding.Dp(52f), field.textViewport.offsetMin.y);
+
+        var icon = SampleUi.Panel("SearchIcon", field.transform, OctopusSampleBranding.Clear);
+        icon.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+        icon.anchorMin = icon.anchorMax = new Vector2(0f, 0.5f);
+        icon.pivot = new Vector2(0f, 0.5f);
+        icon.sizeDelta = Vector2.one * OctopusSampleBranding.Dp(24f);
+        icon.anchoredPosition = new Vector2(OctopusSampleBranding.Dp(16f), 0f);
+        var ring = SampleUi.Panel("Ring", icon, p.Muted);
+        var ringImage = ring.GetComponent<Image>();
+        ringImage.sprite = SampleUiShapes.Rounded(7f, 2f);
+        ringImage.type = Image.Type.Sliced;
+        ringImage.raycastTarget = false;
+        ring.anchorMin = ring.anchorMax = new Vector2(0.5f, 0.5f);
+        ring.sizeDelta = Vector2.one * OctopusSampleBranding.Dp(14f);
+        ring.anchoredPosition = new Vector2(-OctopusSampleBranding.Dp(2f), OctopusSampleBranding.Dp(2f));
+        var handle = SampleUi.Panel("Handle", icon, p.Muted);
+        handle.GetComponent<Image>().raycastTarget = false;
+        handle.anchorMin = handle.anchorMax = new Vector2(0.5f, 0.5f);
+        handle.sizeDelta = new Vector2(OctopusSampleBranding.Dp(2f), OctopusSampleBranding.Dp(7f));
+        handle.anchoredPosition = new Vector2(OctopusSampleBranding.Dp(6.5f), -OctopusSampleBranding.Dp(6.5f));
+        handle.localRotation = Quaternion.Euler(0f, 0f, 45f);
+        return field;
+    }
+
+    /// <summary>
+    /// Android's `OpenCommunityCard`: an accent-tinted card holding a 2x2 grid — Tab, Modal, Sheet,
+    /// Full screen. The Unity SDK opens full screen only, so the other three stay in the grid,
+    /// disabled, and a caption says why (<see cref="OctopusSampleOpenModes"/>).
+    /// </summary>
+    private void BuildOpenCommunityCard(RectTransform parent)
+    {
+        var p = OctopusSampleBranding.Palette;
+        var card = SampleUi.Panel(OctopusSampleOpenModes.CardId, parent, p.TabIndicator, 16f,
+            OctopusSampleBranding.Tint(p.Accent, p.TabIndicator, 0.35f));
+        int pad = Mathf.RoundToInt(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg));
+        SampleUi.VerticalStack(card, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceMd),
+            new RectOffset(pad, pad, Mathf.RoundToInt(OctopusSampleBranding.Dp(4f)), pad), false);
+
+        var header = SampleUi.Panel("Header", card, OctopusSampleBranding.Clear);
+        var headerLayout = header.gameObject.AddComponent<HorizontalLayoutGroup>();
+        headerLayout.spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm);
+        headerLayout.childAlignment = TextAnchor.MiddleLeft;
+        headerLayout.childControlWidth = headerLayout.childControlHeight = true;
+        headerLayout.childForceExpandWidth = headerLayout.childForceExpandHeight = false;
+        header.gameObject.AddComponent<LayoutElement>().minHeight = OctopusSampleBranding.Dp(48f);
+        var glyph = SampleUi.Panel("Icon", header, OctopusSampleBranding.Clear);
+        SampleUiIcons.Apply(glyph.GetComponent<Image>(), "forum", p.Accent);
+        glyph.GetComponent<Image>().raycastTarget = false;
+        var glyphSize = glyph.gameObject.AddComponent<LayoutElement>();
+        glyphSize.minWidth = glyphSize.preferredWidth = OctopusSampleBranding.Dp(20f);
+        glyphSize.minHeight = glyphSize.preferredHeight = OctopusSampleBranding.Dp(20f);
+        var title = SampleUi.Label("Title", header, OctopusSampleOpenModes.Title, SampleUi.TextLabel, p.Title,
+            TextAnchor.MiddleLeft);
+        title.fontStyle = FontStyles.Bold;
+        title.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+
+        SampleUi.FlexibleLabel(card, OctopusSampleOpenModes.Caption, SampleUi.TextCaption, p.Muted);
+
+        var grid = SampleUi.Panel("Grid", card, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(grid, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm), new RectOffset(), false);
+        RectTransform row = null;
+        for (var i = 0; i < OctopusSampleOpenModes.Order.Length; i++)
+        {
+            if (i % 2 == 0)
+            {
+                row = SampleUi.Panel("Row", grid, OctopusSampleBranding.Clear);
+                var rowLayout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+                rowLayout.spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm);
+                rowLayout.childControlWidth = rowLayout.childControlHeight = true;
+                rowLayout.childForceExpandWidth = true;
+                rowLayout.childForceExpandHeight = false;
+            }
+            var mode = OctopusSampleOpenModes.Order[i];
+            var button = SampleUi.Button(OctopusSampleOpenModes.Id(mode), row, OctopusSampleOpenModes.Label(mode),
+                mode == OctopusSampleOpenModes.FirstAvailable() ? SampleUiButtonVariant.Primary : SampleUiButtonVariant.Secondary,
+                () => OpenCommunity(mode));
+            var size = button.GetComponent<LayoutElement>();
+            size.flexibleWidth = 1f;
+            size.preferredWidth = 0f;
+            // Fixed: the pill sprite's slice borders would otherwise report a 96dp preferred height.
+            size.minHeight = size.preferredHeight = OctopusSampleBranding.Dp(TileDp);
+            size.layoutPriority = Mathf.Max(size.layoutPriority, 2);
+            if (!OctopusSampleOpenModes.IsAvailable(mode)) button.GetComponent<SampleUiButton>().interactable = false;
+        }
+        var unavailable = SampleUi.FlexibleLabel(card, OctopusSampleOpenModes.UnavailableCaption,
+            SampleUi.TextCaption, p.Muted);
+        unavailable.name = OctopusSampleOpenModes.UnavailableCaptionId;
+        SampleUiLineClamp.Apply(unavailable, 1);
+        _openStatus = SampleUi.FlexibleLabel(card, "", SampleUi.TextCaption, p.Muted);
+        _openStatus.name = OctopusSampleOpenModes.StatusId;
+        _openStatus.richText = false;
+        _openStatus.gameObject.SetActive(false);
+    }
+
+    /// <summary>
+    /// Opens the community the way the Community tab does (<see cref="OctopusSampleNativeRequest"/>):
+    /// the SDK is brought up first, the call is logged, a throw becomes a line under the grid.
+    /// </summary>
+    private void OpenCommunity(OctopusSampleOpenMode mode)
+    {
+        if (!OctopusSampleOpenModes.IsAvailable(mode)) return;
+        bool notReady;
+        var failure = _native.Request("OctopusSDK.Open", null, () => OctopusScenarioSdk.Current.Open(), out notReady);
+        if (_openStatus == null) return;
+        _openStatus.gameObject.SetActive(failure != null);
+        if (failure == null) return;
+        _openStatus.text = failure;
+        _openStatus.color = notReady ? OctopusSampleBranding.Palette.Muted : OctopusSampleBranding.Palette.Negative;
+    }
+
+    private void OnApplicationPause(bool paused)
+    {
+        if (_native.OnPause(paused))
+            OctopusSampleLog.Current.LogStateChange("Returned to the sample", "Open the community");
+    }
+
+    /// <summary>
+    /// Android's `CommunityConfigPreview`, as far as the Unity SDK exposes it: the four fields of
+    /// <c>DebugGetCommunityConfig</c>, read on tap — never at build time, so opening the tab still
+    /// calls nothing — and a LIMITS line naming what it cannot show.
+    /// </summary>
+    private void BuildCommunityConfigPreview(RectTransform parent)
+    {
+        var p = OctopusSampleBranding.Palette;
+        var wrapper = SampleUi.Panel(OctopusSampleCommunityConfigLines.WrapperId, parent, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(wrapper, 0f, new RectOffset(), false);
+        var card = SampleUi.Panel(OctopusSampleCommunityConfigLines.PreviewId, wrapper, p.Surface,
+            HeadRadiusDp, p.Border);
+        SampleUi.VerticalStack(card, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceXs),
+            SampleUi.Padding(OctopusSampleBranding.SpaceMd, OctopusSampleBranding.SpaceMd), false);
+        var title = SampleUi.Label("Title", card, OctopusSampleCommunityConfigLines.Title, SampleUi.TextLabel,
+            p.Title, TextAnchor.MiddleLeft);
+        title.fontStyle = FontStyles.Bold;
+        SampleUi.FlexibleLabel(card, OctopusSampleCommunityConfigLines.Description, SampleUi.TextCaption, p.Muted);
+        _configBody = SampleUi.Panel("ConfigBody", card, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(_configBody, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceXs), new RectOffset(), false);
+        var limits = SampleUi.FlexibleLabel(card, OctopusSampleCommunityConfigLines.Limits, SampleUi.TextCaption, p.Muted);
+        limits.name = "Limits";
+        _configPhase = ConfigPhase.Idle;
+        RenderConfig();
+    }
+
+    private void RenderConfig()
+    {
+        if (_configBody == null) return;
+        _initAsDrawn = OctopusSampleState.IsInitialized;
+        _communityAsDrawn = OctopusScenarioSdk.CommunityGeneration;
+        for (var i = _configBody.childCount - 1; i >= 0; i--)
+        {
+            var child = _configBody.GetChild(i).gameObject;
+            child.SetActive(false);
+            if (Application.isPlaying) Destroy(child); else DestroyImmediate(child);
+        }
+        var p = OctopusSampleBranding.Palette;
+        if (!_initAsDrawn) _configPhase = ConfigPhase.Idle;
+        ConfigLine(OctopusSampleCommunityConfigLines.ApiKeyLabel, OctopusScenarioSdk.LiveMaskedApiKey);
+        switch (_configPhase)
+        {
+            case ConfigPhase.Loading:
+                ConfigLine(OctopusSampleCommunityConfigLines.StatusLabel, OctopusSampleCommunityConfigLines.Loading);
+                break;
+            case ConfigPhase.Loaded:
+                foreach (var line in _configLines) ConfigLine(line.Key, line.Value);
+                ConfigButton(OctopusSampleCommunityConfigLines.RefreshLabel);
+                break;
+            case ConfigPhase.Unavailable:
+                ConfigLine(OctopusSampleCommunityConfigLines.StatusLabel, OctopusSampleCommunityConfigLines.NotAvailable);
+                ConfigButton(OctopusSampleCommunityConfigLines.RetryLabel);
+                break;
+            case ConfigPhase.Failed:
+                var error = SampleUi.Panel(OctopusSampleCommunityConfigLines.ErrorId, _configBody, OctopusSampleBranding.Clear);
+                SampleUi.VerticalStack(error, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceXs), new RectOffset(), false);
+                SampleUi.FlexibleLabel(error, _configError, SampleUi.TextCaption, p.Negative).richText = false;
+                ConfigButton(OctopusSampleCommunityConfigLines.RetryLabel);
+                break;
+            default:
+                if (!_initAsDrawn)
+                    ConfigLine(OctopusSampleCommunityConfigLines.StatusLabel, OctopusSampleCommunityConfigLines.NotInitialised);
+                else
+                    ConfigButton(OctopusSampleCommunityConfigLines.ReadLabel);
+                break;
+        }
+    }
+
+    private void ConfigLine(string label, string value)
+    {
+        SampleUi.FlexibleLabel(_configBody, OctopusSampleCommunityConfigLines.Line(label, value), SampleUi.TextCaption,
+            OctopusSampleBranding.Palette.Title).richText = false;
+    }
+
+    private void ConfigButton(string label)
+    {
+        var holder = SampleUi.Panel("Actions", _configBody, OctopusSampleBranding.Clear);
+        var layout = holder.gameObject.AddComponent<HorizontalLayoutGroup>();
+        layout.childControlWidth = layout.childControlHeight = true;
+        layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+        layout.childAlignment = TextAnchor.MiddleLeft;
+        var button = SampleUi.Button(OctopusSampleCommunityConfigLines.ReadButtonId, holder, label,
+            SampleUiButtonVariant.Secondary, ReadConfig);
+        // Fixed, like Android's 40dp outlined button in its 48dp touch row: the pill sprite's
+        // slice borders would otherwise report a 96dp preferred height.
+        var size = button.GetComponent<LayoutElement>();
+        if (size == null) size = button.gameObject.AddComponent<LayoutElement>();
+        size.minHeight = size.preferredHeight = OctopusSampleBranding.MinTouchUnits;
+        size.layoutPriority = Mathf.Max(size.layoutPriority, 2);
+    }
+
+    /// <summary>
+    /// Whether the panel still shows a reading of the community the SDK runs now. A stop, a start
+    /// or a switch — onto any community, even the same one — makes it stale.
+    /// </summary>
+    private bool ConfigStale()
+    {
+        return OctopusSampleState.IsInitialized != _initAsDrawn ||
+            OctopusScenarioSdk.CommunityGeneration != _communityAsDrawn;
+    }
+
+    /// <summary>
+    /// Drops whatever the panel shows — a reading, a read in flight, an error — and goes back to
+    /// the Read button. Bumping the generation makes a late answer of the old read land nowhere.
+    /// </summary>
+    private void ResetConfig()
+    {
+        ++_configGen;
+        _configPhase = ConfigPhase.Idle;
+        _configLines = null;
+        RenderConfig();
+    }
+
+    /// <summary>
+    /// Gives the Read button back when a read stayed on "loading…" past
+    /// <see cref="OctopusSampleCommunityConfigLines.ReadTimeoutSeconds"/>: a callback the SDK never
+    /// delivers must not leave the panel without a way to retry. Called every frame with the clock.
+    /// </summary>
+    internal bool ExpireConfigRead(float now)
+    {
+        if (_configPhase != ConfigPhase.Loading ||
+            now - _configStartedAt < OctopusSampleCommunityConfigLines.ReadTimeoutSeconds) return false;
+        OctopusSampleLog.Current.LogStateChange("Community config read timed out",
+            OctopusSampleCommunityConfigLines.ReadTimeoutSeconds + " s without an answer");
+        ResetConfig();
+        return true;
+    }
+
+    /// <summary>Reads the community config once. Never initialises the SDK: that is a scenario's job.</summary>
+    private void ReadConfig()
+    {
+        if (!OctopusSampleState.IsInitialized) { ResetConfig(); return; }
+        var gen = ++_configGen;
+        _configPhase = ConfigPhase.Loading;
+        _configStartedAt = Time.realtimeSinceStartup;
+        RenderConfig();
+        try
+        {
+            OctopusSampleLog.Current.LogApiCall("OctopusSDK.DebugGetCommunityConfig", "");
+            OctopusScenarioSdk.Current.DebugGetCommunityConfig(config =>
+            {
+                if (this == null || gen != _configGen) return;
+                if (config == null)
+                {
+                    _configPhase = ConfigPhase.Unavailable;
+                }
+                else
+                {
+                    _configLines = OctopusSampleCommunityConfigLines.Lines(config.ExposeClientUserId,
+                        config.TermsAcceptanceMode, config.ForceLoginOnStrongActions, config.DisplayAccountAge, config.ForceNicknameChoice, config.ConsentTexts);
+                    _configPhase = ConfigPhase.Loaded;
+                }
+                RenderConfig();
+            }, error =>
+            {
+                if (this == null || gen != _configGen) return;
+                _configError = "Config read failed: " + error;
+                _configPhase = ConfigPhase.Failed;
+                RenderConfig();
+            });
+        }
+        catch (System.Exception exception)
+        {
+            if (gen != _configGen) return;
+            _configError = "Config read failed: " + exception.Message;
+            _configPhase = ConfigPhase.Failed;
+            RenderConfig();
+        }
+    }
+
+    // Explicit for retained tabs: EditMode does not send the MonoBehaviour activation callbacks.
+    public void SetTabActive(bool active)
+    {
+        if (!active) { StopListening(); return; }
+        Listen();
+        // State changes made while the tab was hidden were not heard (StopListening above), so
+        // the lock and Force login rows must be redrawn on every return.
+        _repaintRequested = false;
+        Repaint();
+        if (ConfigStale()) ResetConfig();
     }
 
     private void OnEnable() { Listen(); }
@@ -249,6 +688,7 @@ public class OctopusScenariosListView : MonoBehaviour
         // Edit mode delivers no OnDisable either, and a handler left on a static event would fire
         // on a destroyed view in the next test.
         StopListening();
+        ++_configGen;
     }
 
     private void Listen()
@@ -262,12 +702,13 @@ public class OctopusScenariosListView : MonoBehaviour
     {
         if (!_listening) return;
         OctopusSampleState.Changed -= OnStateChanged;
-        WatchUnifiedProfile(false);
         _listening = false;
     }
 
     /// <summary>
-    /// Repaints when — and only when — Force login becomes locked.
+    /// Repaints when — and only when — Force login becomes locked, and resets the config preview
+    /// to its Read button when the SDK comes up, goes down or changes community — a reading of the
+    /// previous community, or a read still in flight for it, must not stay on screen.
     ///
     /// The list itself reads a static catalogue, so nothing else here depends on the sample state,
     /// and rebuilding every card each time a notification count arrives would be waste. The lock
@@ -277,34 +718,9 @@ public class OctopusScenariosListView : MonoBehaviour
     /// </summary>
     private void OnStateChanged()
     {
+        if (ConfigStale()) ResetConfig();
         if (Locked() == _lockedAsDrawn) return;
         Repaint();
-    }
-
-    /// <summary>
-    /// Repaints on a new override or a new read of the flag. Subscribed only while the section's
-    /// choices are on screen (<see cref="WatchUnifiedProfile"/>), so a read finishing behind a
-    /// collapsed section rebuilds nothing, and a community switch with no section open makes no
-    /// read at all — <see cref="OctopusSampleUnifiedProfile.Reapply"/> reads only for a listener.
-    /// </summary>
-    private void OnUnifiedProfileChanged()
-    {
-        // Same guard as the scenario screen: a view destroyed in edit mode never gets OnDestroy
-        // and would otherwise keep a static handler — and make every later switch read the flag.
-        if (this == null)
-        {
-            OctopusSampleUnifiedProfile.Changed -= OnUnifiedProfileChanged;
-            return;
-        }
-        Repaint();
-    }
-
-    private void WatchUnifiedProfile(bool watch)
-    {
-        if (_unifiedProfileDrawn == watch) return;
-        _unifiedProfileDrawn = watch;
-        if (watch) OctopusSampleUnifiedProfile.Changed += OnUnifiedProfileChanged;
-        else OctopusSampleUnifiedProfile.Changed -= OnUnifiedProfileChanged;
     }
 
     private static bool Locked()
@@ -315,12 +731,13 @@ public class OctopusScenariosListView : MonoBehaviour
     private void Repaint()
     {
         if (_list == null) return;
+        _repaintRequested = false;
 
         // Recorded here rather than where the row is built: a query that filters the Sign-in
         // section out draws no switch at all, and a stale value would then keep OnStateChanged
         // from repainting once the query is cleared.
         _lockedAsDrawn = Locked();
-        WatchUnifiedProfile(false);
+        if (_live != null) _live.gameObject.SetActive(!Searching);
 
         for (var i = _list.childCount - 1; i >= 0; i--)
         {
@@ -333,122 +750,185 @@ public class OctopusScenariosListView : MonoBehaviour
         if (groups.Count == 0)
         {
             var empty = SampleUi.Card(EmptyStateId, _list);
-            SampleUi.FlexibleLabel(empty, "No scenarios found", SampleUi.TextTitle, SampleUi.TitleColor);
             SampleUi.FlexibleLabel(empty, EmptyStateText(_query), SampleUi.TextBody, SampleUi.Muted);
-            SampleUi.FlexibleLabel(empty, "Try a capability or API name.", SampleUi.TextCaption, SampleUi.Muted);
             return;
         }
 
         foreach (var group in groups)
         {
-            var section = SampleUi.Card("Section", _list);
-            BuildSectionHead(group, section);
-            BuildFeatureToggle(group, section);
+            // A flat stack, as Android's groups: the head is the only framed surface; open
+            // cards follow it 8dp apart.
+            var section = SampleUi.Panel("Section", _list, OctopusSampleBranding.Clear);
+            SampleUi.VerticalStack(section, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm), new RectOffset(), false);
+            var headSlot = SampleUi.Panel("HeadSlot", section, OctopusSampleBranding.Clear);
+            SampleUi.VerticalStack(headSlot, 0f, new RectOffset(), false);
+            BuildSectionHead(group, headSlot);
+            // As on Android, the switch stays while searching: a query does not change what it does.
+            // The slot holds the head and its switch overlay only: the switch stretches over the
+            // whole slot, so anything else in it would pull the switch off the row's centre.
+            BuildFeatureToggle(group, headSlot);
+            BuildLockedNote(group, section);
             if (!IsSectionOpen(group.Section)) continue;
             foreach (var scenario in group.Scenarios) BuildCard(scenario, section);
-            // After the cards and never while searching — Android's placement: the section holds
-            // no scenario, so a query has nothing in it to match.
-            if (group.Section == ScenarioSection.SignIn && !Searching) BuildUnifiedProfile(section);
         }
     }
 
-    // Header and toggle share a framed section, but their hit regions remain separate.
+    private static bool HasToggle(ScenarioSection section)
+    {
+        return section == ScenarioSection.SignIn || section == ScenarioSection.Notifications;
+    }
+
+    /// <summary>
+    /// Android's collapsed group row: a rounded surface, 48dp at least and 12x10dp padding, holding
+    /// the title, the effect of the section's switch on one ellipsized line when it has one, the
+    /// count pill, the switch's slot and the chevron. The switch itself is the next sibling
+    /// (<see cref="BuildFeatureToggle"/>), laid over that slot, so a tap on it never collapses the
+    /// section; the Force login lock link goes under the row (<see cref="BuildLockedNote"/>).
+    /// </summary>
     private void BuildSectionHead(ScenarioSectionGroup group, RectTransform parent)
     {
-        var head = SampleUi.Panel(group.HeaderId, parent, OctopusSampleBranding.Clear);
+        var p = OctopusSampleBranding.Palette;
+        var head = SampleUi.Panel(group.HeaderId, parent, p.SurfaceHigh);
+        var image = head.GetComponent<Image>();
+        image.sprite = SampleUiShapes.Rounded(HeadRadiusDp);
+        image.type = Image.Type.Sliced;
+        image.raycastTarget = false;
         var layout = head.gameObject.AddComponent<HorizontalLayoutGroup>();
-        layout.spacing = OctopusSampleBranding.Dp(8f);
+        layout.padding = SampleUi.Padding(OctopusSampleBranding.SpaceMd, 10f);
+        layout.spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm);
         layout.childAlignment = TextAnchor.MiddleLeft;
         layout.childControlWidth = layout.childControlHeight = true;
         layout.childForceExpandWidth = layout.childForceExpandHeight = false;
-        head.gameObject.AddComponent<LayoutElement>().minHeight = OctopusSampleBranding.MinTouchUnits;
+        head.gameObject.AddComponent<LayoutElement>().minHeight = OctopusSampleBranding.Dp(GroupRowMinDp);
 
-        var title = SampleUi.Label("Title", head, group.Title, SampleUi.TextBody,
-            SampleUi.TitleColor, TextAnchor.MiddleLeft);
+        var copy = SampleUi.Panel("Copy", head, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(copy, OctopusSampleBranding.Dp(2f), new RectOffset(), false);
+        var copySize = copy.gameObject.AddComponent<LayoutElement>();
+        copySize.minWidth = 0f;
+        copySize.preferredWidth = 0f;
+        copySize.flexibleWidth = 1f;
+        var title = SampleUi.Label("Title", copy, group.Title, SampleUi.TextLabel, p.Title, TextAnchor.MiddleLeft);
         title.fontStyle = FontStyles.Bold;
-        var titleSize = title.gameObject.AddComponent<LayoutElement>();
-        titleSize.minWidth = 0f;
-        titleSize.preferredWidth = 0f;
-        titleSize.flexibleWidth = 1f;
+        SampleUiLineClamp.Apply(title, 1);
 
-        // Keep Count on the action as well as its existing wording for QA readers.
-        var count = SampleUi.Label("Count", head, CountText(group), SampleUi.TextCaption,
-            SampleUi.Muted, TextAnchor.MiddleRight);
-        var countSize = count.gameObject.AddComponent<LayoutElement>();
-        countSize.minWidth = countSize.preferredWidth = OctopusSampleBranding.Dp(88f);
+        TMP_Text caption = null;
+        bool toggle = HasToggle(group.Section);
+        if (toggle)
+        {
+            var push = group.Section == ScenarioSection.Notifications;
+            var on = push ? OctopusSampleFeatureToggles.PushRegistration : OctopusSampleFeatureToggles.ForceLogin;
+            var label = push ? OctopusSampleFeatureToggles.PushRegistrationLabel : OctopusSampleFeatureToggles.ForceLoginLabel;
+            var effect = push ? OctopusSampleFeatureToggles.PushRegistrationEffect(on) : OctopusSampleFeatureToggles.ForceLoginEffect(on);
+            caption = SampleUi.FlexibleLabel(copy, label + ": " + effect, SampleUi.TextCaption, p.Muted);
+            SampleUiLineClamp.Apply(caption, 1);
+        }
+
+        // Android's `CountPill`: a 20dp filled pill. Its height is fixed, because a pill sprite's
+        // slice borders report a 96dp preferred size — the circle the QA saw.
+        var badge = SampleUi.Panel("CountBadge", head, p.AccentIndicator);
+        var badgeImage = badge.GetComponent<Image>();
+        badgeImage.sprite = SampleUiShapes.Rounded(CountBadgeDp / 2f);
+        badgeImage.type = Image.Type.Sliced;
+        badgeImage.raycastTarget = false;
+        var badgeStack = SampleUi.VerticalStack(badge, 0f, SampleUi.Padding(OctopusSampleBranding.SpaceSm, 2f), false);
+        badgeStack.childForceExpandWidth = false;
+        badgeStack.childAlignment = TextAnchor.MiddleCenter;
+        var badgeSize = badge.gameObject.AddComponent<LayoutElement>();
+        badgeSize.minWidth = OctopusSampleBranding.Dp(CountBadgeDp);
+        badgeSize.minHeight = badgeSize.preferredHeight = OctopusSampleBranding.Dp(CountBadgeDp);
+        badgeSize.layoutPriority = 2;
+        var count = SampleUi.Label("Count", badge, OctopusSampleCommunityConfigLines.CountText(group.Scenarios.Count),
+            SampleUi.TextCaption, p.OnAccentIndicator, TextAnchor.MiddleCenter);
+        count.fontStyle = FontStyles.Bold;
+        count.textWrappingMode = TextWrappingModes.NoWrap;
+
+        if (toggle)
+        {
+            var slot = SampleUi.Panel("SwitchSlot", head, OctopusSampleBranding.Clear);
+            var slotSize = slot.gameObject.AddComponent<LayoutElement>();
+            slotSize.minWidth = slotSize.preferredWidth = OctopusSampleBranding.Dp(OctopusSampleBranding.SwitchWidth);
+        }
+
+        var chevron = SampleUi.Label("Chevron", head, IsSectionOpen(group.Section) ? "⌃" : "⌄",
+            SampleUi.TextTitle, p.Muted, TextAnchor.MiddleCenter);
+        var chevronSize = chevron.gameObject.AddComponent<LayoutElement>();
+        chevronSize.minWidth = chevronSize.preferredWidth = OctopusSampleBranding.Dp(24f);
         if (Searching || group.Scenarios.Count == 0) return;
 
-        head.GetComponent<Image>().raycastTarget = true;
+        image.raycastTarget = true;
         head.gameObject.AddComponent<SampleUiTouchTarget>();
         var button = head.gameObject.AddComponent<SampleUiButton>();
-        button.targetGraphic = head.GetComponent<Image>();
-        var palette = OctopusSampleBranding.Palette;
-        button.Configure(head.GetComponent<Image>(), null, title, palette.Surface, palette.Title,
-            palette.Border, OctopusSampleBranding.CardRadius, detail: count);
+        button.targetGraphic = image;
+        button.Configure(image, null, title, p.SurfaceHigh, p.Title, p.Border, HeadRadiusDp, detail: caption);
         var section = group.Section;
         button.onClick.AddListener(() => ToggleSection(section));
     }
 
     /// <summary>
-    /// The section's feature switch, drawn under its head — and nowhere else, which is the shared
-    /// design contract's rule for a toggle. Sign-in and Notifications carry switches;
+    /// The Force login lock, once the SDK is up: one accent line under the group row that is itself
+    /// the link to the Configuration screen, whose profiles still change it live. Under the row
+    /// rather than in it, so the row keeps Android's 48–56dp — and a sibling of the head's slot,
+    /// not a child: the switch overlay stretches over that slot and would centre on the seam.
+    /// </summary>
+    private static void BuildLockedNote(ScenarioSectionGroup group, RectTransform parent)
+    {
+        if (group.Section != ScenarioSection.SignIn) return;
+        var locked = OctopusSampleFeatureToggles.ForceLoginLockedNote();
+        if (locked.Length > 0) BuildLockedLink(parent, locked);
+    }
+
+    private static void BuildLockedLink(RectTransform parent, string locked)
+    {
+        var p = OctopusSampleBranding.Palette;
+        var link = SampleUi.Panel(ForceLoginConfigLinkId, parent, OctopusSampleBranding.Clear);
+        var fill = link.GetComponent<Image>();
+        fill.raycastTarget = true;
+        SampleUi.VerticalStack(link, 0f, new RectOffset(), false).childAlignment = TextAnchor.MiddleLeft;
+        link.gameObject.AddComponent<LayoutElement>().minHeight = OctopusSampleBranding.MinTouchUnits;
+        link.gameObject.AddComponent<SampleUiTouchTarget>();
+        var note = SampleUi.Label(ForceLoginLockedNoteId, link, locked,
+            SampleUi.TextCaption, p.Accent, TextAnchor.MiddleLeft);
+        // Never clamped: the note explains where to change the profile and that it applies live.
+        var button = link.gameObject.AddComponent<SampleUiButton>();
+        button.targetGraphic = fill;
+        button.onClick.AddListener(() => OctopusSampleConfigView.Open());
+        button.Configure(fill, null, note, OctopusSampleBranding.Clear, p.Accent, OctopusSampleBranding.Clear, 0f);
+    }
+
+    /// <summary>
+    /// The section's feature switch, the head's next sibling — and nowhere else, which is the
+    /// shared design contract's rule for a toggle. Sign-in and Notifications carry switches;
     /// every other section returns without adding a row.
     ///
-    /// What the switch does, why it is not a package API, and when it stops applying are all in
-    /// <see cref="OctopusSampleFeatureToggles"/>. Two things are this screen's own:
-    ///
-    /// - **The row states the effect in product words, under the label**, in both positions —
-    ///   Android's `FeatureToggleRow` renders the same sentence from the same source. A switch that
-    ///   flips with nothing on screen saying what changed is the defect the contract names.
-    /// - **Force login locks once the SDK is up**, with a note beneath its effect and a link to
-    ///   the Configuration screen, whose profiles change it live (a community switch, no restart).
-    ///   Push registration stays interactable: enabling forwards the cached device token and
-    ///   disabling stops forwarding new tokens. The view listens to
-    ///   <see cref="OctopusSampleState.Changed"/> so Force login also locks when a scenario
-    ///   initialises the SDK over this list.
+    /// The row takes no layout space: it lies over the head, the switch right-aligned on the slot
+    /// the head keeps free for it, so the group stays one 48–56dp row as on Android. What the switch
+    /// does is the head's caption, in product words, in both positions. Force login locks once the
+    /// SDK is up (<see cref="OctopusSampleFeatureToggles"/>); the view listens to
+    /// <see cref="OctopusSampleState.Changed"/> so it also locks when a scenario initialises the
+    /// SDK over this list. Push registration stays interactable.
     /// </summary>
     private void BuildFeatureToggle(ScenarioSectionGroup group, RectTransform parent)
     {
-        if (group.Section != ScenarioSection.SignIn && group.Section != ScenarioSection.Notifications) return;
+        if (!HasToggle(group.Section)) return;
 
         var push = group.Section == ScenarioSection.Notifications;
         var id = push ? OctopusSampleFeatureToggles.PushRegistrationId : OctopusSampleFeatureToggles.ForceLoginId;
-        var label = push ? OctopusSampleFeatureToggles.PushRegistrationLabel : OctopusSampleFeatureToggles.ForceLoginLabel;
         var on = push ? OctopusSampleFeatureToggles.PushRegistration : OctopusSampleFeatureToggles.ForceLogin;
-        var effect = push ? OctopusSampleFeatureToggles.PushRegistrationEffect(on) : OctopusSampleFeatureToggles.ForceLoginEffect(on);
         var locked = push ? string.Empty : OctopusSampleFeatureToggles.ForceLoginLockedNote();
 
         var row = SampleUi.Panel(push ? PushRegistrationRowId : ForceLoginRowId, parent, OctopusSampleBranding.Clear);
+        row.gameObject.AddComponent<LayoutElement>().ignoreLayout = true;
+        SampleUi.Stretch(row, Vector2.zero, Vector2.one);
         var layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-        layout.spacing = 24f;
-        layout.padding = new RectOffset(0, 0, 24, 24);
-        layout.childAlignment = TextAnchor.MiddleLeft;
-        layout.childControlWidth = true;
-        layout.childForceExpandWidth = false;
-        layout.childControlHeight = true;
-        layout.childForceExpandHeight = false;
-
-        // The copy takes whatever width the switch leaves, rather than a guessed constant: the
-        // effect sentences are two lines on a narrow phone and one on a tablet.
-        var copy = SampleUi.Panel("Copy", row, Color.clear);
-        SampleUi.VerticalStack(copy, 6f, new RectOffset(0, 0, 0, 0), false);
-        copy.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-        SampleUi.FlexibleLabel(copy, label, SampleUi.TextBody,
-                               SampleUi.TitleColor);
-        SampleUi.FlexibleLabel(copy, effect,
-                               SampleUi.TextCaption, SampleUi.Muted);
-        if (locked.Length > 0)
-        {
-            var note = SampleUi.Label(ForceLoginLockedNoteId, copy, locked, SampleUi.TextCaption,
-                                      SampleUi.Attention, TextAnchor.UpperLeft);
-            note.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-            SampleUi.Button(ForceLoginConfigLinkId, copy, "Change in Configuration",
-                            SampleUiButtonVariant.Tertiary, () => OctopusSampleConfigView.Open());
-        }
+        // Head padding (12dp) + chevron (24dp) + spacing (8dp): the switch lands on its slot.
+        layout.padding = new RectOffset(0, Mathf.RoundToInt(OctopusSampleBranding.Dp(
+            OctopusSampleBranding.SpaceMd + 24f + OctopusSampleBranding.SpaceSm)), 0, 0);
+        layout.childAlignment = TextAnchor.MiddleRight;
+        layout.childControlWidth = layout.childControlHeight = true;
+        layout.childForceExpandWidth = layout.childForceExpandHeight = false;
 
         var next = !on;
-        SampleUi.Switch(id, row, on, locked.Length == 0,
-                        () => FlipFeatureToggle(push, next));
+        SampleUi.Switch(id, row, on, locked.Length == 0, () => FlipFeatureToggle(push, next));
     }
 
     /// <summary>
@@ -462,134 +942,64 @@ public class OctopusScenariosListView : MonoBehaviour
         if (changed) Repaint();
     }
 
-    /// <summary>
-    /// The Unified Profile override, nested in Sign-in &amp; user after its cards and indented, as
-    /// the Android sample's `UnifiedProfileSection`: a collapsible head, the intro, a read-out of
-    /// the effective flag, then the three choices — the selected one filled, the others outlined.
-    /// A choice applies to the running SDK at once (no Apply, no restart, so the signed-in user
-    /// stays) and is re-applied at the next start or community switch; see
-    /// <see cref="OctopusSampleUnifiedProfile"/>.
-    /// </summary>
-    private void BuildUnifiedProfile(RectTransform parent)
-    {
-        var block = SampleUi.Panel("scenarios-unified-profile-panel", parent, OctopusSampleBranding.Clear);
-        SampleUi.VerticalStack(block, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm),
-            new RectOffset(Mathf.RoundToInt(OctopusSampleBranding.Dp(12f)), 0, 0, 0), false);
-
-        var head = SampleUi.Panel(UnifiedProfileId, block, OctopusSampleBranding.Clear);
-        var layout = head.gameObject.AddComponent<HorizontalLayoutGroup>();
-        layout.spacing = OctopusSampleBranding.Dp(8f);
-        layout.childAlignment = TextAnchor.MiddleLeft;
-        layout.childControlWidth = layout.childControlHeight = true;
-        layout.childForceExpandWidth = layout.childForceExpandHeight = false;
-        head.gameObject.AddComponent<LayoutElement>().minHeight = OctopusSampleBranding.MinTouchUnits;
-        var title = SampleUi.Label("Title", head, OctopusSampleUnifiedProfile.Label, SampleUi.TextBody,
-            SampleUi.TitleColor, TextAnchor.MiddleLeft);
-        title.fontStyle = FontStyles.Bold;
-        var titleSize = title.gameObject.AddComponent<LayoutElement>();
-        titleSize.minWidth = 0f;
-        titleSize.preferredWidth = 0f;
-        titleSize.flexibleWidth = 1f;
-        var state = SampleUi.Label("State", head, _unifiedProfileOpen ? "(hide)" : "(show)", SampleUi.TextCaption,
-            SampleUi.Muted, TextAnchor.MiddleRight);
-        var stateSize = state.gameObject.AddComponent<LayoutElement>();
-        stateSize.minWidth = stateSize.preferredWidth = OctopusSampleBranding.Dp(64f);
-        head.GetComponent<Image>().raycastTarget = true;
-        head.gameObject.AddComponent<SampleUiTouchTarget>();
-        var button = head.gameObject.AddComponent<SampleUiButton>();
-        button.targetGraphic = head.GetComponent<Image>();
-        var palette = OctopusSampleBranding.Palette;
-        button.Configure(head.GetComponent<Image>(), null, title, palette.Surface, palette.Title,
-            palette.Border, OctopusSampleBranding.CardRadius, detail: state);
-        button.onClick.AddListener(ToggleUnifiedProfile);
-        if (!_unifiedProfileOpen) return;
-
-        WatchUnifiedProfile(true);
-        SampleUi.FlexibleLabel(block, OctopusSampleUnifiedProfile.Intro, SampleUi.TextCaption, SampleUi.Muted);
-
-        var readOut = SampleUi.Panel(UnifiedProfileLiveValueId, block, OctopusSampleBranding.Clear);
-        var readOutLayout = readOut.gameObject.AddComponent<HorizontalLayoutGroup>();
-        readOutLayout.spacing = OctopusSampleBranding.Dp(8f);
-        readOutLayout.childAlignment = TextAnchor.MiddleLeft;
-        readOutLayout.childControlWidth = readOutLayout.childControlHeight = true;
-        readOutLayout.childForceExpandWidth = readOutLayout.childForceExpandHeight = false;
-        var nameLabel = SampleUi.Label("Name", readOut, OctopusSampleUnifiedProfile.SectionName, SampleUi.TextBody,
-            SampleUi.TitleColor, TextAnchor.MiddleLeft);
-        nameLabel.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-        var value = SampleUi.Label("Value", readOut, OctopusSampleUnifiedProfile.LiveValue, SampleUi.TextBody,
-            SampleUi.TitleColor, TextAnchor.MiddleRight);
-        value.fontStyle = FontStyles.Bold;
-
-        var current = OctopusSampleUnifiedProfile.Override;
-        OverrideChoice(block, UnifiedProfileBackendId, null, current);
-        OverrideChoice(block, UnifiedProfileForceOnId, true, current);
-        OverrideChoice(block, UnifiedProfileForceOffId, false, current);
-        BuildRouteSwitch(block);
-    }
-
-    /// <summary>
-    /// Whether this app wires the host profile route at all (<c>NavigateToProfileHandler</c>), like
-    /// the Flutter sample's <c>onNavigateToProfile</c> switch. Off, every avatar opens the SDK
-    /// profile whatever the flag says (#393). Applied live, like the three choices above.
-    /// </summary>
-    private static void BuildRouteSwitch(RectTransform parent)
-    {
-        var wired = OctopusSampleUnifiedProfile.RouteWired;
-        var row = SampleUi.Panel(UnifiedProfileRouteRowId, parent, OctopusSampleBranding.Clear);
-        var layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-        layout.spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm);
-        layout.childAlignment = TextAnchor.MiddleLeft;
-        layout.childControlWidth = layout.childControlHeight = true;
-        layout.childForceExpandWidth = layout.childForceExpandHeight = false;
-        var copy = SampleUi.Panel("Copy", row, Color.clear);
-        SampleUi.VerticalStack(copy, 6f, new RectOffset(0, 0, 0, 0), false);
-        copy.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-        SampleUi.FlexibleLabel(copy, "Host profile route (NavigateToProfileHandler)", SampleUi.TextBody,
-            SampleUi.TitleColor);
-        SampleUi.FlexibleLabel(copy, wired
-                ? "Wired: avatars of exposed members open this app's profile page."
-                : "Not wired: every avatar opens the SDK profile.",
-            SampleUi.TextCaption, SampleUi.Muted);
-        var next = !wired;
-        SampleUi.Switch(UnifiedProfileRouteToggleId, row, wired, true,
-            () => OctopusSampleUnifiedProfile.SetRouteWired(next));
-    }
-
-    private static void OverrideChoice(RectTransform parent, string id, bool? value, bool? current)
-    {
-        SampleUi.Button(id, parent, OctopusSampleUnifiedProfile.OverrideLabel(value),
-            current == value ? SampleUiButtonVariant.Primary : SampleUiButtonVariant.Tertiary,
-            () => OctopusSampleUnifiedProfile.SetOverride(value));
-    }
-
-    /// <summary>"3 (hide)" — the count, and what a tap would do to it.</summary>
-    private string CountText(ScenarioSectionGroup group)
-    {
-        if (group.Scenarios.Count == 0) return string.Empty;
-        var count = group.Scenarios.Count.ToString();
-        if (Searching) return count;
-        return count + (IsSectionOpen(group.Section) ? " (hide)" : " (show)");
-    }
-
     internal OctopusScenarioScreenView OpenScenario(string id)
     {
         var pilot = OctopusScenarioPilots.Create(id);
         return pilot == null ? null : OctopusScenarioScreenView.Open(pilot);
     }
 
+    /// <summary>
+    /// Android's `ScenarioCard`: an outlined 12dp card, no chevron — the title, what you will
+    /// observe, then the one SDK symbol in a filled monospace chip.
+    /// </summary>
     private void BuildCard(OctopusScenario scenario, RectTransform parent)
     {
+        var p = OctopusSampleBranding.Palette;
         // One GameObject.name per card: every sibling used to be called "Card", which makes a
         // hierarchy dump and a failing UI assertion equally unreadable. The catalog id stays on
         // the button inside (scenario.CardTestId) — that is what QA taps.
-        var card = SampleUi.Panel("scenarios-" + scenario.Id + "-card-panel", parent, OctopusSampleBranding.Clear);
-        SampleUi.VerticalStack(card, 0f, new RectOffset(), false);
+        var panel = SampleUi.Panel("scenarios-" + scenario.Id + "-card-panel", parent, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(panel, 0f, new RectOffset(), false);
         var id = scenario.Id;
-        // Title, what you will observe, then the one SDK symbol — the wording model the other
-        // three samples already use. The capability line the card used to show is not gone: it
-        // heads the scenario screen, where a list of symbols is the answer to a question the
-        // reader has by then actually asked.
-        SampleUi.ListRow(scenario.CardTestId, card, scenario.DisplayTitle, scenario.Subtitle,
-            () => OpenScenario(id), scenario.ApiSymbol);
+
+        var card = SampleUi.Panel(scenario.CardTestId, panel, OctopusSampleBranding.Clear, HeadRadiusDp, p.Border);
+        var fill = card.GetComponent<Image>();
+        fill.raycastTarget = true;
+        SampleUi.VerticalStack(card, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceXs),
+            SampleUi.Padding(OctopusSampleBranding.SpaceLg, OctopusSampleBranding.SpaceMd), false);
+        card.gameObject.AddComponent<LayoutElement>().minHeight = OctopusSampleBranding.MinTouchUnits;
+        card.gameObject.AddComponent<SampleUiTouchTarget>();
+
+        var title = SampleUi.Label("Label", card, scenario.DisplayTitle, SampleUi.TextLabel, p.Title, TextAnchor.MiddleLeft);
+        title.fontStyle = FontStyles.Bold;
+        var subtitle = SampleUi.FlexibleLabel(card, scenario.Subtitle, SampleUi.TextCaption, p.Muted);
+        SampleUiLineClamp.Apply(subtitle, 2);
+
+        var holder = SampleUi.Panel("ApiRow", card, OctopusSampleBranding.Clear);
+        var rowLayout = holder.gameObject.AddComponent<HorizontalLayoutGroup>();
+        rowLayout.childControlWidth = rowLayout.childControlHeight = true;
+        rowLayout.childForceExpandWidth = rowLayout.childForceExpandHeight = false;
+        rowLayout.childAlignment = TextAnchor.MiddleLeft;
+        var chip = SampleUi.Panel(scenario.CardTestId + "-api", holder, p.ChipFill, 6f, p.ChipFill, 0f);
+        chip.GetComponent<Image>().raycastTarget = false;
+        var chipStack = SampleUi.VerticalStack(chip, 0f, SampleUi.Padding(OctopusSampleBranding.SpaceSm, 3f), false);
+        chipStack.childForceExpandWidth = false;
+        var symbol = SampleUi.Label("Line", chip, scenario.ReferenceApi, SampleUi.TextCaption, p.ChipInk, TextAnchor.MiddleLeft);
+        symbol.font = SampleUiFonts.Mono;
+        symbol.textWrappingMode = TextWrappingModes.NoWrap;
+        // At most the row's width, then an ellipsis: the row lays the chip out at its text width
+        // and shrinks it to fit, since a label's minimum width is zero.
+        symbol.overflowMode = TextOverflowModes.Ellipsis;
+        symbol.gameObject.AddComponent<LayoutElement>().minWidth = 0f;
+        var chipSize = chip.gameObject.AddComponent<LayoutElement>();
+        chipSize.minWidth = 0f;
+        chipSize.flexibleWidth = 0f;
+
+        var button = card.gameObject.AddComponent<SampleUiButton>();
+        button.targetGraphic = fill;
+        button.onClick.AddListener(() => OpenScenario(id));
+        var stroke = card.Find(SampleUi.StrokeName);
+        button.Configure(fill, stroke != null ? stroke.GetComponent<Image>() : null, title,
+            OctopusSampleBranding.Clear, p.Title, p.Border, HeadRadiusDp, false, subtitle);
     }
 }

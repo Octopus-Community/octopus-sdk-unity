@@ -76,17 +76,25 @@ public class SampleUiButton : Button
         _chrome = chrome;
         var palette = OctopusSampleBranding.Palette;
         // Signal's pressed surface preserves contrast for both card and chrome labels.
-        _pressedFill = OctopusSampleBranding.Theme == OctopusSampleTheme.Dark &&
+        _pressedFill = normalFill == palette.ButtonBackground
+            ? OctopusSampleBranding.Tint(OctopusSampleBranding.DarkBackground, normalFill, OctopusSampleBranding.PressedTint)
+            : OctopusSampleBranding.Theme == OctopusSampleTheme.Dark &&
             (normalFill == palette.Surface || chrome)
             ? OctopusSampleBranding.DarkCardPressed
             : OctopusSampleBranding.Tint(normalInk,
-            normalFill.a == 0f ? palette.SurfaceHigh : normalFill, OctopusSampleBranding.PressedTint);
+            normalFill.a == 0f ? palette.Surface : normalFill, OctopusSampleBranding.PressedTint);
         _disabledFill = chrome ? palette.Chrome : palette.DisabledSurface;
         _disabledInk = chrome ? palette.OnChrome : palette.DisabledInk;
         _disabledBorder = chrome ? palette.ChromeControl : palette.Border;
-        _focus = chrome ? palette.OnChrome : palette.Focus;
+        _focus = FocusInk(normalFill, chrome);
         transition = Transition.None;
         DoStateTransition(currentSelectionState, true);
+    }
+
+    public static Color FocusInk(Color fill, bool chrome)
+    {
+        var palette = OctopusSampleBranding.Palette;
+        return chrome ? palette.OnChrome : fill == palette.ButtonBackground ? palette.FilledControlFocus : palette.Focus;
     }
 
     /// <summary>
@@ -122,6 +130,19 @@ public class SampleUiButton : Button
         }
         Configure(_fill, _stroke, _label, _pageFill, _pageInk, _pageBorder, _radius, _pageChrome,
             _detail, _strokeDp);
+    }
+
+    /// <summary>
+    /// The app bar's icon-button style, Android's `IconButton`: no disc and no outline, the content
+    /// drawn in <paramref name="ink"/>. Wears the chrome style first, so
+    /// <see cref="SetChromeStyle"/>(false) still gives the page style back.
+    /// </summary>
+    public void SetIconStyle(Color ink)
+    {
+        if (_fill == null) return;
+        SetChromeStyle(true);
+        Configure(_fill, _stroke, _label, OctopusSampleBranding.Clear, ink, OctopusSampleBranding.Clear,
+            _radius, true, _detail, _strokeDp);
     }
 
     protected override void DoStateTransition(SelectionState state, bool instant)

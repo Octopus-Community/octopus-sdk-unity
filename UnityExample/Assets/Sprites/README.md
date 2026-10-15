@@ -7,10 +7,13 @@ The PNGs are modified exports of the corresponding
 `<name>/materialsymbolsoutlined/<name>_24px.svg`: outlined, weight 400, optical
 size 24, unfilled. The paths are unchanged; fill is converted to white for theme
 tinting, and SVGs are rasterized with CairoSVG at 48 x 48 (2x) and 72 x 72 (3x).
-Exported 2026-09-14. No icon font or runtime SVG renderer is required.
+Exported 2026-09-14 (first set) and 2026-10-07 (second set). No icon font or
+runtime SVG renderer is required.
 
 Symbols: home, science, forum, settings, palette, language, info, code,
-description, design_services, bug_report and feedback.
+description, design_services, bug_report and feedback (2026-09-14); person,
+dark_mode, cloud, terminal, delete_forever, sports_esports, content_copy,
+delete_sweep, close and check (2026-10-07).
 
 Importer metadata is authored from the project's Unity-generated TextureImporter
 v13 template: Sprite (single), bilinear filtering, clamp, no mipmaps, no NPOT

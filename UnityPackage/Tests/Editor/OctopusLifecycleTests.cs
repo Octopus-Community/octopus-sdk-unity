@@ -107,17 +107,17 @@ public class OctopusLifecycleTests
     }
 
     [Test]
-    public void OctopusAuthVariantUsesOctopusMode()
+    public void SsoSwitchUsesSsoMode()
     {
-        OctopusSDK.SwitchCommunityOctopusAuth("YOUR_API_KEY");
+        OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.SSO());
         Drain();
-        Assert.AreEqual("octopus", OctopusSDK.Mock.LastCall("SwitchCommunity").Value.Args[0]);
+        Assert.AreEqual("sso", OctopusSDK.Mock.LastCall("SwitchCommunity").Value.Args[0]);
     }
 
     [Test]
     public void ResetKeepsInitializationAndCallHistoryStopReleasesInitialization()
     {
-        OctopusSDK.SwitchCommunityOctopusAuth("YOUR_API_KEY");
+        OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.SSO());
         Drain();
         OctopusSDK.Reset();
         Drain();
@@ -127,7 +127,7 @@ public class OctopusLifecycleTests
         OctopusSDK.Stop();
         Drain();
         Assert.IsFalse(OctopusSDK.MockBackend.LifecycleInitialized);
-        OctopusSDK.SwitchCommunityOctopusAuth("YOUR_API_KEY");
+        OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.SSO());
         Drain();
         Assert.IsTrue(OctopusSDK.MockBackend.LifecycleInitialized);
     }
@@ -149,7 +149,7 @@ public class OctopusLifecycleTests
     [Test]
     public void CloseOnlyDismissesAndIsIdempotent()
     {
-        OctopusSDK.SwitchCommunityOctopusAuth("YOUR_API_KEY");
+        OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.SSO());
         Drain();
         OctopusSDK.Mock.CurrentScreen = "Main feed";
         OctopusSDK.Close();
@@ -164,7 +164,7 @@ public class OctopusLifecycleTests
     {
         OctopusSDK.Mock.Enabled = false;
         int count = 0;
-        OctopusSDK.SwitchCommunityOctopusAuth("YOUR_API_KEY", () => count++);
+        OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.SSO(), () => count++);
         Drain();
         OctopusSDK.Reset(() => count++);
         Drain();
@@ -209,6 +209,10 @@ public class OctopusLifecycleTests
 
     [TestCase("first\nsecond")]
     [TestCase("Reset failed.")]
+    [TestCase("Reset failed. Details: IllegalArgumentException")]
+    [TestCase("Reset failed. Details: IllegalStateException")]
+    [TestCase("Reset failed. Details: IOException")]
+    [TestCase("Reset failed. Details: SecurityException")]
     [TestCase("Reset failed. Details: Native disconnection failed")]
     [TestCase("Reset failed. Details: Native disconnection failed\nRetry later")]
     public void NativeLandingPadsIgnoreUnknownAndDuplicateResponsesAndReleaseErrors(string nativeMessage)
@@ -238,4 +242,21 @@ public class OctopusLifecycleTests
         }
         finally { Object.DestroyImmediate(go); }
     }
+    [TestCase(typeof(OctopusScreen), "SettingsList", 13)]
+    [TestCase(typeof(OctopusScreen), "SettingsAccount", 14)]
+    [TestCase(typeof(OctopusScreen), "DeleteAccount", 16)]
+    [TestCase(typeof(OctopusIconSlot), "SettingsAccount", 60)]
+    [TestCase(typeof(OctopusIconSlot), "SettingsLogout", 63)]
+    [TestCase(typeof(OctopusIconSlot), "SettingsDeleteAccountWarning", 64)]
+    public void LegacyScreensAndIconsKeepValuesAndWarn(System.Type type, string member, int value)
+    {
+        var field = type.GetField(member);
+        Assert.AreEqual(value, System.Convert.ToInt32(field.GetValue(null)));
+        var obsolete = (System.ObsoleteAttribute)System.Attribute.GetCustomAttribute(
+            field, typeof(System.ObsoleteAttribute));
+        Assert.IsNotNull(obsolete);
+        Assert.IsFalse(obsolete.IsError);
+        Assert.IsNotEmpty(obsolete.Message);
+    }
+
 }

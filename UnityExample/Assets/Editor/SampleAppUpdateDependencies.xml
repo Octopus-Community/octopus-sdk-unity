@@ -1,0 +1,8 @@
+<!-- Octopus sample only: Play In-App Updates for the update card in Settings > About
+     (Assets/Scripts/Update, bridged by Assets/Plugins/Android/OctopusSampleAppUpdate.java).
+     The SDK package never depends on it. Android only; iOS testers get TestFlight's own prompt. -->
+<dependencies>
+  <androidPackages>
+    <androidPackage spec="com.google.android.play:app-update:2.1.0" />
+  </androidPackages>
+</dependencies>

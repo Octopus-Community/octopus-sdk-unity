@@ -98,8 +98,8 @@ public class OctopusSampleBrandingTests
         AssertReadable(theme, "App-bar title on the chrome", palette.OnChrome, palette.Chrome);
         AssertReadable(theme, "App-bar button label on its fill", palette.OnChrome,
                        palette.ChromeControl);
-        AssertReadable(theme, "Button label on the accent", palette.OnAccent, palette.Accent);
-        AssertReadable(theme, "Selected tab label on its indicator", palette.Accent,
+        AssertReadable(theme, "Button label on the accent", palette.OnAccent, palette.ButtonBackground);
+        AssertReadable(theme, "Selected tab label on its indicator", palette.OnAccentIndicator,
                        palette.AccentIndicator);
         AssertReadable(theme, "Attention text on a card", palette.Attention, palette.Surface);
         AssertReadable(theme, "Attention text on the page", palette.Attention, palette.Page);
@@ -108,9 +108,9 @@ public class OctopusSampleBrandingTests
         AssertReadable(theme, "Warning text", palette.Attention, palette.WarningSurface);
         AssertReadable(theme, "Destructive label", palette.Negative, palette.DangerSurface);
         AssertReadable(theme, "Pressed primary label", palette.OnAccent,
-            OctopusSampleBranding.Tint(palette.OnAccent, palette.Accent, OctopusSampleBranding.PressedTint));
+            OctopusSampleBranding.Tint(OctopusSampleBranding.DarkBackground, palette.ButtonBackground, OctopusSampleBranding.PressedTint));
         AssertReadable(theme, "Pressed secondary label", palette.Accent,
-            OctopusSampleBranding.Tint(palette.Accent, palette.SurfaceHigh, OctopusSampleBranding.PressedTint));
+            OctopusSampleBranding.Tint(palette.Accent, palette.Surface, OctopusSampleBranding.PressedTint));
         AssertReadable(theme, "Pressed destructive label", palette.Negative,
             OctopusSampleBranding.Tint(palette.Negative, palette.DangerSurface, OctopusSampleBranding.PressedTint));
         Assert.GreaterOrEqual(Contrast(palette.ControlBorder, palette.SurfaceHigh), UiFloor,
@@ -119,20 +119,48 @@ public class OctopusSampleBrandingTests
         AssertReadable(theme, "The platform slot on the page", palette.PlatformSlot, palette.Page);
     }
 
-    [Test]
-    public void TheDarkControlOutlineHoldsOnEveryStepOfTheLadder()
+    [TestCase(OctopusSampleTheme.Light)]
+    [TestCase(OctopusSampleTheme.Dark)]
+    public void ControlOutlineHoldsOnEveryStepOfTheLadder(OctopusSampleTheme theme)
     {
         // The navy ladder has four grounds a control can sit on; the outline has to read on each,
         // not only on the field fill the palette check measures.
-        var dark = OctopusSamplePalette.Dark();
+        var dark = theme == OctopusSampleTheme.Dark ? OctopusSamplePalette.Dark() : OctopusSamplePalette.Light();
         foreach (var ground in new[]
                  {
-                     dark.Page, dark.Surface, dark.Elevated, OctopusSampleBranding.DarkCardPressed
+                     dark.Page, dark.Surface, dark.SurfaceHigh, dark.Elevated
                  })
         {
+            Assert.GreaterOrEqual(Contrast(dark.Focus, ground), UiFloor, "Focus must be visible.");
             Assert.GreaterOrEqual(Contrast(dark.ControlBorder, ground), UiFloor,
-                "The dark control outline measures under 3:1 on one step of the ladder.");
+                "The control outline measures under 3:1 on one step of the ladder.");
         }
+    }
+
+    [TestCase(OctopusSampleTheme.Light)]
+    [TestCase(OctopusSampleTheme.Dark)]
+    public void FilledControlFocusClearsTheBoundaryFloor(OctopusSampleTheme theme)
+    {
+        var palette = theme == OctopusSampleTheme.Dark ? OctopusSamplePalette.Dark() : OctopusSamplePalette.Light();
+        Assert.GreaterOrEqual(Contrast(palette.FilledControlFocus, palette.ButtonBackground), UiFloor);
+    }
+
+    [TestCase(OctopusSampleTheme.Light)]
+    [TestCase(OctopusSampleTheme.Dark)]
+    public void PrimaryNavigationFocusUsesTheAccessibleFilledControlRole(OctopusSampleTheme theme)
+    {
+        OctopusSampleBranding.Theme = theme;
+        var owner = new GameObject("Focus test", typeof(RectTransform));
+        var events = new GameObject("Focus events", typeof(EventSystem));
+        try
+        {
+            var rect = SampleUi.Button("primary", owner.transform, "Primary", () => { });
+            rect.GetComponent<SampleUiButton>().OnSelect(new BaseEventData(events.GetComponent<EventSystem>()));
+            var stroke = rect.Find(SampleUi.StrokeName).GetComponent<Image>();
+            Assert.AreEqual(OctopusSampleBranding.Palette.FilledControlFocus, stroke.color);
+            Assert.GreaterOrEqual(Contrast(stroke.color, rect.GetComponent<Image>().color), UiFloor);
+        }
+        finally { Object.DestroyImmediate(owner); Object.DestroyImmediate(events); }
     }
 
     [Test]

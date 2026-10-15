@@ -33,7 +33,7 @@ hosted backend, a few lines of C#.
 | Android | API 23 (the native Android SDK depends on Media3 Compose, which requires it) |
 | iOS | 13.0 |
 | Dependency | [External Dependency Manager for Unity](https://github.com/googlesamples/unity-jar-resolver) (resolves the native Android SDK) |
-| Native SDKs in 1.14.3 | Android 1.14.2, iOS 1.14.1 (added as a Swift package at Xcode export) |
+| Native SDKs in 1.15.0 | Android 1.15.0, iOS 1.15.0 (added as a Swift package at Xcode export) |
 
 > **Known issue: Xcode 27 / iOS 27.** A Unity 6000.3 iOS export is refused at launch on iOS 27
 > (a Unity trampoline limitation, not an SDK bug). Use Unity 6000.5+ and re-export.
@@ -47,12 +47,12 @@ hosted backend, a few lines of C#.
 {
   "dependencies": {
     "com.google.external-dependency-manager": "https://github.com/googlesamples/unity-jar-resolver.git?path=upm#v1.2.187",
-    "com.octopuscommunity.octopus_sdk_for_unity": "https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#v1.14.3"
+    "com.octopuscommunity.octopus_sdk_for_unity": "https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#v1.15.0"
   }
 }
 ```
 
-Replace `v1.14.3` with the [latest release](https://github.com/Octopus-Community/octopus-sdk-unity/releases/latest)
+Replace `v1.15.0` with the [latest release](https://github.com/Octopus-Community/octopus-sdk-unity/releases/latest)
 tag. Without the `#v…` suffix the URL tracks this repo's `main` branch.
 
 **Legacy `.unitypackage`.** Import the
@@ -87,10 +87,25 @@ The token provider can run on a background thread while the game loop is paused:
 [SSO setup](https://doc.octopuscommunity.com/SDK/sso) and
 [JWT generation](https://doc.octopuscommunity.com/backend/jwt/generate_jwt).
 
+If your app manages its iOS audio session, pass initialization options:
+
+```csharp
+OctopusSDK.Initialize("YOUR_API_KEY", ConnectionMode.SSO(), apiServerHost: null, apiServerPort: 443,
+    options: new OctopusInitializationOptions { AppManagedAudioSession = true });
+```
+
+`AppManagedAudioSession` defaults to `false`. On iOS, `true` leaves `AVAudioSession`
+configuration and activation to your app when community videos play or pause. When `true`,
+configure the session in your app. The `.playback` category keeps video audio audible with the
+Ring/Silent switch on; `.mixWithOthers` lets other apps' audio keep playing. The value is retained
+across community switches, including after `Stop`, until the next successful `Initialize` call.
+Android ignores it.
+The existing initialization overload keeps the default behavior.
+
 ## Sample app
 
 - **Package samples**: in the Package Manager window, select **Octopus SDK for Unity >
-  Samples** and import *Octopus Auth Example*, *Push Notifications Example* or *Groups Example*.
+  Samples** and import *Push Notifications Example* or *Groups Example*.
 - **`UnityExample`**, the full demo project in this repo:
 
   ```bash

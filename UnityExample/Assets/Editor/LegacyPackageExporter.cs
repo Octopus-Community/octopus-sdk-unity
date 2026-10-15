@@ -79,7 +79,12 @@ public static class LegacyPackageExporter
 
     private static bool ShouldIgnore(string path)
     {
-        return IGNORE_CONTAINS.Any(ignore =>
+        // EditMode tests depend on NUnit and must not be imported into a host's Assets.
+        var testsPath = Path.GetFullPath(Path.Combine(SOURCE_PATH, "Tests"));
+        var fullPath = Path.GetFullPath(path);
+        return fullPath == testsPath || fullPath == testsPath + ".meta" ||
+            fullPath.StartsWith(testsPath + Path.DirectorySeparatorChar, System.StringComparison.Ordinal) ||
+            IGNORE_CONTAINS.Any(ignore =>
             path.Contains(ignore));
     }
 

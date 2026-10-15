@@ -21,7 +21,8 @@ public sealed class OctopusClientUserError
 {
     /// <summary>The classified failure; unfamiliar native cases map to Other.</summary>
     public OctopusClientUserErrorCode Code { get; private set; }
-    /// <summary>The diagnostic message, or a fallback when none was supplied.</summary>
+    /// <summary>Native callbacks preserve the backend ban reason and profile validation details.
+    /// Other native failures carry a redacted diagnostic message or fallback.</summary>
     public string Message { get; private set; }
 
     /// <summary>Creates a failure, including an injected Editor Mock response.</summary>

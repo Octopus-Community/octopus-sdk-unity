@@ -219,7 +219,7 @@ public class OctopusCommunityScenarioTests
         var pilot = Pilot<ContentOptionsScenario>();
         pilot.Presets[index].Fill(pilot.Fields);
         Assert.AreEqual("apply", pilot.Fields.Get("action"));
-        CollectionAssert.AreEqual(new[] { pictures, polls, comments, replies },
+        CollectionAssert.AreEqual(new[] { pictures, polls, comments, replies, true },
             pilot.Fields.All.Skip(1).Select(f => bool.Parse(f.Value)).ToArray());
         Assert.IsEmpty(_sdk.Calls);
         pilot.Presets[index].Run(pilot.Fields);
@@ -232,16 +232,103 @@ public class OctopusCommunityScenarioTests
         StringAssert.StartsWith("Applied: ", pilot.Result);
     }
 
+    [TestCase(0, true)]
+    [TestCase(1, false)]
+    [TestCase(2, null)]
+    public void NicknamePresetsSendThreeStatesAndReadEffectiveConfig(int index, bool? expected)
+    {
+        var pilot = Pilot<ForceNicknameChoiceScenario>();
+        pilot.Presets[index].Fill(pilot.Fields);
+        Assert.IsEmpty(_sdk.Calls);
+        pilot.Presets[index].Run(pilot.Fields);
+        Assert.AreEqual("forceNicknameChoice-result", pilot.ResultTestId);
+        CollectionAssert.AreEqual(new[] { "Initialize", "DebugOverrideForceNicknameChoice", "DebugGetCommunityConfig" }, _sdk.ScenarioMethods);
+        Assert.AreEqual(expected, _sdk.Calls.Single(c => c.Method == "DebugOverrideForceNicknameChoice").Args[0]);
+        StringAssert.Contains("Effective config unavailable", pilot.Result);
+    }
+
+    [Test]
+    public void NicknameLateReadDoesNotReplaceNewerResult()
+    {
+        var pilot = Pilot<ForceNicknameChoiceScenario>();
+        _sdk.DeferCompletions = true;
+        Tap(pilot, 0);
+        var stale = _sdk.ConfigError;
+        Tap(pilot, 1);
+        stale("stale");
+        StringAssert.DoesNotContain("stale", pilot.Result);
+        pilot.Dispose();
+        var before = pilot.Result;
+        _sdk.ConfigResult(null);
+        Assert.AreEqual(before, pilot.Result);
+    }
+
+    [TestCase(0, OctopusTermsAcceptanceMode.Implicit, OctopusConsentTextsMode.Implicit)]
+    [TestCase(1, OctopusTermsAcceptanceMode.ExplicitMultiCheckbox, OctopusConsentTextsMode.MultiCheckbox)]
+    [TestCase(2, OctopusTermsAcceptanceMode.ExplicitSingleCheckbox, OctopusConsentTextsMode.SingleCheckbox)]
+    [TestCase(3, OctopusTermsAcceptanceMode.Implicit, OctopusConsentTextsMode.Implicit)]
+    [TestCase(4, OctopusTermsAcceptanceMode.ExplicitMultiCheckbox, OctopusConsentTextsMode.MultiCheckbox)]
+    [TestCase(5, OctopusTermsAcceptanceMode.ExplicitSingleCheckbox, OctopusConsentTextsMode.SingleCheckbox)]
+    [TestCase(6, OctopusTermsAcceptanceMode.ExplicitSingleCheckbox, OctopusConsentTextsMode.SingleCheckbox)]
+    [TestCase(7, OctopusTermsAcceptanceMode.ExplicitMultiCheckbox, OctopusConsentTextsMode.Implicit)]
+    public void ConsentPresetsSendModeBeforeTextsAndReadConfig(int index, OctopusTermsAcceptanceMode mode, OctopusConsentTextsMode textMode)
+    {
+        var pilot = Pilot<ConsentTextsScenario>();
+        pilot.Presets[index].Fill(pilot.Fields);
+        Assert.IsEmpty(_sdk.Calls);
+        pilot.Presets[index].Run(pilot.Fields);
+        Assert.AreEqual("consentTexts-result", pilot.ResultTestId);
+        CollectionAssert.AreEqual(new[] { "Initialize", "DebugOverrideTermsAcceptanceMode", "DebugOverrideConsentTexts", "DebugGetCommunityConfig" }, _sdk.ScenarioMethods);
+        Assert.AreEqual(mode, _sdk.Calls.Single(c => c.Method == "DebugOverrideTermsAcceptanceMode").Args[0]);
+        var texts = (OctopusConsentTexts)_sdk.Calls.Single(c => c.Method == "DebugOverrideConsentTexts").Args[0];
+        Assert.AreEqual(textMode, texts.Mode);
+        if (index == 6) { Assert.AreEqual("", texts.Label); Assert.AreEqual("   ", texts.BelowText); }
+        if (index == 3) StringAssert.Contains("\n\n", texts.Notice);
+        if (index == 5) StringAssert.Contains("\n\n", texts.BelowText);
+    }
+
+    [Test]
+    public void ConsentClearRestoresBothOverridesAndLateReadIsIgnored()
+    {
+        var pilot = Pilot<ConsentTextsScenario>();
+        _sdk.DeferCompletions = true;
+        Tap(pilot, 0);
+        var stale = _sdk.ConfigError;
+        Tap(pilot, 8);
+        Assert.AreEqual("qa-preset-consentTexts-clear", pilot.Presets[8].TestId);
+        var modeCall = _sdk.Calls[_sdk.Calls.Count - 3];
+        var textCall = _sdk.Calls[_sdk.Calls.Count - 2];
+        Assert.IsNull(modeCall.Args[0]);
+        Assert.IsNull(textCall.Args[0]);
+        stale("stale");
+        StringAssert.DoesNotContain("stale", pilot.Result);
+        pilot.Dispose();
+        var before = pilot.Result;
+        _sdk.ConfigResult(null);
+        Assert.AreEqual(before, pilot.Result);
+    }
+
+    [Test]
+    public void ContentImageWithoutTextPresetSendsFalse()
+    {
+        var pilot = Pilot<ContentOptionsScenario>();
+        Assert.AreEqual("qa-preset-contentOptions-7", pilot.Presets[6].TestId);
+        Tap(pilot, 6);
+        var options = (OctopusContentOptions)_sdk.Last.Args[0];
+        Assert.IsTrue(options.Post.EnablePictures);
+        Assert.IsFalse(options.Post.TextRequired);
+    }
+
     [Test]
     public void ContentClearIsPureAndSendsNullEvenWhenRepeated()
     {
         var pilot = Pilot<ContentOptionsScenario>();
-        pilot.Presets[6].Fill(pilot.Fields);
+        pilot.Presets[7].Fill(pilot.Fields);
         Assert.AreEqual("clear", pilot.Fields.Get("action"));
         Assert.IsTrue(pilot.Fields.All.Skip(1).All(f => f.Value == "backend"));
         Assert.IsEmpty(_sdk.Calls);
-        Tap(pilot, 6);
-        Tap(pilot, 6);
+        Tap(pilot, 7);
+        Tap(pilot, 7);
         Assert.AreEqual("DebugOverrideContentOptions", _sdk.Last.Method);
         Assert.IsNull(_sdk.Last.Args[0]);
         StringAssert.Contains("none (backend default)", pilot.Result);
@@ -449,7 +536,7 @@ public class OctopusCommunityScenarioTests
         Tap(pilot, 1);
         var next = Pilot<ContentOptionsScenario>();
         StringAssert.Contains("post.enablePictures=False", next.ParameterNotice);
-        Tap(next, 6);
+        Tap(next, 7);
         StringAssert.Contains("none (backend default)", next.ParameterNotice);
     }
 
@@ -485,22 +572,47 @@ public class OctopusCommunityScenarioTests
     [TestCase("groupAccessDenied")]
     public void NativeEventsDoNotRetainAnAbandonedPilot(string id)
     {
-        var weak = AbandonObservedPilot(id);
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
-        Assert.IsFalse(weak.IsAlive, "The SDK event retained the pilot and its view.");
+        // Initialise session-wide observers before measuring the pilot's own subscription.
+        string reason;
+        Assert.IsNotNull(OctopusScenarioSdk.EnsurePilotInitialized(out reason), reason);
+        var baseline = NativeEventListenerCount(id);
+        var pilot = OctopusScenarioPilots.Create(id);
+        _pilots.Add((CommunityScenarioPilot)pilot);
+        Action<string> renderer = line => { };
+        pilot.ResultChanged += renderer;
+        try
+        {
+            Tap(pilot, 0);
+            Assert.AreEqual(baseline + 1, NativeEventListenerCount(id),
+                "The pilot must subscribe before abandonment is tested.");
+        }
+        finally
+        {
+            // Match the view's OnDestroy: losing the last renderer disposes the pilot.
+            pilot.ResultChanged -= renderer;
+        }
+
+        // Mono's conservative GC can keep an unreachable object alive through stale stack slots.
+        // Check actual unsubscription instead of GC reachability, even while holding the pilot.
+        Assert.AreEqual(baseline, NativeEventListenerCount(id),
+            "The abandoned pilot must release its SDK event subscription.");
+        var result = pilot.Result;
         _sdk.EmitGroups(new List<OctopusGroup>());
         _sdk.EmitCommunityAccess(true);
         _sdk.EmitGroupAccessDenied("locked");
+        Assert.AreEqual(result, pilot.Result, "Native events must no longer reach the abandoned pilot.");
+        Assert.AreEqual(baseline, NativeEventListenerCount(id));
     }
 
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static WeakReference AbandonObservedPilot(string id)
+    private int NativeEventListenerCount(string id)
     {
-        var pilot = OctopusScenarioPilots.Create(id);
-        Tap(pilot, 0);
-        return new WeakReference(pilot);
+        switch (id)
+        {
+            case "groups": return _sdk.GroupsListenerCount;
+            case "communityAccess": return _sdk.CommunityAccessListenerCount;
+            case "groupAccessDenied": return _sdk.GroupAccessDeniedListenerCount;
+            default: throw new ArgumentException("No native event for scenario " + id, "id");
+        }
     }
 
     [Test]

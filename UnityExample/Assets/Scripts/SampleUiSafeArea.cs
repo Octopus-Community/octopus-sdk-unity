@@ -19,11 +19,15 @@ public class SampleUiSafeArea : UIBehaviour
     private float _lastScale;
     private uint _layoutRevision;
 
-    // Android system-bar insets, re-read every few frames (a JNI round trip) and on a resize.
-    private const int InsetsRefreshFrames = 10;
+    /// <summary>
+    /// Android system-bar insets are re-read every this many frames (a JNI round trip), on a resize,
+    /// and on every frame while the last read found no bar (<see cref="InsetsReadDue"/>).
+    /// </summary>
+    public const int InsetsRefreshFrames = 10;
     private static int _insetsFrame = -1;
     private static Vector2 _insetsScreen;
     private static Vector4 _systemInsets;
+    private static bool _hasSystemInsets;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetKeyboardCache()
@@ -32,11 +36,13 @@ public class SampleUiSafeArea : UIBehaviour
         _keyboardArea = new Rect();
         _insetsFrame = -1;
         _systemInsets = Vector4.zero;
+        _hasSystemInsets = false;
     }
 
     /// <summary>
     /// The part of the screen interactive content may use, in screen pixels (origin bottom-left):
-    /// <see cref="Screen.safeArea"/> further tightened by the Android system bars.
+    /// Android's system bars and display cutout over the player surface, or
+    /// <see cref="Screen.safeArea"/> when native insets are unavailable.
     ///
     /// <see cref="OctopusSampleSystemBars"/> shows the status and navigation bars over a player that
     /// renders edge to edge, and Unity's safe area there reports the display cutout but not the
@@ -50,15 +56,45 @@ public class SampleUiSafeArea : UIBehaviour
         var safe = Screen.safeArea;
 #if UNITY_ANDROID && !UNITY_EDITOR
         var screen = new Vector2(Screen.width, Screen.height);
-        if (_insetsFrame < 0 || screen != _insetsScreen || Time.frameCount - _insetsFrame >= InsetsRefreshFrames)
+        if (InsetsReadDue(Time.frameCount, _insetsFrame, screen, _insetsScreen, _hasSystemInsets, _systemInsets))
         {
             _insetsFrame = Time.frameCount;
             _insetsScreen = screen;
-            _systemInsets = QuerySystemInsets(screen);
+            _hasSystemInsets = TryQuerySystemInsets(screen, out _systemInsets);
         }
-        safe = Inset(safe, _systemInsets, screen);
+        safe = AndroidSafeArea(safe, _systemInsets, screen, _hasSystemInsets);
 #endif
         return safe;
+    }
+
+    /// <summary>
+    /// Whether the native insets read at <paramref name="readFrame"/> for a screen of
+    /// <paramref name="readScreen"/> pixels must be read again at <paramref name="frame"/>.
+    ///
+    /// A read is kept for <see cref="InsetsRefreshFrames"/> frames, except one that succeeded with
+    /// no bar over the player: on a cold launch the first read runs before the first frame, before
+    /// Android has dispatched the window insets to the view tree, and comes back as zero. Cached for
+    /// ten frames, it laid the shell out under the 63 px status bar until the next read moved the
+    /// whole page down — a jump a slow device stretches to seconds. The sample always shows the
+    /// system bars, so an empty read is retried on the next frame until the real insets arrive.
+    /// A failed read keeps the normal cadence: it falls back to <see cref="Screen.safeArea"/>.
+    /// </summary>
+    public static bool InsetsReadDue(int frame, int readFrame, Vector2 screen, Vector2 readScreen,
+                                     bool hasInsets, Vector4 insets)
+    {
+        if (readFrame < 0 || screen != readScreen) return true;
+        if (frame - readFrame >= InsetsRefreshFrames) return true;
+        return hasInsets && insets == Vector4.zero && frame != readFrame;
+    }
+
+    /// <summary>
+    /// Native insets are already relative to the player surface. Unity can retain a window-relative
+    /// safe area after an IME relayout; intersecting it again counts the status bar twice. Native
+    /// bars and cutout together own the Android rectangle; Unity remains the fallback on failure.
+    /// </summary>
+    public static Rect AndroidSafeArea(Rect unitySafe, Vector4 insets, Vector2 screen, bool hasInsets)
+    {
+        return hasInsets ? Inset(new Rect(Vector2.zero, screen), insets, screen) : unitySafe;
     }
 
     /// <summary>
@@ -137,14 +173,15 @@ public class SampleUiSafeArea : UIBehaviour
     }
 
     /// <summary>
-    /// The visible system bars' insets over the player's surface, scaled to screen pixels; zero when
-    /// unknown.
+    /// The visible system bars and display cutout over the player's surface, scaled to screen
+    /// pixels. Failure is distinct from a successfully read zero inset.
     /// </summary>
-    private static Vector4 QuerySystemInsets(Vector2 screen)
+    private static bool TryQuerySystemInsets(Vector2 screen, out Vector4 result)
     {
+        result = Vector4.zero;
         try
         {
-            if (!ResolveViews(screen)) return Vector4.zero;
+            if (!ResolveViews(screen)) return false;
             using (var insets = _decor.Call<AndroidJavaObject>("getRootWindowInsets"))
             using (var frame = new AndroidJavaObject("android.graphics.Rect"))
             using (var version = new AndroidJavaClass("android.os.Build$VERSION"))
@@ -154,7 +191,7 @@ public class SampleUiSafeArea : UIBehaviour
                 if (insets == null)
                 {
                     ReleaseViews();
-                    return Vector4.zero;
+                    return false;
                 }
                 var window = new Vector2(_decor.Call<int>("getWidth"), _decor.Call<int>("getHeight"));
                 // The surface Unity draws on, not android.R.id.content: content spans the whole
@@ -163,31 +200,46 @@ public class SampleUiSafeArea : UIBehaviour
                 if (!_surface.Call<bool>("getGlobalVisibleRect", frame))
                 {
                     ReleaseViews();
-                    return Vector4.zero;
+                    return false;
                 }
                 var view = Rect.MinMaxRect(frame.Get<int>("left"), frame.Get<int>("top"),
                                            frame.Get<int>("right"), frame.Get<int>("bottom"));
                 var size = new Vector2(_surface.Call<int>("getWidth"), _surface.Call<int>("getHeight"));
-                if (window.x <= 0f || window.y <= 0f || view.width <= 0f || view.height <= 0f) return Vector4.zero;
+                if (window.x <= 0f || window.y <= 0f || view.width <= 0f || view.height <= 0f ||
+                    size.x <= 0f || size.y <= 0f) return false;
                 Vector4 bars;
                 if (version.GetStatic<int>("SDK_INT") >= 30)
                 {
                     using (var type = new AndroidJavaClass("android.view.WindowInsets$Type"))
-                    using (var system = insets.Call<AndroidJavaObject>("getInsets", type.CallStatic<int>("systemBars")))
+                    using (var system = insets.Call<AndroidJavaObject>("getInsets",
+                        type.CallStatic<int>("systemBars") | type.CallStatic<int>("displayCutout")))
                     {
-                        if (system == null) return Vector4.zero;
+                        if (system == null) return false;
                         bars = new Vector4(system.Get<int>("left"), system.Get<int>("top"),
                                            system.Get<int>("right"), system.Get<int>("bottom"));
                     }
                 }
                 else
                 {
-                    bars = new Vector4(insets.Call<int>("getSystemWindowInsetLeft"),
-                                       insets.Call<int>("getSystemWindowInsetTop"),
-                                       insets.Call<int>("getSystemWindowInsetRight"),
-                                       insets.Call<int>("getSystemWindowInsetBottom"));
+                    // Stable bars exclude the IME, which KeyboardArea handles separately.
+                    bars = new Vector4(insets.Call<int>("getStableInsetLeft"),
+                                       insets.Call<int>("getStableInsetTop"),
+                                       insets.Call<int>("getStableInsetRight"),
+                                       insets.Call<int>("getStableInsetBottom"));
+                    if (version.GetStatic<int>("SDK_INT") >= 28)
+                    {
+                        using (var cutout = insets.Call<AndroidJavaObject>("getDisplayCutout"))
+                        {
+                            if (cutout != null)
+                                bars = new Vector4(Mathf.Max(bars.x, cutout.Call<int>("getSafeInsetLeft")),
+                                                   Mathf.Max(bars.y, cutout.Call<int>("getSafeInsetTop")),
+                                                   Mathf.Max(bars.z, cutout.Call<int>("getSafeInsetRight")),
+                                                   Mathf.Max(bars.w, cutout.Call<int>("getSafeInsetBottom")));
+                        }
+                    }
                 }
-                return ToScreen(BarsOverView(view, window, bars), size, screen);
+                result = ToScreen(BarsOverView(view, window, bars), size, screen);
+                return true;
             }
         }
         // Best effort, called from LateUpdate: any failure falls back to Unity's safe area alone,
@@ -195,7 +247,7 @@ public class SampleUiSafeArea : UIBehaviour
         catch (System.Exception)
         {
             ReleaseViews();
-            return Vector4.zero;
+            return false;
         }
     }
 
@@ -246,6 +298,17 @@ public class SampleUiSafeArea : UIBehaviour
     }
 #endif
 
+    /// <summary>
+    /// Converts the top-origin rectangle reported by TouchScreenKeyboard.area (or the Android
+    /// fallback) to Unity's bottom-origin screen space. The rectangle's shape does not determine
+    /// its coordinate origin, so floating and docked keyboards use the same conversion.
+    /// </summary>
+    public static Rect BottomOriginKeyboard(Rect keyboard, Vector2 screen)
+    {
+        if (screen.x <= 0f || screen.y <= 0f || keyboard.height <= 0f) return keyboard;
+        return new Rect(keyboard.x, screen.y - keyboard.yMax, keyboard.width, keyboard.height);
+    }
+
     public static Rect UsableArea(Rect safe, Rect keyboard, Vector2 screen)
     {
         if (screen.x <= 0f || screen.y <= 0f) return new Rect(0f, 0f, 1f, 1f);
@@ -253,8 +316,12 @@ public class SampleUiSafeArea : UIBehaviour
         float right = Mathf.Clamp(safe.xMax, left, screen.x);
         float top = Mathf.Clamp(safe.yMax, 0f, screen.y);
         float bottom = Mathf.Clamp(safe.yMin, 0f, top);
-        // Conservatively keep targets above floating as well as docked keyboards.
-        if (keyboard.width > 0f && keyboard.height > 0f && keyboard.xMax > left && keyboard.xMin < right)
+        keyboard = BottomOriginKeyboard(keyboard, screen);
+        // Only docked keyboards shrink the viewport, including narrower landscape keyboards.
+        // A reported bottom safe inset can separate a docked keyboard from the screen edge.
+        // Floating keyboards leave usable content on both sides and must not collapse the page.
+        if (keyboard.width > 0f && keyboard.height > 0f && keyboard.yMin <= bottom &&
+            keyboard.xMax > left && keyboard.xMin < right)
             bottom = Mathf.Clamp(Mathf.Max(bottom, keyboard.yMax), bottom, top);
         return Rect.MinMaxRect(left / screen.x, bottom / screen.y, right / screen.x, top / screen.y);
     }
@@ -371,7 +438,8 @@ public class SampleUiSafeArea : UIBehaviour
         Rect keyboard = TouchScreenKeyboard.visible ? TouchScreenKeyboard.area : new Rect();
 #if UNITY_ANDROID && !UNITY_EDITOR
         // Unity's Android keyboard area can be empty. The visible display frame is in physical
-        // screen pixels; ignore reductions limited to the system bottom inset.
+        // screen pixels with a top-left origin; keep that origin for the fallback rectangle and
+        // ignore reductions limited to the system bottom inset.
         if (TouchScreenKeyboard.visible && keyboard.height <= 0f)
         {
             try
@@ -388,7 +456,7 @@ public class SampleUiSafeArea : UIBehaviour
                             decor.Call("getWindowVisibleDisplayFrame", frame);
                             float height = Screen.height - frame.Get<int>("bottom");
                             if (height > ScreenSafeArea().yMin)
-                                keyboard = new Rect(0f, 0f, Screen.width, height);
+                                keyboard = new Rect(0f, Screen.height - height, Screen.width, height);
                         }
                     }
                 }

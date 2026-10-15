@@ -1,135 +1,87 @@
-using TMPro;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 
-/// <summary>
-/// Settings is an index of account, configuration, preferences, support and local reset.
-/// Reset sample state clears observations, not SDK configuration;
-/// legacy scenes stay reachable until their scenarios migrate.
-/// </summary>
+// Settings is the index; SDK state below is labelled as the sample's record of calls.
 public class OctopusSampleSettingsView : MonoBehaviour
 {
-    /// <summary>The tab's root container, and the id a QA script waits on.</summary>
     public const string ScreenId = "settings-screen";
-
-    /// <summary>The card explaining where the SDK read-out lives.</summary>
     public const string IntroCardId = "settings-intro-card";
-
-    /// <summary>The Support group.</summary>
     public const string SupportCardId = "settings-support-card";
-
-    /// <summary>
-    /// The Support group's own heading. Named rather than left anonymous because
-    /// <see cref="RebuildSupport"/> clears the card's children around it and
-    /// <see cref="SupportRowIds"/> skips it — both need one name to test against.
-    /// </summary>
     public const string SupportTitleId = "settings-support-title";
-
-    /// <summary>The built-in row opening <see cref="OctopusSampleAboutView"/>.</summary>
     public const string AboutRowId = "settings-about-row";
-
-    /// <summary>
-    /// The Reset group: one card holding both resets — the sample's recorded state
-    /// (<see cref="ResetStateSectionId"/>) and the saved configuration
-    /// (<see cref="ResetConfigCardId"/>). Two cards both headed "Reset" read as one action drawn
-    /// twice.
-    /// </summary>
+    public const string DevToolsRowId = "settings-devtools-row";
+    public const string SdkTitleId = "settings-sdk-title";
+    public const string DemoGroupId = "settings-demo-group";
+    public const string ResetTitleId = "settings-reset-title";
     public const string ResetCardId = "settings-reset-card";
-
-    /// <summary>The recorded-state half of the Reset card.</summary>
     public const string ResetStateSectionId = "settings-reset-state";
-
-    /// <summary>The control that asks for a reset. The catalogue's id, kept across the rename.</summary>
     public const string ResetButtonId = "settings-reset-button";
-
-    /// <summary>The control that carries the reset out, shown only while confirming.</summary>
     public const string ResetConfirmId = "settings-reset-confirm";
-
-    /// <summary>The control that backs out of a reset.</summary>
     public const string ResetCancelId = "settings-reset-cancel";
+    public const string DemoGameRowId = "settings-demo-game-row";
     public const string AccountRowId = "settings-account-row";
     public const string ConfigRowId = "settings-reconfigure-button";
-    /// <summary>
-    /// The configuration half of the Reset card. A section inside <see cref="ResetCardId"/> since
-    /// the two cards merged; the name is kept so a QA step that scoped itself to it still resolves.
-    /// </summary>
     public const string ResetConfigCardId = "settings-reset-config-card";
     public const string ResetConfigButtonId = "settings-reset-config-button";
     public const string ResetConfigConfirmId = "settings-reset-config-confirm";
     public const string ResetConfigCancelId = "settings-reset-config-cancel";
     public const string ResetConfigResultId = "settings-reset-config-result";
-
-    /// <summary>The footer stating what this build is.</summary>
+    public const string ResetResultId = "settings-reset-result";
     public const string VersionLabelId = "settings-version-label";
-
-    /// <summary>
-    /// Clearance for the shell's bottom-anchored `Legacy demo scenes` button: its own 40 units of
-    /// margin, its height, and 24 of air above it. Without this the last card scrolls underneath a
-    /// button that looks like part of the list.
-    ///
-    /// Derived rather than written as 208, so raising the touch-target floor moves this with it.
-    /// </summary>
-    private static int LegacyRouteClearance
-    {
-        get { return 40 + (int)OctopusSampleBranding.MinTouchUnits + 24; }
-    }
-
-    private RectTransform _content;
-    private RectTransform _supportCard;
-    private RectTransform _resetState;
-    private RectTransform _resetConfigCard;
-    private bool _confirmingConfigReset;
-    private string _configResetResult;
-    private bool _confirmingReset;
-    private string _resetResult = string.Empty;
-    private TMP_Text _language;
-    private TMP_Text _appearance;
-
     public const string AppearanceRowId = "settings-appearance-row";
     public const string LanguageRowId = "settings-language-row";
-
-    /// <summary>The Language row's link to the Locale scenario, the one place the override is set.</summary>
     public const string LanguageLinkId = "settings-language-locale-link";
-
-    /// <summary>The catalogue id of the scenario that sets the language override.</summary>
     public const string LocaleScenarioId = "locale";
-    public const string ResetResultId = "settings-reset-result";
+    private bool _listening, _confirming, _resetting;
+    private IOctopusScenarioSdk _observedSdk;
+    private string _resetResult = "";
+    private RectTransform _supportCard;
+    private TMP_Text _appearance, _language, _status, _community, _server;
+    private GameObject _dialog;
+    public int RowsEventCount { get; private set; }
+    public bool IsConfirmingReset { get { return _confirming; } }
     public string ResetResult { get { return _resetResult; } }
-
+    public sealed class ViewState
+    {
+        public bool ConfirmingReset, ConfirmingConfigReset;
+        public string ResetResult, ConfigResetResult;
+    }
+    public ViewState CaptureState() { return new ViewState { ResetResult = _resetResult }; }
+    public void RestoreState(ViewState state) { if (state != null) _resetResult = state.ResetResult; }
     public static string AppearanceText()
     {
-        return OctopusSampleBranding.Theme.ToString();
+        var type = OctopusSampleNativeTheme.CurrentAppearance;
+        return (OctopusSampleNativeTheme.NavyTheme ? "Octopus navy" : "SDK default") + " · " +
+            (type == 0 ? "Follow system" : type == 1 ? "Light" : "Dark");
     }
-
-    public static string LanguageText()
+    public static string LanguageText() { return OctopusSampleLanguage.Label(OctopusSampleState.LocaleOverride); }
+    public static string VersionLabelText()
     {
-        return string.IsNullOrEmpty(OctopusSampleState.LocaleOverride)
-            ? "System default (no override)" : OctopusSampleState.LocaleOverride;
+        return "Sample " + OctopusSampleAboutView.SampleVersionText() + " (" + OctopusSampleAboutView.BuildText() +
+            ") · SDK " + OctopusSampleAboutView.SdkVersionText();
     }
-
     /// <summary>
-    /// Fills <paramref name="host"/> — the shell's content area — with the tab.
-    ///
-    /// The shell keeps drawing its `Legacy demo scenes` route into the same host afterwards; this
-    /// view leaves room for it rather than knowing about it.
+    /// The About row's subtitle; it leads with the update when Play offers one, as the Android
+    /// sample's Settings does, so a tester sees it without opening About.
     /// </summary>
+    public static string AboutSubtitle()
+    {
+        var versions = "Sample " + OctopusSampleAboutView.SampleVersionText() + " · SDK " + OctopusSDK.Version;
+        return OctopusSampleAppUpdate.Status.State == OctopusSampleUpdateState.UpdateAvailable
+            ? "Update available · " + versions : versions;
+    }
     public static OctopusSampleSettingsView BuildInto(RectTransform host)
     {
         var view = host.gameObject.AddComponent<OctopusSampleSettingsView>();
-        var padding = SampleUi.ContentPadding();
-        padding.bottom = LegacyRouteClearance;
-        view.Build(SampleUi.VerticalScroll(host, padding));
+        // Rows are full-bleed like Android's: the scroll has no side inset, and only the community
+        // card carries the 16dp page margin.
+        var content = SampleUi.VerticalScroll(host, new RectOffset());
+        content.GetComponent<UnityEngine.UI.VerticalLayoutGroup>().spacing = 0f;
+        view.Build(content);
+        view.Listen();
         return view;
     }
-
-    /// <summary>
-    /// The ids of the Support rows currently on screen, in order.
-    ///
-    /// Test-only reader. The EditMode assembly cannot name a `UnityEngine.UI` type, so a test has no
-    /// way to walk buttons; this is how it checks that a registered row appears and that `About`
-    /// stays last.
-    /// </summary>
     public IList<string> SupportRowIds
     {
         get
@@ -138,308 +90,173 @@ public class OctopusSampleSettingsView : MonoBehaviour
             if (_supportCard == null) return ids;
             for (var i = 0; i < _supportCard.childCount; i++)
             {
-                var child = _supportCard.GetChild(i);
-                if (child.name == SupportTitleId || child.name == SampleUi.StrokeName) continue;
-                ids.Add(child.name);
+                var name = _supportCard.GetChild(i).name;
+                if (name != SupportTitleId && name != SampleUi.StrokeName && name != SampleUi.DividerName)
+                    ids.Add(name);
             }
             return ids;
         }
     }
-
-    /// <summary>Whether the reset row is showing its confirm/cancel pair rather than its trigger.</summary>
-    public bool IsConfirmingReset { get { return _confirmingReset; } }
-
-    /// <summary>
-    /// The footer's exact wording. Pure and static so a test can pin it without a UI type.
-    /// <para>
-    /// It names the SDK since #116 gave the package a runtime version constant. Before that the
-    /// footer stated only what it could actually read, because a number typed into the sample goes
-    /// stale on the next package bump with nothing to catch it — which is now the guard's job, not
-    /// this line's.
-    /// </para>
-    /// </summary>
-    public static string VersionLabelText()
+    public static string StatusText()
     {
-        return "Sample " + OctopusSampleAboutView.SampleVersionText() +
-               " · SDK " + OctopusSampleAboutView.SdkVersionText() +
-               " · Unity " + OctopusSampleAboutView.UnityVersionText();
+        return OctopusSampleState.IsInitialized
+            ? "SDK · Initialized (sample record) · " + OctopusSampleHomeView.ConnectionStatusLabel()
+            : "SDK · Not initialized (sample record)";
     }
-
-    /// <summary>Arms the confirm/cancel pair. Wired to <see cref="ResetButtonId"/>.</summary>
-    public void RequestReset()
-    {
-        _resetResult = string.Empty;
-        _confirmingReset = true;
-        RepaintReset();
-    }
-
-    /// <summary>Backs out, leaving the state untouched. Wired to <see cref="ResetCancelId"/>.</summary>
-    public void CancelReset()
-    {
-        _resetResult = "Reset cancelled. Recorded results are unchanged.";
-        _confirmingReset = false;
-        RepaintReset();
-    }
-
-    /// <summary>
-    /// Clears the sample's record of what the SDK reported, and disarms. Wired to
-    /// <see cref="ResetConfirmId"/>.
-    ///
-    /// <see cref="OctopusSampleState.ResetObservations"/> rather than
-    /// <see cref="OctopusSampleState.Reset"/>, and the difference matters: `Reset` also clears the
-    /// initialisation flag, which <see cref="OctopusScenarioSdk.EnsureInitialized"/> reads as the
-    /// guard against initialising an already-initialised SDK. Wiring `Reset` to a button would make
-    /// "open Community, reset, open Community" call `Initialize` twice, which the native side
-    /// answers with a second channel and a second set of collectors. A reset that quietly changes
-    /// the SDK's lifecycle is not a reset of the sample's state. Found in review.
-    ///
-    /// So this makes no SDK call at all, and it undoes nothing the SDK is still configured with —
-    /// not the initialisation, not a locale override.
-    /// </summary>
-    public void ConfirmReset()
-    {
-        if (!_confirmingReset) return;
-        OctopusSampleState.ResetObservations();
-        _resetResult = "Sample state cleared. No server data was deleted.";
-        _confirmingReset = false;
-        RepaintReset();
-    }
-
-    public void RequestConfigurationReset()
-    {
-        _confirmingConfigReset = true;
-        _configResetResult = null;
-        RepaintConfigurationReset();
-    }
-
-    public void CancelConfigurationReset()
-    {
-        _confirmingConfigReset = false;
-        RepaintConfigurationReset();
-    }
-
-    public void ConfirmConfigurationReset()
-    {
-        if (!_confirmingConfigReset) return;
-        var cleared = OctopusScenarioSdk.ResetConfiguration(out _configResetResult);
-        _confirmingConfigReset = false;
-        RepaintConfigurationReset();
-        if (cleared) OctopusSampleConfigView.Open();
-    }
-
-    private void OnDestroy()
-    {
-        OctopusSampleSettingsRows.Changed -= OnRowsChanged;
-        OctopusSampleState.Changed -= OnStateChanged;
-        OctopusSampleBranding.ThemeChanged -= OnStateChanged;
-    }
-
-    // A destroyed view whose handler is still on the static event: unhook it from inside the
-    // callback, the one place that still runs. Edit mode delivers neither OnDisable nor OnDestroy to
-    // a plain MonoBehaviour, so this is not belt-and-braces there — it is the only path. Home and
-    // the Community tab carry the same guard, for the same reason.
-    private bool Gone()
-    {
-        if (this != null) return false;
-        OctopusSampleSettingsRows.Changed -= OnRowsChanged;
-        OctopusSampleState.Changed -= OnStateChanged;
-        OctopusSampleBranding.ThemeChanged -= OnStateChanged;
-        return true;
-    }
-
-    /// <summary>
-    /// How many times the row registry's event has reached this view. Test-only observable, and the
-    /// only one there is: a handler left on a destroyed view returns quietly, so without a count a
-    /// test cannot tell "unsubscribed" from "still subscribed and silent".
-    /// </summary>
-    public int RowsEventCount { get; private set; }
-
-    private void OnRowsChanged()
-    {
-        RowsEventCount++;
-        if (Gone()) return;
-        RebuildSupport();
-    }
-
     private void Build(RectTransform content)
     {
-        _content = content;
-        _content.gameObject.name = ScreenId;
-
-        _content.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg);
-        var intro = SampleUi.Card(IntroCardId, _content);
-        SampleUi.FlexibleLabel(intro, "Sample", SampleUi.TextBody, SampleUi.TitleColor);
-        SampleUi.ListRow(AccountRowId, intro, "Account", "SSO sign-in and connection state",
-            () => OctopusSampleAccountView.Open());
-        SampleUi.ListRow(ConfigRowId, intro, "Change configuration", "Choose a configured sample profile",
-            () => OctopusSampleConfigView.Open());
-        var appearance = SampleUi.ListRow(AppearanceRowId, intro, "Appearance", AppearanceText(),
-            () => OctopusSampleAppearanceView.Open());
-        // ListRow's Copy contains the title followed by its current-value line.
+        content.name = ScreenId;
+        int margin = Mathf.RoundToInt(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg));
+        var summaryHolder = SampleUi.Panel("settings-community-holder", content, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(summaryHolder, 0f, new RectOffset(margin, margin, margin,
+            Mathf.RoundToInt(OctopusSampleBranding.Dp(24f))), false);
+        var summary = SampleUi.Card("settings-community-block", summaryHolder);
+        SampleUi.FlexibleLabel(summary, "Community", SampleUi.TextTitle, SampleUi.TitleColor);
+        var draft = OctopusScenarioSdk.ConfigurationDraft();
+        _community = Fact(summary, "Community", draft.Community == 5 ? "Custom community" : "Demo community");
+        _server = Fact(summary, "Server", draft.CustomServer ? "Custom" : "Demo");
+        _status = SampleUi.FlexibleLabel(summary, StatusText(), SampleUi.TextCaption, SampleUi.Muted);
+        _status.name = "settings-sdk-status";
+        SampleUi.FlexibleLabel(summary, "Initialization and connection are recorded calls; native session state is not exposed.", SampleUi.TextCaption, SampleUi.Muted);
+        Row(AccountRowId, content, "Account", OctopusSampleAccountView.ConnectionText(), () => OctopusSampleAccountView.Open());
+        var sdk = Group(IntroCardId, content, SdkTitleId, "SDK");
+        var appearance = Row(AppearanceRowId, sdk, "Appearance", AppearanceText(), () => OctopusSampleAppearanceView.Open());
         _appearance = appearance.Find("Copy").GetChild(1).GetComponent<TMP_Text>();
-        _appearance.gameObject.name = "settings-appearance-value";
-        var language = SampleUi.Panel(LanguageRowId, intro, OctopusSampleBranding.Clear);
-        SampleUi.VerticalStack(language, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceXs), SampleUi.ContentPadding(), false);
-        SampleUiIcons.Row(language, "language");
-        SampleUi.FlexibleLabel(language, "Language", SampleUi.TextBody, SampleUi.TitleColor);
-        _language = SampleUi.FlexibleLabel(language, LanguageText(), SampleUi.TextCaption, SampleUi.Muted);
-        _language.gameObject.name = "settings-language-value";
-        SampleUi.FlexibleLabel(language, "Read-only here · set through the Locale scenario.", SampleUi.TextCaption, SampleUi.Muted);
-        SampleUi.Button(LanguageLinkId, language, "Open Locale scenario", SampleUiButtonVariant.Tertiary,
-            OpenLocaleScenario);
-
-        _supportCard = SampleUi.Card(SupportCardId, _content);
-        SampleUi.FlexibleLabel(_supportCard, "Support", SampleUi.TextTitle, SampleUi.TitleColor)
-                .gameObject.name = SupportTitleId;
+        _appearance.name = "settings-appearance-value";
+        SampleUi.SummaryDivider(sdk);
+        var language = Row(LanguageRowId, sdk, "Language", LanguageText(), () => OctopusSampleLanguageView.Open());
+        _language = language.Find("Copy").GetChild(1).GetComponent<TMP_Text>();
+        _language.name = "settings-language-value";
+        SampleUi.SummaryDivider(sdk);
+        Row(ConfigRowId, sdk, "Configuration", "Community, server, SSO user, theme", () => OctopusSampleConfigView.Open());
+        _supportCard = Group(SupportCardId, content, SupportTitleId, "Support");
         RebuildSupport();
-
-        BuildResetCard();
-
-        var version = SampleUi.FlexibleLabel(_content, VersionLabelText(), SampleUi.TextCaption,
-                                             SampleUi.Muted);
-        version.gameObject.name = VersionLabelId;
-
-        // Subscribed from the build path rather than OnEnable: edit mode never delivers OnEnable to
-        // a plain MonoBehaviour, and the EditMode tests are the only gate this screen has.
-        OctopusSampleSettingsRows.Changed += OnRowsChanged;
-        OctopusSampleState.Changed += OnStateChanged;
-        OctopusSampleBranding.ThemeChanged += OnStateChanged;
+        // Unity-specific game remains reachable during the migration of legacy examples.
+        var game = Group(DemoGroupId, content, "settings-demo-title", "Demo");
+        Row(DemoGameRowId, game, "Demo game", "Play Reef Run · share a score through the SDK", () => OctopusReefRunView.Open());
+        var reset = Group(ResetCardId, content, ResetTitleId, "Reset");
+        SampleUi.SummaryRow(ResetButtonId, reset, SampleUiIcons.ForRow(ResetButtonId), "Reset Configuration",
+            "Local demo setup only — nothing is deleted on the server", RequestReset, true);
+        var versionHolder = SampleUi.Panel("settings-version-holder", content, OctopusSampleBranding.Clear);
+        int gap = Mathf.RoundToInt(OctopusSampleBranding.Dp(24f));
+        SampleUi.VerticalStack(versionHolder, 0f, new RectOffset(margin, margin, gap, gap), false);
+        var version = SampleUi.FlexibleLabel(versionHolder, VersionLabelText(), SampleUi.TextCaption, SampleUi.Muted);
+        version.name = VersionLabelId;
+        version.alignment = TextAlignmentOptions.Top;
     }
-
+    /// <summary>A flat section: Android's group header over full-width rows, no card.</summary>
+    private static RectTransform Group(string id, RectTransform content, string titleId, string title)
+    {
+        var group = SampleUi.Panel(id, content, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(group, 0f, new RectOffset(), false);
+        SampleUi.SummaryGroupHeader(titleId, group, title);
+        return group;
+    }
+    private static RectTransform Row(string id, Transform parent, string title, string subtitle,
+                                     UnityEngine.Events.UnityAction action)
+    {
+        return SampleUi.SummaryRow(id, parent, SampleUiIcons.ForRow(id), title, subtitle, action);
+    }
+    private static TMP_Text Fact(Transform parent, string label, string value)
+    {
+        var text = SampleUi.FlexibleLabel(parent, label + " · " + value, SampleUi.TextCaption, SampleUi.TitleColor);
+        text.richText = false;
+        return text;
+    }
     private void RebuildSupport()
     {
-        var card = _supportCard;
-        if (card == null) return;
-
-        for (var i = card.childCount - 1; i >= 0; i--)
+        if (_supportCard == null) return;
+        for (var i = _supportCard.childCount - 1; i >= 0; i--)
         {
-            var child = card.GetChild(i).gameObject;
+            var child = _supportCard.GetChild(i).gameObject;
             if (child.name == SupportTitleId || child.name == SampleUi.StrokeName) continue;
-            child.SetActive(false);
-            child.transform.SetParent(null, false);
+            child.SetActive(false); child.transform.SetParent(null, false);
             if (Application.isPlaying) Destroy(child); else DestroyImmediate(child);
         }
-
+        bool tools = false;
+        foreach (var row in OctopusSampleSettingsRows.Support) if (row.Id == DevToolsRowId) tools = true;
+        if (!tools) Row(DevToolsRowId, _supportCard, "Developer tools",
+            "Host app integration · Events log · Debug info · Debug console", () => OctopusSampleDeveloperToolsView.Open());
         foreach (var row in OctopusSampleSettingsRows.Support)
         {
             var action = row.Action;
-            BuildRow(card, row.Id, row.Title, row.Subtitle,
-                     action == null ? null : new UnityEngine.Events.UnityAction(action));
+            if (_supportCard.childCount > 1) SampleUi.SummaryDivider(_supportCard);
+            Row(row.Id, _supportCard, row.Title, row.Subtitle, action == null ? null : new UnityEngine.Events.UnityAction(action));
         }
-
-        // Built in, and last: About is the one row that exists whatever else is compiled in.
-        BuildRow(card, AboutRowId, "About",
-                 "Versions, licences and links",
-                 () => OctopusSampleAboutView.Open());
+        SampleUi.SummaryDivider(_supportCard);
+        Row(AboutRowId, _supportCard, "About", AboutSubtitle(), () => OctopusSampleAboutView.Open());
     }
-
-    private static void BuildRow(RectTransform card, string id, string title, string subtitle,
-                                 UnityEngine.Events.UnityAction action)
+    public void RequestReset()
     {
-        if (action != null)
-        {
-            SampleUi.ListRow(id, card, title, subtitle, action);
-            return;
-        }
-        var row = SampleUi.Panel(id, card, OctopusSampleBranding.Clear);
-        SampleUi.VerticalStack(row, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceXs), SampleUi.ContentPadding(), false);
-        SampleUiIcons.Row(row, SampleUiIcons.ForRow(id));
-        SampleUi.FlexibleLabel(row, title, SampleUi.TextBody, SampleUi.TitleColor);
-        if (!string.IsNullOrEmpty(subtitle))
-            SampleUi.FlexibleLabel(row, subtitle, SampleUi.TextCaption, SampleUi.Muted);
+        if (_resetting) return;
+        _resetResult = ""; _confirming = true;
+        if (_dialog != null) return;
+        _dialog = OctopusSampleResetDialog.Open(CancelReset, ConfirmReset);
     }
-
+    public void CancelReset() { _confirming = false; CloseDialog(); }
+    public void ConfirmReset()
+    {
+        if (!_confirming || _resetting) return;
+        _confirming = false; _resetting = true; CloseDialog();
+        OctopusScenarioSdk.ResetLocalSetup((ok, message) =>
+        {
+            // Reset refreshes the theme and can rebuild the shell before this callback. A Stop
+            // can also complete after a tab change: navigation belongs to the operation.
+            if (this != null) { _resetting = false; _resetResult = message; }
+            if (ok) OctopusSampleConfigView.Open();
+            else OctopusSampleHostCallbackView.Open("Reset Configuration", message);
+        });
+    }
+    // Preserve callable names used by existing QA and the configuration tests.
+    public void RequestConfigurationReset() { RequestReset(); }
+    public void CancelConfigurationReset() { CancelReset(); }
+    public void ConfirmConfigurationReset() { ConfirmReset(); }
+    public void OpenLocaleScenario() { OctopusSampleLanguageView.Open(); }
+    private void CloseDialog()
+    {
+        if (_dialog == null) return;
+        _dialog.SetActive(false);
+        if (Application.isPlaying) Destroy(_dialog); else DestroyImmediate(_dialog);
+        _dialog = null;
+    }
+    public void SetTabActive(bool active) { if (active) { Listen(); OnStateChanged(); RebuildSupport(); } else { StopListening(); CloseDialog(); _confirming = false; } }
+    private void Listen()
+    {
+        if (_listening) return;
+        _listening = true;
+        OctopusSampleSettingsRows.Changed += OnRowsChanged;
+        OctopusSampleState.Changed += OnStateChanged;
+        OctopusSampleBranding.ThemeChanged += OnStateChanged;
+        OctopusSampleAppUpdate.Changed += OnUpdateChanged;
+        _observedSdk = OctopusScenarioSdk.Current;
+        _observedSdk.ProfileChanged += OnProfileChanged;
+    }
+    private void StopListening()
+    {
+        if (!_listening) return;
+        _listening = false;
+        OctopusSampleSettingsRows.Changed -= OnRowsChanged;
+        OctopusSampleState.Changed -= OnStateChanged;
+        OctopusSampleBranding.ThemeChanged -= OnStateChanged;
+        OctopusSampleAppUpdate.Changed -= OnUpdateChanged;
+        if (_observedSdk != null) _observedSdk.ProfileChanged -= OnProfileChanged;
+    }
+    private void OnProfileChanged(OctopusProfile profile) { OnStateChanged(); }
+    private void OnUpdateChanged() { if (this == null) { StopListening(); return; } RebuildSupport(); }
+    private void OnRowsChanged() { RowsEventCount++; if (this == null) { StopListening(); return; } RebuildSupport(); }
     private void OnStateChanged()
     {
-        if (Gone()) return;
-        if (_language != null) _language.text = LanguageText();
+        if (this == null) { StopListening(); return; }
         if (_appearance != null) _appearance.text = AppearanceText();
+        if (_language != null) _language.text = LanguageText();
+        if (_status != null) _status.text = StatusText();
+        var draft = OctopusScenarioSdk.ConfigurationDraft();
+        if (_community != null) _community.text = "Community · " + (draft.Community == 5 ? "Custom community" : "Demo community");
+        if (_server != null) _server.text = "Server · " + (draft.CustomServer ? "Custom" : "Demo");
+        var row = transform.Find(AccountRowId);
+        foreach (var t in GetComponentsInChildren<Transform>(true)) if (t.name == AccountRowId) row = t;
+        if (row != null) row.Find("Copy").GetChild(1).GetComponent<TMP_Text>().text = OctopusSampleAccountView.ConnectionText();
     }
-
-    /// <summary>Opens the Locale scenario over the Scenarios tab. Wired to <see cref="LanguageLinkId"/>.</summary>
-    public void OpenLocaleScenario()
-    {
-        var shell = GetComponentInParent<OctopusSampleShell>();
-        if (shell != null) shell.OpenScenarioScreen(LocaleScenarioId);
-    }
-
-    private void BuildResetCard()
-    {
-        var card = SampleUi.Card(ResetCardId, _content);
-        SampleUi.FlexibleLabel(card, "Reset", SampleUi.TextTitle, SampleUi.TitleColor);
-        _resetState = ResetSection(ResetStateSectionId, card);
-        _resetConfigCard = ResetSection(ResetConfigCardId, card);
-        RepaintReset();
-        RepaintConfigurationReset();
-    }
-
-    // A plain stack inside the card, not a nested card: one frame for the group, one repaint
-    // target per reset.
-    private static RectTransform ResetSection(string id, RectTransform card)
-    {
-        var section = SampleUi.Panel(id, card, OctopusSampleBranding.Clear);
-        SampleUi.VerticalStack(section, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm), new RectOffset(), false);
-        return section;
-    }
-
-    private void RepaintConfigurationReset()
-    {
-        if (_resetConfigCard == null) return;
-        for (var i = _resetConfigCard.childCount - 1; i >= 0; i--)
-        {
-            var child = _resetConfigCard.GetChild(i).gameObject;
-            if (child.name == SampleUi.StrokeName) continue;
-            child.SetActive(false);
-            child.transform.SetParent(null, false);
-            if (Application.isPlaying) Destroy(child); else DestroyImmediate(child);
-        }
-        SampleUi.FlexibleLabel(_resetConfigCard, "Configuration", SampleUi.TextBody, SampleUi.TitleColor);
-        SampleUi.FlexibleLabel(_resetConfigCard,
-            "Clears the saved profile choice and returns to Configuration. Recorded results, appearance and the current SDK session are kept. Nothing is deleted on the server.",
-            SampleUi.TextCaption, SampleUi.Muted);
-        if (!string.IsNullOrEmpty(_configResetResult))
-            SampleUi.FlexibleLabel(_resetConfigCard, _configResetResult, SampleUi.TextCaption, SampleUi.Attention)
-                .gameObject.name = ResetConfigResultId;
-        if (_confirmingConfigReset)
-        {
-            SampleUiBackCancel.Mark(SampleUi.Button(ResetConfigCancelId, _resetConfigCard, "Cancel", SampleUiButtonVariant.Secondary, CancelConfigurationReset));
-            SampleUi.Button(ResetConfigConfirmId, _resetConfigCard, "Reset configuration", SampleUiButtonVariant.Destructive, ConfirmConfigurationReset);
-        }
-        else SampleUi.Button(ResetConfigButtonId, _resetConfigCard, "Reset configuration", SampleUiButtonVariant.Destructive, RequestConfigurationReset);
-    }
-
-    private void RepaintReset()
-    {
-        if (_resetState == null) return;
-
-        for (var i = _resetState.childCount - 1; i >= 0; i--)
-        {
-            var child = _resetState.GetChild(i).gameObject;
-            if (child.name == SampleUi.StrokeName) continue;
-            child.SetActive(false);
-            child.transform.SetParent(null, false);
-            if (Application.isPlaying) Destroy(child); else DestroyImmediate(child);
-        }
-
-        SampleUi.FlexibleLabel(_resetState, "Sample state", SampleUi.TextBody, SampleUi.TitleColor);
-        SampleUi.FlexibleLabel(_resetState,
-            "Clears recorded connection results and unseen counts; refreshes community access from the SDK. " +
-            "SDK configuration, " +
-            "language and appearance stay as they are. No server data is deleted.",
-            SampleUi.TextCaption, SampleUi.Muted);
-
-        if (!string.IsNullOrEmpty(_resetResult))
-            SampleUi.FlexibleLabel(_resetState, _resetResult, SampleUi.TextCaption, SampleUi.TitleColor)
-                .gameObject.name = ResetResultId;
-
-        if (!_confirmingReset)
-        {
-            SampleUi.Button(ResetButtonId, _resetState, "Reset sample state", SampleUiButtonVariant.Destructive, RequestReset);
-            return;
-        }
-
-        SampleUi.FlexibleLabel(_resetState, "Reset the sample's recorded state?", SampleUi.TextBody, SampleUi.Attention);
-        SampleUiBackCancel.Mark(SampleUi.Button(ResetCancelId, _resetState, "Cancel", SampleUiButtonVariant.Secondary, CancelReset));
-        SampleUi.Button(ResetConfirmId, _resetState, "Reset", SampleUiButtonVariant.Destructive, ConfirmReset);
-    }
+    private void OnDisable() { StopListening(); CloseDialog(); }
+    private void OnDestroy() { StopListening(); CloseDialog(); }
 }

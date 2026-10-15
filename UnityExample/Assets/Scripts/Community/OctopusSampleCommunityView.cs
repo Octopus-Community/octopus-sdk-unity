@@ -54,12 +54,19 @@ public class OctopusSampleCommunityView : MonoBehaviour
     public const string DestinationToggleId = "community-destination-toggle";
     public const string ComposerToggleId = "community-composer-toggle";
 
-    private static float DockHeight { get { return OctopusSampleBranding.Dp(80f); } }
+    // The dock hugs its one button: a 48dp action between two SpaceMd gutters, no slack above.
+    private static float DockHeight
+    {
+        get
+        {
+            return OctopusSampleBranding.Dp(OctopusSampleBranding.MinTouchDp
+                + 2f * OctopusSampleBranding.SpaceMd);
+        }
+    }
     private GameObject _grantedBand;
     private RectTransform _destinations;
     private RectTransform _composer;
-    private bool _nativeRequested;
-    private bool _leftPlayer;
+    private readonly OctopusSampleNativeRequest _native = new OctopusSampleNativeRequest();
 
     private GameObject _blockedBand;
     private GameObject _readOnlyBand;
@@ -147,22 +154,12 @@ public class OctopusSampleCommunityView : MonoBehaviour
 
     private void RequestNative(string method, string detail, System.Action open, string message)
     {
-        try
-        {
-            string reason;
-            if (!Ready(out reason)) { Refresh(); Report(reason); return; }
-            OctopusSampleLog.Current.LogApiCall(method, detail);
-            _nativeRequested = true;
-            _leftPlayer = false;
-            Report(message);
-            open();
-        }
-        catch (System.Exception exception)
-        {
-            OctopusSampleLog.Current.LogStateChange("Native screen request failed", exception.Message);
-            _nativeRequested = false;
-            Report("Could not request the native screen. Check your configuration and try again.");
-        }
+        // The Scenarios tab's open tiles take this same path (OctopusSampleNativeRequest).
+        bool notReady;
+        var failure = _native.Request(method, detail, open, out notReady);
+        if (failure == null) { Report(message); return; }
+        if (notReady) Refresh();
+        Report(failure);
     }
 
     /// <summary>
@@ -171,12 +168,8 @@ public class OctopusSampleCommunityView : MonoBehaviour
     /// </summary>
     public void OnApplicationPause(bool paused)
     {
-        if (!_nativeRequested) return;
-        if (paused) _leftPlayer = true;
-        else if (_leftPlayer)
+        if (_native.OnPause(paused))
         {
-            _nativeRequested = false;
-            _leftPlayer = false;
             Report("Returned to the sample. You can open another destination.");
             Refresh();
         }
@@ -230,6 +223,31 @@ public class OctopusSampleCommunityView : MonoBehaviour
     /// <summary>Writes the prefilled-body field. Same reason as <see cref="SetGroupId"/>.</summary>
     public void SetPrefillText(string text) { Fill(_prefill, text); }
 
+    public sealed class ViewState
+    {
+        public string Group, Post, Prefill, Result;
+        public bool DestinationsOpen, ComposerOpen, NativeRequested, LeftPlayer;
+    }
+
+    public ViewState CaptureState()
+    {
+        return new ViewState { Group = _group.text, Post = _post.text, Prefill = _prefill.text,
+            Result = Result, DestinationsOpen = _destinations.gameObject.activeSelf,
+            ComposerOpen = _composer.gameObject.activeSelf, NativeRequested = _native.Requested, LeftPlayer = _native.LeftPlayer };
+    }
+
+    public void RestoreState(ViewState state)
+    {
+        if (state == null) return;
+        SetGroupId(state.Group);
+        SetPostId(state.Post);
+        SetPrefillText(state.Prefill);
+        _result.text = state.Result;
+        _destinations.gameObject.SetActive(state.DestinationsOpen);
+        _composer.gameObject.SetActive(state.ComposerOpen);
+        _native.Restore(state.NativeRequested, state.LeftPlayer);
+    }
+
     private void Build(RectTransform host)
     {
         BuildDock(host);
@@ -239,7 +257,7 @@ public class OctopusSampleCommunityView : MonoBehaviour
         scrollHost.offsetMin = new Vector2(0f, DockHeight);
         var cards = SampleUi.VerticalScroll(scrollHost, SampleUi.ContentPadding());
         SampleUi.DockFade(cards);
-        cards.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(16f);
+        cards.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg);
 
         BuildBands(cards);
         BuildPlatformCard(cards);
@@ -262,7 +280,8 @@ public class OctopusSampleCommunityView : MonoBehaviour
         dock.pivot = new Vector2(0.5f, 0f);
         dock.sizeDelta = new Vector2(0f, DockHeight);
         dock.anchoredPosition = Vector2.zero;
-        SampleUi.VerticalStack(dock, 0f, new RectOffset(48, 48, 36, 36), false);
+        SampleUi.VerticalStack(dock, 0f, SampleUi.Padding(OctopusSampleBranding.SpaceLg,
+            OctopusSampleBranding.SpaceMd), false).childAlignment = TextAnchor.MiddleCenter;
 
         SampleUi.Button(OpenId, dock, "Open community", OpenCommunity);
     }
@@ -288,10 +307,10 @@ public class OctopusSampleCommunityView : MonoBehaviour
                                         string actionLabel, UnityEngine.Events.UnityAction action)
     {
         var band = SampleUi.Panel(id, parent, id != BlockedBandId ? SampleUi.RowBackground
-            : OctopusSampleBranding.Palette.WarningSurface, OctopusSampleBranding.FieldRadius,
+            : OctopusSampleBranding.Palette.WarningSurface, OctopusSampleBranding.CardRadius,
             OctopusSampleBranding.Clear, 0f);
-        SampleUi.VerticalStack(band, OctopusSampleBranding.Dp(8f),
-            new RectOffset(48, 48, 36, 36), false);
+        SampleUi.VerticalStack(band, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm),
+            SampleUi.Padding(OctopusSampleBranding.SpaceLg, OctopusSampleBranding.SpaceMd), false);
         SampleUi.FlexibleLabel(band, message, SampleUi.TextCaption, tone);
         if (action != null)
             SampleUi.Button(id + "-action", band, actionLabel, SampleUiButtonVariant.Tertiary, action);
@@ -332,7 +351,7 @@ public class OctopusSampleCommunityView : MonoBehaviour
         var card = SampleUi.Card("community-deeplink-card", parent);
         SampleUi.ListRow(DestinationToggleId, card, "Open a specific destination", null, ToggleDestinations);
         _destinations = SampleUi.Panel("Destinations", card, OctopusSampleBranding.Clear);
-        SampleUi.VerticalStack(_destinations, OctopusSampleBranding.Dp(8f), new RectOffset(), false);
+        SampleUi.VerticalStack(_destinations, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm), new RectOffset(), false);
         _group = SampleUi.LabeledField(GroupFieldId, _destinations, "Group id", OctopusSampleFixtures.DefaultTopicId ?? string.Empty);
         SampleUi.Button(OpenGroupId, _destinations, "Open group", SampleUiButtonVariant.Secondary, OpenGroup);
         _post = SampleUi.LabeledField(PostFieldId, _destinations, "Post id", OctopusSampleFixtures.PostTextId ?? string.Empty);
@@ -351,7 +370,7 @@ public class OctopusSampleCommunityView : MonoBehaviour
         var card = SampleUi.Card("community-create-post-card", parent);
         SampleUi.ListRow(ComposerToggleId, card, "Create a post", null, ToggleComposer);
         _composer = SampleUi.Panel("Composer", card, OctopusSampleBranding.Clear);
-        SampleUi.VerticalStack(_composer, OctopusSampleBranding.Dp(8f), new RectOffset(), false);
+        SampleUi.VerticalStack(_composer, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm), new RectOffset(), false);
         _prefill = SampleUi.LabeledField(PrefillFieldId, _composer, "Prefilled body (optional)", string.Empty, true);
         SampleUi.Button(CreatePostId, _composer, "Open post composer", SampleUiButtonVariant.Secondary, OpenCreatePost);
         SampleUi.FlexibleLabel(_composer, "Opens the composer. Publishing is a separate action.",
@@ -376,7 +395,7 @@ public class OctopusSampleCommunityView : MonoBehaviour
     {
         var row = SampleUi.Panel(label, card, OctopusSampleBranding.Clear);
         var layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-        layout.spacing = OctopusSampleBranding.Dp(16f);
+        layout.spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg);
         layout.childControlWidth = true;
         layout.childForceExpandWidth = true;
         layout.childControlHeight = true;
@@ -387,26 +406,6 @@ public class OctopusSampleCommunityView : MonoBehaviour
         var value = SampleUi.FlexibleLabel(row, "—", SampleUi.TextCaption, SampleUi.TitleColor);
         value.alignment = TextAlignmentOptions.TopRight;
         return value;
-    }
-
-    /// <summary>
-    /// Initialises the SDK if nothing has yet, and reports why a door cannot open when the
-    /// gitignored config asset is missing — the one state where there is no API key to pass.
-    /// </summary>
-    private static bool Ready(out string reason)
-    {
-        string reported;
-        var profile = OctopusScenarioSdk.EnsureInitialized(OctopusScenarioSdk.PilotMode(),
-                                                           OctopusScenarioSdk.PilotModeLabel,
-                                                           out reported);
-        if (profile == null)
-        {
-            reason = reported;
-            return false;
-        }
-
-        reason = null;
-        return true;
     }
 
     private static string Value(TMP_InputField field)
@@ -427,6 +426,14 @@ public class OctopusSampleCommunityView : MonoBehaviour
     private void Report(string message)
     {
         if (_result != null) _result.text = message;
+    }
+
+    // Explicit for retained tabs: EditMode does not send the MonoBehaviour activation callbacks.
+    public void SetTabActive(bool active)
+    {
+        if (!active) { StopListening(); return; }
+        Listen();
+        Refresh();
     }
 
     private void OnEnable() { Listen(); }

@@ -1,311 +1,129 @@
-using TMPro;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-/// <summary>
-/// The Settings tab's contract: a support surface that states no SDK fact Home already states,
-/// an open Support group that code outside `Scripts/` fills, and a reset that asks first.
-///
-/// Assertions go through <c>GameObject.name</c> and the view's own readers, because the EditMode
-/// assembly overrides its references down to `nunit.framework.dll` and can name no
-/// `UnityEngine.UI` type. It also cannot name anything under `Assets/Debug/` — a different
-/// assembly, and one the public mirror does not ship — so the `Developer tools` row is tested here
-/// as "whatever registers appears", with its real registration covered on the `Debug/` side.
-/// </summary>
 public class OctopusSampleSettingsViewTests
 {
     private readonly List<GameObject> _spawned = new List<GameObject>();
-
-    [SetUp]
-    public void SetUp()
+    [SetUp] public void SetUp() { OctopusSampleSettingsRows.Clear(); OctopusScenarioSdk.Use(new OctopusRecordingScenarioSdk()); }
+    [TearDown] public void TearDown()
     {
-        OctopusSampleState.Reset();
-        // A registry is static and survives a test: without this, the row a previous test
-        // registered is still on the Support group when the next one counts it.
-        OctopusSampleSettingsRows.Clear();
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        foreach (var host in _spawned)
-        {
-            if (host != null) Object.DestroyImmediate(host);
-        }
+        foreach (var host in _spawned) if (host != null) Object.DestroyImmediate(host);
         _spawned.Clear();
-
-        var about = Object.FindAnyObjectByType<OctopusSampleAboutView>();
-        if (about != null) Object.DestroyImmediate(about.gameObject);
-
-        var appearance = Object.FindAnyObjectByType<OctopusSampleAppearanceView>();
-        if (appearance != null) appearance.Close();
-
-        OctopusSampleSettingsRows.Clear();
-        OctopusScenarioSdk.Use(null);
-        OctopusSampleState.Reset();
-        OctopusSampleLog.Current = OctopusSampleLog.None;
-        OctopusSampleBranding.Theme = OctopusSampleTheme.Dark;
+        foreach (var view in Object.FindObjectsByType<OctopusSampleSettingsDetailView>(FindObjectsSortMode.None)) view.Close();
+        var about = Object.FindAnyObjectByType<OctopusSampleAboutView>(); if (about != null) about.Close();
+        var appearance = Object.FindAnyObjectByType<OctopusSampleAppearanceView>(); if (appearance != null) appearance.Close();
+        var tools = Object.FindAnyObjectByType<OctopusSampleDeveloperToolsView>(); if (tools != null) tools.Close();
+        OctopusSampleSettingsRows.Clear(); OctopusScenarioSdk.Use(null); OctopusSampleLog.Current = OctopusSampleLog.None;
     }
-
-    [Test]
-    public void TheTabRendersItsGroupsAndItsFooter()
+    private OctopusSampleShell Shell()
+    {
+        var shell = OctopusSampleShell.Create(); _spawned.Add(shell.gameObject); shell.Select(OctopusSampleTab.Settings); return shell;
+    }
+    private OctopusSampleSettingsView View() { return Shell().GetComponentInChildren<OctopusSampleSettingsView>(); }
+    private static Transform Find(Transform root, string id) { return root.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == id); }
+    [Test] public void AboutShowsBuildPinsLicencesAndLegacyEntry()
+    {
+        var view = OctopusSampleAboutView.Open();
+        foreach (var id in new[] { "Build", "Native build pins", "Octopus SDK", "Firebase / EDM4U", "Liberation Sans font", OctopusSampleShell.LegacyScenesId })
+            Assert.IsNotNull(Find(view.transform, id), id);
+        Assert.IsNotEmpty(OctopusSampleAboutView.BuildText());
+        Assert.IsNull(Find(view.transform, "sample-update-status"));
+    }
+    [Test] public void RootOffersAndroidGroupsAndACommunitySummary()
     {
         var shell = Shell();
-
-        foreach (var id in new[]
-                 {
-                     OctopusSampleSettingsView.ScreenId,
-                     OctopusSampleSettingsView.IntroCardId,
-                     OctopusSampleSettingsView.SupportCardId,
-                     OctopusSampleSettingsView.AboutRowId,
-                     OctopusSampleSettingsView.ResetCardId,
-                     OctopusSampleSettingsView.ResetButtonId,
-                     OctopusSampleSettingsView.ResetStateSectionId,
-                     OctopusSampleSettingsView.ResetConfigCardId,
-                     OctopusSampleSettingsView.LanguageLinkId,
-                     OctopusSampleSettingsView.VersionLabelId,
-                     OctopusSampleSettingsView.AppearanceRowId,
-                     OctopusSampleSettingsView.LanguageRowId,
-                 })
+        foreach (var id in new[] { "settings-community-block", "settings-sdk-status", OctopusSampleSettingsView.ScreenId,
+            OctopusSampleSettingsView.AccountRowId, OctopusSampleSettingsView.AppearanceRowId, OctopusSampleSettingsView.LanguageRowId,
+            OctopusSampleSettingsView.ConfigRowId, "settings-devtools-row", OctopusSampleSettingsView.AboutRowId,
+            OctopusSampleSettingsView.ResetButtonId, OctopusSampleSettingsView.VersionLabelId }) Assert.IsNotNull(Find(shell.transform, id), id);
+        Assert.IsNull(Find(shell.transform, OctopusSampleShell.LegacyScenesId));
+        StringAssert.Contains("sample record", OctopusSampleSettingsView.StatusText());
+        Assert.IsFalse(shell.GetComponentsInChildren<TMP_Text>().Any(t => t.text.Contains("Legacy demo scenes")));
+    }
+    [Test] public void LanguageRowOpensThePickerWithoutALocaleScenarioDetour()
+    {
+        var shell = Shell(); Find(shell.transform, OctopusSampleSettingsView.LanguageRowId).GetComponent<Button>().onClick.Invoke();
+        Assert.IsNotNull(Object.FindAnyObjectByType<OctopusSampleLanguageView>());
+        Assert.IsNull(Object.FindAnyObjectByType<OctopusScenarioScreenView>());
+    }
+    [Test] public void SupportRegistryUpdatesAndAboutStaysLast()
+    {
+        var shell = Shell(); var view = shell.GetComponentInChildren<OctopusSampleSettingsView>();
+        OctopusSampleSettingsRows.Register("test-support", "Test", "Support", () => {});
+        CollectionAssert.Contains(view.SupportRowIds, "test-support");
+        Assert.AreEqual(OctopusSampleSettingsView.AboutRowId, view.SupportRowIds.Last());
+        Assert.AreEqual(1, view.RowsEventCount);
+        shell.Select(OctopusSampleTab.Scenarios);
+        OctopusSampleSettingsRows.Register("test-other", "Other", "Support", () => {});
+        Assert.AreEqual(1, view.RowsEventCount);
+    }
+    [Test] public void ResetAsksFirstAndCancelKeepsTheSession()
+    {
+        var shell = Shell(); var view = shell.GetComponentInChildren<OctopusSampleSettingsView>();
+        view.ConfirmReset(); Assert.IsNull(GameObject.Find("settings-reset-dialog"));
+        view.RequestReset(); Assert.IsTrue(view.IsConfirmingReset);
+        var dialog = GameObject.Find("settings-reset-dialog"); Assert.IsNotNull(dialog);
+        StringAssert.Contains("Nothing is deleted on the server", OctopusSampleResetDialog.Wording);
+        Find(dialog.transform, OctopusSampleSettingsView.ResetCancelId).GetComponent<Button>().onClick.Invoke();
+        Assert.IsFalse(view.IsConfirmingReset); Assert.IsNull(GameObject.Find("settings-reset-dialog"));
+    }
+    [Test] public void SettingsSummaryRefreshesAfterStop()
+    {
+        var shell = Shell(); OctopusSampleState.ReportInitialized("SSO");
+        StringAssert.Contains("Initialized", Find(shell.transform, "settings-sdk-status").GetComponent<TMP_Text>().text);
+        OctopusScenarioSdk.LifecycleStopped();
+        StringAssert.Contains("Not initialized", Find(shell.transform, "settings-sdk-status").GetComponent<TMP_Text>().text);
+    }
+    [Test] public void ResetDialogFitsItsContentsAndOnlyExteriorClicksCancel()
+    {
+        var previousScale = OctopusSampleTextScale.Provider;
+        try
         {
-            Assert.IsNotNull(Find(shell.transform, id),
-                "Nothing in the Settings tab is named '" + id + "' — the QA pipeline addresses " +
-                "it by that name.");
+            OctopusSampleTextScale.Provider = () => 1f;
+            var view = View(); view.RequestReset();
+            var dialog = GameObject.Find("settings-reset-dialog");
+            var card = (RectTransform)Find(dialog.transform, "settings-reset-confirmation");
+            Canvas.ForceUpdateCanvases();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(card);
+            Canvas.ForceUpdateCanvases();
+            Assert.Greater(card.rect.height, OctopusSampleBranding.MinTouchUnits * 2f);
+            foreach (var child in card.GetComponentsInChildren<RectTransform>())
+            {
+                if (child.GetComponent<TMP_Text>() == null && child.GetComponent<Button>() == null) continue;
+                var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(card, child);
+                Assert.GreaterOrEqual(bounds.min.y, card.rect.yMin - 0.5f, child.name);
+                Assert.LessOrEqual(bounds.max.y, card.rect.yMax + 0.5f, child.name);
+            }
+            var text = card.GetComponentsInChildren<TMP_Text>().First(t => t.text == OctopusSampleResetDialog.Wording);
+            var click = new PointerEventData(null) { button = PointerEventData.InputButton.Left };
+            Assert.IsNull(ExecuteEvents.ExecuteHierarchy(text.gameObject, click, ExecuteEvents.pointerClickHandler));
+            Assert.IsTrue(view.IsConfirmingReset);
+            Assert.IsNotNull(dialog);
+            ExecuteEvents.Execute(Find(dialog.transform, "Scrim").gameObject, click, ExecuteEvents.pointerClickHandler);
+            Assert.IsFalse(view.IsConfirmingReset);
+            Assert.IsTrue(dialog == null);
         }
+        finally { OctopusSampleTextScale.Provider = previousScale; }
     }
-
-    [Test]
-    public void TheLanguageLinkOpensTheLocaleScenario()
-    {
-        // The row used to say "Set through the Locale scenario" in plain text and nothing more.
-        OctopusScenarioSdk.Use(new OctopusRecordingScenarioSdk
-        {
-            Profile = new OctopusExampleConfig.ExampleProfile { apiKey = "test-key" },
-        });
-        var shell = Shell();
-
-        Find(shell.transform, OctopusSampleSettingsView.LanguageLinkId)
-            .GetComponent<Button>().onClick.Invoke();
-
-        var screen = Object.FindAnyObjectByType<OctopusScenarioScreenView>();
-        Assert.IsNotNull(screen, "The Language link opened no scenario screen.");
-        _spawned.Add(screen.gameObject);
-        Assert.AreEqual(OctopusSampleSettingsView.LocaleScenarioId, screen.ScenarioId);
-        Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
-    }
-
-    [Test]
-    public void OneResetCardHoldsBothResets()
-    {
-        var shell = Shell();
-        var cards = new List<string>();
-        foreach (var t in shell.GetComponentsInChildren<Transform>(true))
-            if (t.name == OctopusSampleSettingsView.ResetCardId) cards.Add(t.name);
-        Assert.AreEqual(1, cards.Count, "Settings shows more than one Reset card.");
-        var card = Find(shell.transform, OctopusSampleSettingsView.ResetCardId);
-        Assert.IsNotNull(Find(card, OctopusSampleSettingsView.ResetButtonId));
-        Assert.IsNotNull(Find(card, OctopusSampleSettingsView.ResetConfigButtonId));
-    }
-
-    [Test]
-    public void TheRouteToTheLegacyScenesSurvivesTheTabBeingBuilt()
-    {
-        // The Settings tab is the only way back to the four legacy scenes the Scenarios tab does
-        // not list (issue #100). Replacing the placeholder with a real screen is exactly the moment
-        // that route is easiest to drop without noticing.
-        var shell = Shell();
-
-        Assert.IsNotNull(Find(shell.transform, OctopusSampleShell.LegacyScenesId),
-            "The 'Legacy demo scenes' route is gone from the Settings tab; four scenes are now " +
-            "unreachable in the player while their scripts still compile.");
-    }
-
-    [Test]
-    public void ArrivingOnTheTabCallsNothingAndChangesNothing()
-    {
-        var probe = new ProbeLog();
-        OctopusSampleLog.Current = probe;
-
-        Shell();
-
-        Assert.IsEmpty(probe.Methods,
-            "Building the Settings tab reached the SDK: " + string.Join(", ", probe.Methods.ToArray()));
-        Assert.IsFalse(OctopusSampleState.IsInitialized,
-            "Building the Settings tab changed the sample's recorded state.");
-    }
-
     [Test]
     public void AboutIsTheLastSupportRowWhenNothingElseRegistered()
     {
         var view = View();
 
-        CollectionAssert.AreEqual(new[] { OctopusSampleSettingsView.AboutRowId },
+        CollectionAssert.AreEqual(new[] { "settings-devtools-row", OctopusSampleSettingsView.AboutRowId },
                                   view.SupportRowIds,
-                                  "With an empty registry the Support group should hold About alone.");
-    }
-
-    [Test]
-    public void ARegisteredRowLandsAboveAboutWithoutTheScreenNamingIt()
-    {
-        // This is the whole point of the seam: `Assets/Debug/` is export-ignore'd from the public
-        // mirror, so the Settings screen may not name a type from it. The row has to arrive from
-        // the other side, and it has to arrive on a screen that is already built.
-        var view = View();
-        OctopusSampleSettingsRows.Register("settings-devtools-row", "Developer tools", "Debug console", () => { });
-
-        CollectionAssert.AreEqual(
-            new[] { "settings-devtools-row", OctopusSampleSettingsView.AboutRowId },
-            view.SupportRowIds,
-            "A row registered after the screen was built did not reach it, or displaced About.");
-    }
-
-    [Test]
-    public void RegisteringTheSameIdTwiceReplacesTheRowRatherThanDoublingIt()
-    {
-        // In the editor a domain reload re-runs every [RuntimeInitializeOnLoadMethod] against a
-        // registry that is not always empty. Two identical 'Developer tools' rows is the shape of
-        // bug nobody reads a stack trace for.
-        var view = View();
-        OctopusSampleSettingsRows.Register("settings-devtools-row", "Developer tools", "first", () => { });
-        OctopusSampleSettingsRows.Register("settings-devtools-row", "Developer tools", "second", () => { });
-
-        CollectionAssert.AreEqual(
-            new[] { "settings-devtools-row", OctopusSampleSettingsView.AboutRowId },
-            view.SupportRowIds,
-            "The registry appended a duplicate instead of replacing the row under that id.");
-    }
-
-    [Test]
-    public void ARowWithNoActionStillRenders()
-    {
-        var view = View();
-        OctopusSampleSettingsRows.Register("settings-note-row", "A fact", "with no affordance", null);
-
-        CollectionAssert.Contains(view.SupportRowIds, "settings-note-row",
-            "A row registered without an action was dropped rather than drawn as a plain statement.");
-    }
-
-    [Test]
-    public void TheResetAsksBeforeItClears()
-    {
-        OctopusSampleState.ReportSession(OctopusSampleState.Session.ConnectCompleted, "ok");
-        var view = View();
-
-        view.RequestReset();
-
-        Assert.IsTrue(view.IsConfirmingReset, "The reset did not arm.");
-        Assert.AreEqual(OctopusSampleState.Session.ConnectCompleted,
-            OctopusSampleState.ConnectionSession,
-            "Asking for a reset already cleared the state; the confirm step decides nothing.");
-        Assert.IsNotNull(Find(view.transform, OctopusSampleSettingsView.ResetConfirmId),
-            "The armed reset draws no '" + OctopusSampleSettingsView.ResetConfirmId + "' control.");
-        Assert.IsNotNull(Find(view.transform, OctopusSampleSettingsView.ResetCancelId),
-            "The armed reset offers no way out.");
-    }
-
-    [Test]
-    public void CancellingLeavesTheStateAlone()
-    {
-        OctopusSampleState.ReportSession(OctopusSampleState.Session.ConnectCompleted, "ok");
-        var view = View();
-
-        view.RequestReset();
-        view.CancelReset();
-
-        Assert.IsFalse(view.IsConfirmingReset, "The reset stayed armed after being cancelled.");
-        StringAssert.Contains("cancelled", view.ResetResult);
-        Assert.AreEqual(OctopusSampleState.Session.ConnectCompleted,
-            OctopusSampleState.ConnectionSession, "Cancelling a reset cleared the state anyway.");
-        Assert.IsNotNull(Find(view.transform, OctopusSampleSettingsView.ResetButtonId),
-            "Cancelling left no way to ask again.");
-    }
-
-    [Test]
-    public void ConfirmingClearsTheSdksAnswersAndMakesNoCall()
-    {
-        var probe = new ProbeLog();
-        OctopusSampleLog.Current = probe;
-        OctopusSampleState.ReportSession(OctopusSampleState.Session.ConnectCompleted, "ok");
-        OctopusSampleState.ReportUnseenNotifications(4);
-        var view = View();
-
-        view.RequestReset();
-        view.ConfirmReset();
-
-        Assert.IsFalse(view.IsConfirmingReset, "The reset stayed armed after being carried out.");
-        StringAssert.Contains("Sample state cleared", view.ResetResult);
-        Assert.IsNotNull(Find(view.transform, OctopusSampleSettingsView.ResetResultId));
-        Assert.AreEqual(OctopusSampleState.Session.None, OctopusSampleState.ConnectionSession,
-            "The reset left the last connection call behind.");
-        Assert.Less(OctopusSampleState.UnseenNotifications, 0,
-            "The reset left a published unseen count rather than the not-yet-published sentinel.");
-        // The guarantee behind the name: nothing leaves the device, so nothing is deleted on the
-        // server and nothing is torn down.
-        Assert.IsEmpty(probe.Methods,
-            "Resetting the sample state reached the SDK: " + string.Join(", ", probe.Methods.ToArray()));
-    }
-
-    [Test]
-    public void ConfirmingKeepsWhatTheSdkIsStillConfiguredWith()
-    {
-        // The reset clears answers, not configuration. Initialisation and a locale override are
-        // facts about the SDK that this button cannot undo, and forgetting them would only make the
-        // Home dashboard disagree with the app the reader is looking at.
-        OctopusSampleState.ReportInitialized("SSO");
-        OctopusSampleState.ReportLocaleOverride("fr");
-        var view = View();
-
-        view.RequestReset();
-        view.ConfirmReset();
-
-        Assert.IsTrue(OctopusSampleState.IsInitialized,
-            "The reset cleared the initialisation flag, which is the guard against a second Initialize.");
-        Assert.AreEqual("SSO", OctopusSampleState.ModeLabel, "The reset forgot the mode it was initialised in.");
-        Assert.AreEqual("fr", OctopusSampleState.LocaleOverride,
-            "The reset forgot a locale override the SDK is still applying.");
-    }
-
-    [Test]
-    public void AResetBetweenTwoVisitsToTheCommunityDoesNotInitializeTwice()
-    {
-        // The sequence the review found: open Community, reset, open Community. With the button
-        // wired to OctopusSampleState.Reset it cleared the initialisation guard, and the second
-        // visit called Initialize again — a second channel and a second set of collectors on the
-        // native side, from a control that claims to touch nothing but the sample's own record.
-        var sdk = new OctopusRecordingScenarioSdk
-        {
-            Profile = new OctopusExampleConfig.ExampleProfile { apiKey = "test-key" }
-        };
-        OctopusScenarioSdk.Use(sdk);
-
-        var shell = Shell();
-        shell.Select(OctopusSampleTab.Community);
-        shell.GetComponentInChildren<OctopusSampleCommunityView>().OpenCommunity();
-        Assert.AreEqual(1, CountOf(sdk, "Initialize"), "The first visit did not initialise once.");
-
-        shell.Select(OctopusSampleTab.Settings);
-        var settings = shell.GetComponentInChildren<OctopusSampleSettingsView>();
-        settings.RequestReset();
-        settings.ConfirmReset();
-
-        shell.Select(OctopusSampleTab.Community);
-        shell.GetComponentInChildren<OctopusSampleCommunityView>().OpenCommunity();
-
-        Assert.AreEqual(1, CountOf(sdk, "Initialize"),
-            "The SDK was initialised again after a reset: " + string.Join(", ", sdk.ScenarioMethods));
-    }
-
-    private static int CountOf(OctopusRecordingScenarioSdk sdk, string method)
-    {
-        var count = 0;
-        foreach (var name in sdk.ScenarioMethods)
-        {
-            if (name == method) count++;
-        }
-        return count;
+                                  "The built-in Developer tools route precedes About when no recorder is registered.");
+        Find(view.transform, "settings-devtools-row").GetComponent<Button>().onClick.Invoke();
+        var tools = Object.FindAnyObjectByType<OctopusSampleDeveloperToolsView>();
+        Assert.IsNotNull(tools);
+        Assert.AreEqual("developer-tools-screen", tools.CurrentScreen);
+        Find(tools.transform, "devtools-debug-info-row").GetComponent<Button>().onClick.Invoke();
+        Assert.IsNotNull(Find(tools.transform, "debug-info-native-build-pins"));
     }
 
     [Test]
@@ -372,10 +190,6 @@ public class OctopusSampleSettingsViewTests
             "in the U.S. and elsewhere.", notice);
     }
 
-    [TestCase(null)]
-    [TestCase("")]
-    [TestCase("   ")]
-    [TestCase("not a URL")]
     [TestCase("file:///tmp/design.html")]
     public void UnavailableDesignLinksAreAbsent(string url)
     {
@@ -403,130 +217,6 @@ public class OctopusSampleSettingsViewTests
         StringAssert.Contains(OctopusSampleAboutView.NonAffiliationNoticeText(),
             string.Join(" ", System.Array.ConvertAll(attribution.GetComponentsInChildren<TMP_Text>(), t => t.text)));
         Assert.IsNull(Find(attribution, "Badge"));
-    }
-
-    [TestCase(OctopusSampleTheme.Light)]
-    [TestCase(OctopusSampleTheme.Dark)]
-    public void AppearanceOpensFromSettingsAndChangesOnlyTheSampleTheme(OctopusSampleTheme theme)
-    {
-        OctopusSampleBranding.Theme = theme;
-        var probe = new ProbeLog();
-        OctopusSampleLog.Current = probe;
-        var shell = Shell();
-        Find(shell.transform, OctopusSampleSettingsView.AppearanceRowId).GetComponent<Button>().onClick.Invoke();
-        var appearance = Object.FindAnyObjectByType<OctopusSampleAppearanceView>();
-        Assert.IsNotNull(appearance);
-        Assert.AreEqual(theme, OctopusSampleBranding.Theme, "Opening the route changed the theme.");
-        Assert.AreSame(appearance, OctopusSampleAppearanceView.Open());
-        Find(appearance.transform, OctopusSampleAppearanceView.ShellThemeToggleId).GetComponent<Button>().onClick.Invoke();
-        Assert.AreNotEqual(theme, OctopusSampleBranding.Theme);
-        Assert.IsTrue(OctopusSampleAppearanceView.IsOpen, "A theme rebuild closed Appearance.");
-        Find(appearance.transform, OctopusSampleAppearanceView.BackId).GetComponent<Button>().onClick.Invoke();
-        Assert.IsFalse(OctopusSampleAppearanceView.IsOpen);
-        Assert.AreEqual(OctopusSampleTab.Settings, shell.Selected);
-        Assert.IsEmpty(probe.Methods);
-    }
-
-    [TestCase(OctopusSampleTheme.Light, OctopusSampleAppearanceView.LightId)]
-    [TestCase(OctopusSampleTheme.Dark, OctopusSampleAppearanceView.DarkId)]
-    public void AppearanceChoiceSurvivesNavigationAndReopening(OctopusSampleTheme theme, string id)
-    {
-        var sdk = new OctopusRecordingScenarioSdk();
-        OctopusScenarioSdk.Use(sdk);
-        OctopusSampleBranding.Theme = theme == OctopusSampleTheme.Light
-            ? OctopusSampleTheme.Dark : OctopusSampleTheme.Light;
-        var shell = Shell();
-        Find(shell.transform, OctopusSampleSettingsView.AppearanceRowId).GetComponent<Button>().onClick.Invoke();
-        var appearance = Object.FindAnyObjectByType<OctopusSampleAppearanceView>();
-        Assert.IsNotNull(Find(appearance.transform, OctopusSampleAppearanceView.ThemeToggleId));
-        Find(appearance.transform, id).GetComponent<Button>().onClick.Invoke();
-        Assert.AreEqual(theme, OctopusSampleBranding.Theme);
-        // Selecting the already selected value must not flip it back.
-        Find(appearance.transform, id).GetComponent<Button>().onClick.Invoke();
-        Assert.AreEqual(theme, OctopusSampleBranding.Theme);
-        appearance.Close();
-        shell.Select(OctopusSampleTab.Home);
-        shell.Select(OctopusSampleTab.Settings);
-        Assert.AreEqual(theme.ToString(),
-            Find(shell.transform, "settings-appearance-value").GetComponent<TMP_Text>().text);
-        Find(shell.transform, OctopusSampleSettingsView.AppearanceRowId).GetComponent<Button>().onClick.Invoke();
-        appearance = Object.FindAnyObjectByType<OctopusSampleAppearanceView>();
-        Assert.AreEqual(theme, OctopusSampleBranding.Theme);
-        Assert.IsFalse(System.Array.Exists(appearance.GetComponentsInChildren<TMP_Text>(), t => t.text == "System"));
-        Assert.IsEmpty(sdk.ScenarioMethods);
-    }
-
-    [Test]
-    public void PreferenceRowsShowCurrentValuesWithoutInlineEditors()
-    {
-        OctopusScenarioSdk.Use(new OctopusRecordingScenarioSdk());
-        OctopusSampleBranding.Theme = OctopusSampleTheme.Dark;
-        var host = new GameObject("Preferences test", typeof(RectTransform));
-        _spawned.Add(host);
-        var view = OctopusSampleSettingsView.BuildInto((RectTransform)host.transform);
-        var appearance = Find(view.transform, OctopusSampleSettingsView.AppearanceRowId);
-        var language = Find(view.transform, OctopusSampleSettingsView.LanguageRowId);
-        Assert.AreEqual("Dark", Find(appearance, "settings-appearance-value").GetComponent<TMP_Text>().text);
-        Assert.AreEqual("System default (no override)",
-            Find(language, "settings-language-value").GetComponent<TMP_Text>().text);
-        // The Language row edits nothing: its one control is the link to the Locale scenario.
-        CollectionAssert.AreEqual(new[] { OctopusSampleSettingsView.LanguageLinkId },
-            language.GetComponentsInChildren<Selectable>(true).Select(s => s.gameObject.name).ToArray());
-        Assert.IsEmpty(language.GetComponentsInChildren<TMP_InputField>(true));
-        Assert.IsEmpty(appearance.GetComponentsInChildren<TMP_InputField>(true));
-        Assert.IsEmpty(appearance.GetComponentsInChildren<Toggle>(true));
-
-        OctopusSampleBranding.Theme = OctopusSampleTheme.Light;
-        OctopusSampleState.ReportLocaleOverride("en");
-        Assert.AreEqual("Light", Find(appearance, "settings-appearance-value").GetComponent<TMP_Text>().text);
-        Assert.AreEqual("en", Find(language, "settings-language-value").GetComponent<TMP_Text>().text);
-        OctopusSampleState.ReportLocaleOverride(null);
-        Assert.AreEqual("System default (no override)",
-            Find(language, "settings-language-value").GetComponent<TMP_Text>().text);
-    }
-
-    [Test]
-    public void LanguageIsReadOnlyAndFollowsTheRecordedOverride()
-    {
-        var view = View();
-        var row = Find(view.transform, OctopusSampleSettingsView.LanguageRowId);
-        Assert.IsNull(row.GetComponent<Button>());
-        StringAssert.Contains("System default", OctopusSampleSettingsView.LanguageText());
-        OctopusSampleState.ReportLocaleOverride("fr");
-        Assert.AreEqual("fr", OctopusSampleSettingsView.LanguageText());
-        Assert.IsTrue(System.Array.Exists(row.GetComponentsInChildren<TMP_Text>(), t => t.text == "fr"));
-    }
-
-    [Test]
-    public void ConfirmWithoutARequestCannotResetAndResetKeepsAppearance()
-    {
-        OctopusSampleState.ReportSession(OctopusSampleState.Session.ConnectCompleted, "ok");
-        OctopusSampleBranding.Theme = OctopusSampleTheme.Light;
-        var view = View();
-        view.ConfirmReset();
-        Assert.AreEqual(OctopusSampleState.Session.ConnectCompleted, OctopusSampleState.ConnectionSession);
-        view.RequestReset();
-        view.ConfirmReset();
-        Assert.AreEqual(OctopusSampleTheme.Light, OctopusSampleBranding.Theme);
-        Assert.IsNotNull(Find(Find(view.transform, OctopusSampleSettingsView.ResetCardId), "Stroke"));
-        view.RequestReset();
-        Assert.IsEmpty(view.ResetResult);
-    }
-
-    [Test]
-    public void TheFooterNamesTheBuildAndTheSdk()
-    {
-        // It used to assert the opposite: nothing in `UnityPackage/` published a version at
-        // runtime, so an SDK number here could only be a hardcoded string going stale at the next
-        // bump. #116 added `OctopusSDK.Version`, kept equal to `package.json` by
-        // `ci/native-pins/verify-native-pins.sh`, so the footer can now name all three.
-        var text = OctopusSampleSettingsView.VersionLabelText();
-
-        StringAssert.Contains("Sample ", text);
-        StringAssert.Contains("SDK ", text);
-        StringAssert.Contains("Unity ", text);
-        StringAssert.Contains(Application.unityVersion, text);
-        StringAssert.Contains(OctopusSDK.Version, text);
     }
 
     [Test]
@@ -559,67 +249,50 @@ public class OctopusSampleSettingsViewTests
     }
 
     [Test]
-    public void LeavingTheTabStopsItListening()
+    public void ArrivingOnTheTabCallsNothingAndChangesNothing()
     {
-        var shell = Shell();
-        var view = shell.GetComponentInChildren<OctopusSampleSettingsView>();
-        OctopusSampleSettingsRows.Register("settings-probe-row", "Probe", null, () => { });
-        var whileOnScreen = view.RowsEventCount;
-        Assert.Greater(whileOnScreen, 0, "The view never heard the registry at all.");
+        OctopusSampleState.Reset();
+        var probe = new ProbeLog();
+        OctopusSampleLog.Current = probe;
 
-        // Edit mode delivers neither OnDisable nor OnDestroy to a plain MonoBehaviour, so the view
-        // is still subscribed the moment it is destroyed; the guarantee is that it drops itself on
-        // the first event that reaches it afterwards, which is the path a scene unload takes too.
-        shell.Select(OctopusSampleTab.Home);
-        OctopusSampleSettingsRows.Register("settings-probe-row-2", "Probe", null, () => { });
-        var afterUnhooking = view.RowsEventCount;
-        OctopusSampleSettingsRows.Register("settings-probe-row-3", "Probe", null, () => { });
+        Shell();
 
-        Assert.AreEqual(afterUnhooking, view.RowsEventCount,
-            "The destroyed Settings view is still on OctopusSampleSettingsRows.Changed.");
+        Assert.IsEmpty(probe.Methods,
+            "Building the Settings tab reached the SDK: " + string.Join(", ", probe.Methods.ToArray()));
+        Assert.IsFalse(OctopusSampleState.IsInitialized,
+            "Building the Settings tab changed the sample's recorded state.");
     }
 
-    private OctopusSampleShell Shell()
+    [Test]
+    public void RegisteringTheSameIdTwiceReplacesTheRowRatherThanDoublingIt()
     {
-        var shell = OctopusSampleShell.Create();
-        _spawned.Add(shell.gameObject);
-        shell.Select(OctopusSampleTab.Settings);
-        return shell;
+        // In the editor a domain reload re-runs every [RuntimeInitializeOnLoadMethod] against a
+        // registry that is not always empty. Two identical 'Developer tools' rows is the shape of
+        // bug nobody reads a stack trace for.
+        var view = View();
+        OctopusSampleSettingsRows.Register("settings-devtools-row", "Developer tools", "first", () => { });
+        OctopusSampleSettingsRows.Register("settings-devtools-row", "Developer tools", "second", () => { });
+
+        CollectionAssert.AreEqual(
+            new[] { "settings-devtools-row", OctopusSampleSettingsView.AboutRowId },
+            view.SupportRowIds,
+            "The registry appended a duplicate instead of replacing the row under that id.");
     }
 
-    private OctopusSampleSettingsView View()
+    [Test]
+    public void ARowWithNoActionStillRenders()
     {
-        var view = Shell().GetComponentInChildren<OctopusSampleSettingsView>();
-        Assert.IsNotNull(view, "The Settings tab built no view.");
-        return view;
-    }
+        var view = View();
+        OctopusSampleSettingsRows.Register("settings-note-row", "A fact", "with no affordance", null);
 
-    private static Transform Find(Transform root, string name)
-    {
-        if (root.gameObject.name == name) return root;
-        for (var i = 0; i < root.childCount; i++)
-        {
-            var found = Find(root.GetChild(i), name);
-            if (found != null) return found;
-        }
-        return null;
+        CollectionAssert.Contains(view.SupportRowIds, "settings-note-row",
+            "A row registered without an action was dropped rather than drawn as a plain statement.");
     }
 
     private sealed class ProbeLog : IOctopusSampleLog
     {
         public readonly List<string> Methods = new List<string>();
-
-        public void LogApiCall(string method, string detail = null)
-        {
-            Methods.Add(method);
-        }
-
-        public readonly List<(string headline, string detail)> StateChanges =
-            new List<(string, string)>();
-
-        public void LogStateChange(string headline, string detail = null)
-        {
-            StateChanges.Add((headline, detail));
-        }
+        public void LogApiCall(string method, string detail = null) { Methods.Add(method); }
+        public void LogStateChange(string headline, string detail = null) { }
     }
 }

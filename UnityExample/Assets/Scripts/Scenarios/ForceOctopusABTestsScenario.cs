@@ -65,7 +65,7 @@ public sealed class ForceOctopusABTestsScenario : OctopusScenarioPilot
     }
     internal override void ObservationsChanged()
     {
-        if (!IsRunning) Report((_outcome ?? "Ready — no override made yet.") + AccessLine());
+        if (!IsRunning) Report((_outcome ?? "Not run yet — no override made yet.") + AccessLine());
     }
     private static string AccessLine()
     {

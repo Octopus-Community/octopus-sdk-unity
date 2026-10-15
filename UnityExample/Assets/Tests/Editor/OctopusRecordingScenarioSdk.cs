@@ -82,6 +82,16 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
     /// preset's `Run` finishes synchronously. When true they return a task this recorder keeps
     /// open in <see cref="Pending"/> — the in-flight state the serialisation slot exists for.
     /// </summary>
+    public string DemoServerHost { get; set; } = OctopusExampleConfig.DemoApiServerHost;
+    public OctopusExampleConfig.ExampleProfile ManagedProfile { get; set; }
+    public OctopusExampleConfig.ExampleProfile SomeManagedProfile { get; set; }
+    public OctopusExampleConfig.ExampleProfile ConfigurationProfile(int selection)
+    {
+        if (selection == 3) return ManagedProfile;
+        if (selection == 4) return SomeManagedProfile;
+        return selection == 2 ? AlternateProfile : Profile;
+    }
+
     public bool DeferCompletions { get; set; }
 
     /// <summary>The task left open by the last deferred call, or null when nothing is in flight.</summary>
@@ -173,6 +183,7 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
 
     /// <inheritdoc/>
     public void SetLogo(OctopusLogo logo) { Record("SetLogo", logo); }
+    public void SetIcons(OctopusIcons icons) { Record("SetIcons", icons); }
     public void SetFonts(OctopusFonts fonts) { Record("SetFonts", fonts); }
     public OctopusProfile CurrentProfile { get; set; }
     public event Action<OctopusProfile> ProfileChanged;
@@ -210,6 +221,10 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
         if (throws) throw new InvalidOperationException("config read unavailable");
         if (!DeferCompletions) onResult(null);
     }
+    public void DebugOverrideConsentTexts(OctopusConsentTexts texts)
+    { Record("DebugOverrideConsentTexts", texts); }
+    public void DebugOverrideForceNicknameChoice(bool? enabled)
+    { Record("DebugOverrideForceNicknameChoice", enabled); }
     public void DebugOverrideExposeClientUserId(bool? enabled)
     {
         Record("DebugOverrideExposeClientUserId", enabled);
@@ -264,6 +279,9 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
     }
 
     /// <inheritdoc/>
+    public void OpenActivity(OctopusCommunityMemberId memberId)
+    { Record("OpenActivity", new object[] { memberId }); }
+
     public void OpenProfile(string clientUserId)
     { Record("OpenProfile", new object[] { clientUserId }); }
 
@@ -283,6 +301,10 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
     }
 
     public event Action<IList<OctopusGroup>> GroupsChanged;
+    internal int GroupsListenerCount
+    {
+        get { return GroupsChanged == null ? 0 : GroupsChanged.GetInvocationList().Length; }
+    }
     public IList<OctopusGroup> Groups = new List<OctopusGroup>();
     public bool DeferGroups;
     public Action<IList<OctopusGroup>> PendingGroups;
@@ -320,6 +342,10 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
     {
         add { Record("GroupAccessDenied.add"); _groupAccessDenied += value; }
         remove { Record("GroupAccessDenied.remove"); _groupAccessDenied -= value; }
+    }
+    internal int GroupAccessDeniedListenerCount
+    {
+        get { return _groupAccessDenied == null ? 0 : _groupAccessDenied.GetInvocationList().Length; }
     }
     public void EmitGroupAccessDenied(string id) { _groupAccessDenied?.Invoke(id); }
 
@@ -372,6 +398,10 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
     public void TrackAccessToCommunity(bool hasAccess) { Record("TrackAccessToCommunity", hasAccess); }
     public bool HasAccessToCommunity { get; set; }
     public event Action<bool> OnHasAccessToCommunityChanged;
+    internal int CommunityAccessListenerCount
+    {
+        get { return OnHasAccessToCommunityChanged == null ? 0 : OnHasAccessToCommunityChanged.GetInvocationList().Length; }
+    }
     public string AccessError;
     public void EmitCommunityAccess(bool access) { EmitAccess(access); }
     public void EmitAccess(bool value)

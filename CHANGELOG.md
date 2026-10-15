@@ -6,6 +6,146 @@ section when a release is cut (format inspired by
 
 ## Unreleased
 
+## 1.15.0 — 2026-10-15
+
+Native SDKs: Android 1.15.0, iOS 1.15.0. Breaking: Octopus-owned authentication is removed (see
+[MIGRATING.md](MIGRATING.md)). Unity 2019.4 minimum unchanged. Legacy
+`OctopusCommunitySDK.unitypackage` for this version was regenerated with Unity Editor 6000.6.3f1
+(`build_legacy_package.sh`, the reference path), not import-tested in a scratch project before the
+cut. UPM remains the reference install path.
+
+### Removed
+- runtime: `ConnectionMode.OctopusAuth()` and `OctopusSDK.SwitchCommunityOctopusAuth`.
+  Unity no longer exposes Octopus-owned authentication or Magic Link. Both native bridges accept
+  only SSO. The auth-only UnityExample scene and UPM sample are removed; other examples use SSO.
+
+### Breaking
+- Applications using the removed APIs must pass `ConnectionMode.SSO(...)` to `Initialize` and
+  `SwitchCommunity`, handle `OnLoginRequired` with their own sign-in flow, and register a backend
+  token provider through `ConnectUser`. See [MIGRATING.md](MIGRATING.md#to-1150-from-114x--sso-only-authentication).
+  Mode parameters remain required. Both native SDKs now target 1.15.0, including pending Magic Link
+  storage cleanup and removal of native account/logout/delete-account UI.
+
+### Deprecated
+- runtime: `OctopusScreen.SettingsList`, `SettingsAccount`, and `DeleteAccount`, and
+  `OctopusIconSlot.SettingsAccount`, `SettingsLogout`, and `SettingsDeleteAccountWarning`,
+  with warning-level `Obsolete` attributes. Values and wire mappings remain compatible with the
+  pinned natives; customize `SettingsHelp` and `SettingsInfo` instead of the legacy account icons.
+
+
+### Added
+- runtime: immutable `OctopusConsentTexts` variants, nullable `DebugOverrideConsentTexts`, and the `ConsentTexts` config snapshot. Consent mode stays independent; wordings, fallback and rendering remain native. Native support requires SDK 1.15.
+- sample: eight consent-text presets plus clear, with an effective config preview.
+- runtime: nullable `DebugOverrideForceNicknameChoice`, the `ForceNicknameChoice` config snapshot, and `OctopusIconSlot.CommonClearText = 79`. Existing icon ordinals stay unchanged. Native support requires SDK 1.15.
+- sample: nickname-choice presets, live configuration readout, and a clear-text icon demonstration in Theme.
+- runtime: `OctopusPostOptions.TextRequired` and an image-without-text debug preset. The two-flag constructor keeps text required. Native bridge support requires SDK 1.15.
+- runtime: `OctopusInitializationOptions.AppManagedAudioSession` (default `false`) lets the host
+  manage its iOS `AVAudioSession` configuration and activation during community video playback.
+  Pass options to the additive five-argument `OctopusSDK.Initialize` overload; the original
+  signature is unchanged. iOS community switches retain the initialized value, including after
+  `Stop`. Empty or malformed initialization options use the default audio-session policy.
+  Android and the Editor mock ignore the option. (#435, #491)
+- runtime: `OctopusIconSlot.ScreenStatesEmptyContent`, `ScreenStatesEmptyNotifications`,
+  `ScreenStatesNetworkError` and `ScreenStatesError` override the native empty/error screen
+  illustrations through `OctopusSDK.SetIcons` on Android and iOS. Original colors are preserved,
+  and unset slots keep their native defaults. Existing slot values are unchanged. (#414)
+- sample: Theme scenario toggles the four screen-state icon overrides with the bundled blueberry logo or restores native defaults. (#414)
+- sample: Android Play in-app update check, as in the Android and Flutter samples. Settings › About
+  shows an App update card with the status and an update action, and launch shows a banner only
+  when an update is available. Sideloaded builds report "Not installed from Play Store"; iOS and
+  the Editor show no card.
+
+### Changed
+- bridge: Reports the Unity wrapper family and package version to both native SDKs.
+- bridge: Android keeps the 1.14 horizontal slide between SDK screens. Native 1.15 lets SDK
+  screens inherit the host navigation transitions, which would have turned it into a cross-fade.
+  No C# API change. (#509)
+- native: Android SDK 1.14.2 → 1.15.0 and iOS SDK 1.14.1 → 1.15.0, enabling optional post text,
+  forced nickname choice and custom consent texts on both platforms. Native authentication now
+  follows the host-owned SSO flow documented above and in [MIGRATING.md](MIGRATING.md#to-1150-from-114x--sso-only-authentication).
+- ios: Log invalid initialization options without their payload; audio-session behavior is unchanged. (#501)
+- runtime: `RefreshEntitlements` reports `NoClientTokenProvider` on the Unity thread when no
+  provider has been registered through `ConnectUser` in the current SDK session, including after
+  a relaunch. Initialization, community switch, and Stop forget that registration. Existing native
+  sessions are not logged out by this migration.
+- sample: `UnityExample` moves from Unity 6000.3.3f1 to 6000.6.3f1 (`ProjectVersion.txt`, package
+  lock, the settings assets 6000.6 adds). The package's own minimum stays `"unity": "2019.4"`: the
+  `.unitypackage` holds sources, `.asmdef`s and `.aar`s only, so exporting it from 6000.6 does not
+  raise the hosts' floor. Local Editor steps (the legacy `build_legacy_package.sh` export, store
+  builds, local gates) now need 6000.6.3f1 installed; `build_legacy_package_nounity.py` needs none.
+- ci: A dispatch-only `Unity editor gates (EditMode + Android)` workflow
+  (`unity-editor-gates.yml`) runs `Scripts/unity-local-gates.sh --android` on the self-hosted Mac
+  mini, prints the attestation line in its run summary and keeps the APK and logs for 3 days. No
+  PR trigger until a more powerful runner lands; local gates + attestation stay the gate. Not a
+  required check; its runner is `UNITY_EDITOR_RUNNER`.
+- ci: `publish-ios.sh` never exports with an Editor older than `ProjectVersion.txt`: its floor is
+  now the higher of 6000.5 and the project's Editor, so an iOS export cannot downgrade the project.
+
+### Fixed
+- sample: Paddings and corner radii follow the branding tokens. The Community dock hugs the
+  Open community button, pill buttons inside cards keep their 48dp height, and cards use a 12dp
+  radius.
+- bridge: Android community-data lookup failures now reach `onError` for both profile and client user ids; successful absence still returns null, matching iOS.
+- bridge: Native error callbacks on Android and iOS redact exception text, wrapped error
+  descriptions, server descriptions and transport reasons, and other non-display native
+  diagnostics with fixed messages and recognized categories. Backend ban reasons and profile
+  validation messages remain forwarded for display. Callback names, payload shapes, and error
+  codes remain unchanged. (#476)
+- bridge: Reset and native community-data fetch errors on Android and iOS keep `Reset failed.`
+  and `Could not fetch community data.` without exception messages or causes. Android appends only
+  a recognized fixed exception category; iOS sends only the first sentence. Other generic native
+  exception callbacks use the same redaction rule; #476 also covers native result diagnostics
+  while preserving backend ban reasons and profile validation display text. (#430)
+- bridge: Both Android bridge modules now declare the effective API 23 minimum, matching the
+  native SDK requirements; the shipped AAR is rebuilt. The example minimum remains API 25. (#446)
+- runtime: `SetAppName(null)` is normalized to an empty string before calling either native
+  bridge. Whitespace-only names now clear the custom title, like null or empty names. iOS also
+  accepts a null pointer safely, and setting an empty name while the default name is active no
+  longer closes the community UI. The public C# signature is unchanged. (#437, #483)
+- ci: Legacy Editor export wrappers check the generated `.unitypackage` before reporting success,
+  rejecting exported tests and stale assets while accepting omitted empty folders known only
+  through orphan `.meta` files in fresh-checkout Editor exports. Windows exports find Python 3
+  through `python3`, `py -3`, or `python`; the release flow checks the archive after generation
+  and allows diagnostic drift before regeneration. (#450, #481)
+- docs: Hotfix merge-backs require fresh Unity gates evidence from the merge-back head and its
+  declared Editor, alongside the release-head evidence. (#445)
+- bridge: Android no longer forwards `profile.emptyNotifications` to the deprecated native
+  notifications icon group, where it had no visible effect. The slot is accepted and ignored,
+  as on iOS; empty notification lists use `screenStates.emptyNotifications`. (#480)
+- store: A refusal on leftover signing passwords now also directs the operator to inspect and
+  remove the old Gradle export while preserving custom edits. Snapshot copy failures stop the
+  build explicitly, and the iOS match probe uses a private temporary status directory. (#304)
+- ci: Sample coverage Gate C fails on pending scenarios whose native version has shipped,
+  after CI verified zero pending Unity scenarios. Its branch-protection status is unchanged. (#66)
+- ci: Mirror previews and disabled continuous-sync pushes cannot cancel or supersede a live
+  sync. Live writes serialize across refs, and reusable calls honor their inputs for the caller's
+  actual event. (#422)
+- ci: `PR gate` rejects jobs omitted from its dependencies unless explicitly declared advisory
+  with a reason, and checks new dependency results automatically. (#317)
+- packaging: Legacy `.unitypackage` exports exclude the SDK's EditMode tests and their folder
+  metadata, so hosts without Unity Test Framework compile after import. UPM tests are unchanged. (#448)
+- bridge: Android `SetAppName` currently has no visible effect: the main feed keeps its native
+  default title until the native SDK exposes a hook. It previously replaced every sub-screen
+  title. The configured logo appears in the main feed's top bar. Other screen titles retain their native typography
+  unless a custom font weight is set. On iOS, setting a different app name closes any visible
+  community UI, like `SetLogo`, and applies the name on the next open; setting the same name
+  leaves the existing controller intact. Android `SetAppName` does not close the community UI. (#434)
+- bridge: Android Stop failures retain `Stop failed.` as their first sentence and append a
+  fixed exception category when recognized. Exception messages and causes are never forwarded,
+  so credential or token text cannot enter the detail. iOS Stop remains unchanged. (#353)
+- runtime: Community-data fetch dispatch failures now report `Could not start community data
+  fetch. Details: <exception type>` instead of `Could not fetch community data.`, distinguishing
+  them from native fetch failures. Only the C# exception type name is forwarded, never its message.
+  Behavior change: a host matching the old first sentence no longer catches dispatch failures;
+  native fetch failures keep `Could not fetch community data.`. (#354)
+- bridge: Initialization failures now log a generic message instead of exception details on
+  Android and iOS. Android still throws synchronously, using a new exception without the original
+  cause, so the bridge cannot echo a supplied credential from an error message or cause chain. (#355)
+- sample: The community scenario pilots override `OctopusScenarioPilot.Dispose` instead of hiding
+  it (CS0114), so their subscriptions are cancelled when the base disposes the pilot too.
+- sample: Compiles on Unity 6000.6 — `SampleUiAdaptivePanel` implements the new
+  `ILayoutElement` max-size members and `OctopusReefRunView` disambiguates TMP `SetText`.
+
 ## 1.14.3 — 2026-10-13
 
 Hotfix on the 1.14 line: it carries only the iOS fix below on top of 1.14.2. Native SDKs unchanged

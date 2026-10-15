@@ -5,8 +5,62 @@ for Unity that contain breaking changes. Each section lists the breaking
 changes first, then how to adapt. The most recent version is at the top.
 Full release notes live in [CHANGELOG.md](CHANGELOG.md).
 
+- [To 1.15.0 (from 1.14.x) — SSO-only authentication](#to-1150-from-114x--sso-only-authentication)
 - [To 1.12.8 (from 1.12.7)](#to-1128-from-1127)
 - [To 1.12.0 (from 1.10.x)](#to-1120-from-110x)
+
+---
+
+## To 1.15.0 (from 1.14.x) — SSO-only authentication
+
+Your app now owns sign-in, aligned with the native SDKs' removal of Magic Link authentication.
+`ConnectionMode.OctopusAuth()` and `OctopusSDK.SwitchCommunityOctopusAuth` are removed,
+without compatibility shims. The mode parameter of `Initialize` and `SwitchCommunity` was
+already required in Unity and remains so.
+
+**Before:**
+
+```csharp
+OctopusSDK.Initialize("YOUR_API_KEY", ConnectionMode.OctopusAuth());
+OctopusSDK.SwitchCommunityOctopusAuth("YOUR_OTHER_API_KEY", onCompleted, onError);
+```
+
+**After:**
+
+```csharp
+OctopusSDK.OnLoginRequired += OpenAppSignIn;
+OctopusSDK.Initialize("YOUR_API_KEY", ConnectionMode.SSO());
+// Once your own sign-in succeeds, supply your backend's fresh SSO JWT on demand:
+await OctopusSDK.ConnectUser(userId, nickname, bio, picture, FetchTokenFromBackend);
+// After switching, connect the host user again in onCompleted:
+OctopusSDK.SwitchCommunity("YOUR_OTHER_API_KEY", ConnectionMode.SSO(), onCompleted, onError);
+```
+
+`OpenAppSignIn` opens your app's sign-in UI. `FetchTokenFromBackend` is your
+`Func<Task<string>>` that obtains a fresh client-signed token from your backend; it must work
+without the Unity player loop. Call `DisconnectUser` when your app signs the user out.
+Use `ConnectionMode.SSO(ProfileField.NICKNAME, ...)` if your app manages profile fields.
+
+`RefreshEntitlements` returns `NoClientTokenProvider` until `ConnectUser` registers a provider
+in this SDK session, including when the native SDK restored a profile after relaunch. Register
+the provider again after initialization, a community switch, or Stop followed by initialization.
+A native stored session is not logged out at launch by this change.
+
+`OctopusScreen.SettingsList`, `SettingsAccount`, `DeleteAccount`, and the settings account,
+logout and delete-warning `OctopusIconSlot` values remain available with warning-level
+`Obsolete` attributes. Their numeric values and parsing are unchanged. Handle accounts in your
+app and customize `SettingsHelp` / `SettingsInfo`; Unity has no Settings icon initializer to replace.
+
+The auth-only scene and UPM sample are removed. Remaining examples initialize with SSO;
+connect your own user for authenticated actions. Generic legacy UnityExample scenes route
+`OnLoginRequired` to the SSO sign-in scene. The shell already uses SSO configuration and
+Account screens. Its saved selections accept only the existing SSO profiles; invalid selections
+return to Configuration.
+
+Native dependencies now target 1.15.0 on Android and iOS. These releases remove native auth
+repositories and native account/logout/delete screens, and clean up pending Magic Link state.
+The wrapper neither accesses private native storage nor forces a logout of a stored session.
+Localization stays owned by the native SDKs.
 
 ---
 

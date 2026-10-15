@@ -47,58 +47,20 @@ public class OctopusSampleDeveloperToolsViewTests
     }
 
     [Test]
-    public void IndexOffersThreeDestinationsAndReadOnlyFeatureCard()
+    public void IndexOffersFourAndroidDestinations()
     {
         Assert.AreEqual("developer-tools-screen", _view.CurrentScreen);
-        foreach (var id in new[] { "devtools-events-row", "devtools-debug-info-row", "devtools-debug-console-row" })
+        foreach (var id in new[] { "devtools-host-integration-row", "devtools-events-row", "devtools-debug-info-row", "devtools-debug-console-row" })
             Assert.IsTrue(_view.GetComponentsInChildren<Button>().Any(b => b.name == id));
-        Assert.IsTrue(_view.GetComponentsInChildren<Transform>().Any(t => t.name == "devtools-feature-toggles-card"));
+        Assert.IsFalse(_view.GetComponentsInChildren<Transform>().Any(t => t.name == "devtools-feature-toggles-card"));
         Click("devtools-debug-console-row");
         Assert.AreEqual(1, _consoleOpened);
         Assert.AreEqual("developer-tools-screen", _view.CurrentScreen);
     }
 
-    [Test]
-    public void TheForceLoginLinkClosesToolsAndOpensConfiguration()
-    {
-        OctopusScenarioSdk.Use(new OctopusRecordingScenarioSdk
-        {
-            Profile = new OctopusExampleConfig.ExampleProfile { apiKey = "test-key" },
-        });
-        try
-        {
-            Click(OctopusSampleDeveloperToolsView.ForceLoginConfigLinkId);
-            Assert.IsTrue(_view == null, "Developer tools stayed open over Configuration.");
-            var config = Object.FindAnyObjectByType<OctopusSampleConfigView>();
-            Assert.IsNotNull(config, "The Force login link opened no Configuration screen.");
-            Object.DestroyImmediate(config.gameObject);
-        }
-        finally
-        {
-            OctopusScenarioSdk.Use(null);
-        }
-    }
 
-    [Test]
-    public void ThePushRegistrationLinkClosesToolsOnScenariosNotifications()
-    {
-        var shell = OctopusSampleShell.Create();
-        try
-        {
-            shell.Select(OctopusSampleTab.Home);
-            Click(OctopusSampleDeveloperToolsView.PushRegistrationScenariosLinkId);
-            Assert.IsTrue(_view == null, "Developer tools stayed open over Scenarios.");
-            Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
-            var list = shell.GetComponentInChildren<OctopusScenariosListView>();
-            Assert.IsNotNull(list);
-            Assert.AreEqual(ScenarioSection.Notifications, list.FocusedSection,
-                "The link did not bring the section holding the Push switch into view.");
-        }
-        finally
-        {
-            Object.DestroyImmediate(shell.gameObject);
-        }
-    }
+
+
 
     [Test]
     public void DetailLayerKeepsDebugEntryConsoleAndFeedbackAboveIt()
@@ -115,7 +77,7 @@ public class OctopusSampleDeveloperToolsViewTests
         Click("devtools-debug-info-row");
         var scope = _view.GetComponentsInChildren<TMP_Text>().Single(t => t.name == "debug-info-scope");
         StringAssert.Contains("build facts, sample configuration and recorded calls", scope.text);
-        StringAssert.Contains("Native SDK metadata and callback coverage are outside this summary", scope.text);
+        StringAssert.Contains("Native initialization and connection state are not exposed by the Unity SDK", scope.text);
     }
 
     [Test]
@@ -263,33 +225,25 @@ public class OctopusSampleDeveloperToolsViewTests
         _facts.Add(new OctopusSampleDeveloperToolsView.InfoFact("debug-info-sdk-version", "Package version", "test"));
         _facts.Add(new OctopusSampleDeveloperToolsView.InfoFact("debug-info-native-build-pins", "Native versions", "pins"));
         _facts.Add(new OctopusSampleDeveloperToolsView.InfoFact("debug-info-last-connection-call", "Latest call", "NO CALL"));
+        _facts.Add(new OctopusSampleDeveloperToolsView.InfoFact("debug-info-host", "Server", "example.invalid"));
+        _facts.Add(new OctopusSampleDeveloperToolsView.InfoFact("debug-info-build", "Build number", "42"));
         Click("devtools-debug-info-row");
         var card = _view.GetComponentsInChildren<Transform>().Single(t => t.name == "debug-info-facts");
-        CollectionAssert.AreEqual(_facts.Select(f => f.Id).ToArray(),
+        CollectionAssert.AreEqual(new[] { "debug-info-sdk-card", "debug-info-configuration-card", "debug-info-build-card" },
             Enumerable.Range(0, card.childCount).Select(i => card.GetChild(i))
-                .Where(t => t.GetComponent<HorizontalLayoutGroup>() != null).Select(t => t.name).ToArray());
+                .Where(t => t.GetComponent<VerticalLayoutGroup>() != null).Select(t => t.name).ToArray());
+        var rows = card.GetComponentsInChildren<HorizontalLayoutGroup>().Select(g => g.transform).ToArray();
+        CollectionAssert.AreEqual(_facts.Select(f => f.Id).ToArray(), rows.Select(t => t.name).ToArray());
         foreach (var fact in _facts)
         {
-            var row = card.Find(fact.Id);
+            var row = rows.Single(t => t.name == fact.Id);
+            Assert.AreEqual("debug-info-" + OctopusSampleDiagnostics.Group(fact.Id).ToLowerInvariant().Replace(" ", "-") + "-card", row.parent.name);
             CollectionAssert.AreEqual(new[] { fact.Label, fact.Value },
                 row.GetComponentsInChildren<TMP_Text>().Select(t => t.text).ToArray());
         }
         Click("debug-info-copy");
-        Assert.AreEqual("Package version: test\nNative versions: pins\nLatest call: NO CALL", GUIUtility.systemCopyBuffer);
+        Assert.AreEqual("Package version: test\nNative versions: pins\nLatest call: NO CALL\nServer: example.invalid\nBuild number: 42", GUIUtility.systemCopyBuffer);
     }
 
-    [Test]
-    public void FeatureRowsKeepIdsAndShowCurrentStateWithoutControls()
-    {
-        OctopusSampleFeatureToggles.SetForceLogin(true);
-        OctopusSampleFeatureToggles.SetPushRegistration(false);
-        _view.ShowIndex();
-        foreach (var id in new[] { OctopusSampleFeatureToggles.ForceLoginId, OctopusSampleFeatureToggles.PushRegistrationId })
-        {
-            var row = _view.GetComponentsInChildren<Transform>().Single(t => t.name == id);
-            Assert.AreEqual(0, row.GetComponentsInChildren<Selectable>().Length);
-            var value = row.GetComponentsInChildren<TMP_Text>().Last().text;
-            StringAssert.StartsWith(id == OctopusSampleFeatureToggles.ForceLoginId ? "On — " : "Off — ", value);
-        }
-    }
+
 }

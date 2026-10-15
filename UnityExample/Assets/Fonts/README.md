@@ -22,5 +22,5 @@ references the mobile SDF shader, keeping it available in player builds.
 The Inter importer metadata is authored from the project's Unity-generated
 TrueTypeFontImporter v4 template, with Include Font Data enabled. Folder/script
 metadata is authored; the Editor may normalize it on first import. Open this
-project in Unity 6000.3.3f1 before visual QA; do not import TMP Essentials again
+project in the Unity Editor named by `ProjectSettings/ProjectVersion.txt` (6000.6.3f1) before visual QA; do not import TMP Essentials again
 because these resources retain their upstream GUIDs.

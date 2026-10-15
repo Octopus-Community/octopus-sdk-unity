@@ -12,6 +12,10 @@ public partial class OctopusSDK
         public OctopusTermsAcceptanceMode? TermsAcceptanceMode { get; internal set; }
         /// <summary>Debug/QA only — do not ship in production builds. Null means no exposure override.</summary>
         public bool? ExposeClientUserId { get; internal set; }
+        /// <summary>Debug/QA only — do not ship in production builds. Null means no nickname-choice override; false is an explicit override.</summary>
+        public bool? ForceNicknameChoice { get; internal set; }
+        /// <summary>Debug/QA only — do not ship in production builds. Null means no wording override; independent of TermsAcceptanceMode.</summary>
+        public OctopusConsentTexts ConsentTexts { get; internal set; }
         internal OctopusDebugOverrides() { }
     }
 
@@ -32,6 +36,8 @@ public partial class OctopusSDK
                 case "OverrideProfileFieldsLock": DebugOverrides.ProfileFieldsLock = (OctopusProfileFieldsLock)value; break;
                 case "OverrideContentOptions": DebugOverrides.ContentOptions = (OctopusContentOptions)value; break;
                 case "OverrideTermsAcceptanceMode": DebugOverrides.TermsAcceptanceMode = (OctopusTermsAcceptanceMode?)value; break;
+                case "OverrideConsentTexts": DebugOverrides.ConsentTexts = (OctopusConsentTexts)value; break;
+                case "OverrideForceNicknameChoice": DebugOverrides.ForceNicknameChoice = (bool?)value; break;
                 case "OverrideExposeClientUserId": DebugOverrides.ExposeClientUserId = (bool?)value; break;
             }
         }

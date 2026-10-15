@@ -113,7 +113,6 @@ public class OctopusSampleDarkReadabilityTests
     {
         _shell = OctopusSampleShell.Create();
         _objects.Add(_shell.gameObject);
-        AssertDock(OctopusSampleTab.Home, "HomeDock");
         AssertDock(OctopusSampleTab.Community, "Dock");
     }
 
@@ -122,7 +121,7 @@ public class OctopusSampleDarkReadabilityTests
     {
         _shell = OctopusSampleShell.Create();
         _objects.Add(_shell.gameObject);
-        foreach (var tab in new[] { OctopusSampleTab.Home, OctopusSampleTab.Community })
+        foreach (var tab in new[] { OctopusSampleTab.Community })
         {
             foreach (var theme in new[] { OctopusSampleTheme.Dark, OctopusSampleTheme.Light })
             {
@@ -163,7 +162,7 @@ public class OctopusSampleDarkReadabilityTests
     {
         _shell = OctopusSampleShell.Create();
         _objects.Add(_shell.gameObject);
-        foreach (var tab in new[] { OctopusSampleTab.Home, OctopusSampleTab.Community })
+        foreach (var tab in new[] { OctopusSampleTab.Community })
         {
             _shell.Select(tab);
             var fade = (RectTransform)Find(_shell.transform, SampleUiDockFade.ObjectName);
@@ -234,12 +233,23 @@ public class OctopusSampleDarkReadabilityTests
             if (graphic == null || !graphic.enabled || graphic is TMP_Text || graphic.color.a <= 0f) continue;
             var mask = node.GetComponent<Mask>();
             if (mask != null && mask.enabled && !mask.showMaskGraphic) continue;
-            fills.Add(graphic.color);
-            if (graphic.color.a >= 0.999f) break;
+            var fill = FillOf(graphic);
+            fills.Add(fill);
+            if (fill.a >= 0.999f) break;
         }
         var ground = floor;
         for (var i = fills.Count - 1; i >= 0; i--) ground = Over(fills[i], ground);
         return ground;
+    }
+
+    // What a graphic paints: its colour, times the page texels for a band painted with
+    // SampleUiHalo.PaintPage (white over the plain page sprite).
+    private static Color FillOf(Graphic graphic)
+    {
+        var image = graphic as Image;
+        if (image == null || image.sprite == null) return graphic.color;
+        var plain = SampleUiHalo.PlainFor(OctopusSampleBranding.Palette.Page);
+        return image.sprite.texture == plain ? graphic.color * plain.GetPixel(0, 0) : graphic.color;
     }
 
     private static Transform Find(Transform parent, string name)

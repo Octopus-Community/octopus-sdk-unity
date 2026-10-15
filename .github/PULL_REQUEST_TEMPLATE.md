@@ -16,9 +16,9 @@
 ### Unity local gates
 
 <!-- Private repo only — on the public mirror, leave this section as is.
-Mandatory: run Scripts/unity-local-gates.sh [--android] locally and paste the
-attestation line here, or write `not needed: <reason>` when the PR touches neither
-UnityPackage/ nor UnityExample/. Use --android to verify the sample Android build.
+Mandatory: run Scripts/unity-local-gates.sh [--android] locally — or dispatch the
+`Unity editor gates` workflow on your branch — and paste the attestation line here, or write `not needed: <reason>` when the PR touches
+neither UnityPackage/ nor UnityExample/.
 CI checks the counts, editor version and commit; missing evidence fails for Unity changes. -->
 
 Refs #

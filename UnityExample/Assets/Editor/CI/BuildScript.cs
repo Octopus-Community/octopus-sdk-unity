@@ -104,6 +104,9 @@ public static class BuildScript
     //
     // OUTPUT_PATH is optional (default build/android/UnityExample.apk, relative to the project);
     // OCTOPUS_INTERNAL=true adds the internal define exactly like BuildAndroid.
+    // OCTOPUS_DEVELOPMENT_BUILD=false builds with BuildOptions.None instead of Development, for
+    // device QA on an Android emulator: a Development build fails graphics init there, or
+    // SIGSEGVs in the Vulkan driver on VK_EXT_debug_utils, which only Development builds call.
     public static void BuildAndroidDebug()
     {
         var useCustomKeystore = PlayerSettings.Android.useCustomKeystore;
@@ -123,7 +126,12 @@ public static class BuildScript
                 previousDefines, Environment.GetEnvironmentVariable("OCTOPUS_INTERNAL")));
 
             var options = BuildPlayerOptionsFor(BuildTarget.Android, outputPath);
-            options.options = BuildOptions.Development;
+            options.options = AndroidDebugBuildOptions(
+                Environment.GetEnvironmentVariable("OCTOPUS_DEVELOPMENT_BUILD"));
+            if (options.options != BuildOptions.Development)
+            {
+                Debug.Log($"[BuildScript] BuildAndroidDebug: OCTOPUS_DEVELOPMENT_BUILD=false, building with BuildOptions.{options.options} (non-Development).");
+            }
             var report = BuildPipeline.BuildPlayer(options);
 
             RestoreAndroidDebugSettings(useCustomKeystore, buildAppBundle, previousDefines, previousVersionName);
@@ -144,6 +152,15 @@ public static class BuildScript
         EditorUserBuildSettings.buildAppBundle = buildAppBundle;
         PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.Android, defines);
         PlayerSettings.bundleVersion = versionName;
+    }
+
+    // Pure for the same reason as WithInternalDefine. Development stays the default; only an
+    // explicit "false" (any case) gives BuildOptions.None.
+    public static BuildOptions AndroidDebugBuildOptions(string environmentValue)
+    {
+        return string.Equals(environmentValue, "false", StringComparison.OrdinalIgnoreCase)
+            ? BuildOptions.None
+            : BuildOptions.Development;
     }
 
     // Pure so EditMode tests can check both directions without changing PlayerSettings.

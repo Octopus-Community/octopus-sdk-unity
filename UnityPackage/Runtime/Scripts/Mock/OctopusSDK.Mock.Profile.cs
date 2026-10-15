@@ -22,13 +22,11 @@ public partial class OctopusSDK
 
     internal static partial class MockBackend
     {
-        private static bool _profileMockSso;
-
-        internal static void ResetProfileState() { _profileMockSso = false; }
+        internal static void ResetProfileState() { TokenProvider = null; }
 
         internal static void InitializeProfileMock(ConnectionMode mode)
         {
-            _profileMockSso = mode.Mode == "sso";
+            TokenProvider = null;
             if (Mock.Enabled) Mock.EmitProfileChanged(null);
         }
 
@@ -36,8 +34,6 @@ public partial class OctopusSDK
         {
             Mock.Record("RefreshEntitlements");
             var error = Mock.RefreshEntitlementsError;
-            if (error == null && !_profileMockSso)
-                error = new OctopusRefreshEntitlementsError(OctopusRefreshEntitlementsErrorKind.NoClientTokenProvider);
             if (error == null && (CurrentProfile == null || CurrentProfile.ClientUserId == null))
                 error = new OctopusRefreshEntitlementsError(OctopusRefreshEntitlementsErrorKind.UserNotConnected);
             CompleteEntitlementsRequest(requestId, error);

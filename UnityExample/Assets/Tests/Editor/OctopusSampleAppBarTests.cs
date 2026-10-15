@@ -41,8 +41,15 @@ public class OctopusSampleAppBarTests
             _shell.Select(tab);
             AssertHeader(_shell.transform, "AppBar", "Title", null);
             var viewport = _shell.GetComponentsInChildren<ScrollRect>().First().viewport;
-            Assert.AreEqual(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg), viewport.offsetMin.x);
-            Assert.AreEqual(-OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg), viewport.offsetMax.y);
+            // Settings rows are Android's flat full-width list items: their own 16dp padding
+            // replaces the shared gutter, so that viewport is edge to edge.
+            bool flat = tab == OctopusSampleTab.Settings;
+            Assert.AreEqual(flat ? 0f : OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg), viewport.offsetMin.x);
+            // The Scenarios list pins its large title and 56 dp search field above the scroll, so its
+            // viewport starts below them; every other tab scrolls from the shared top inset.
+            var top = (flat ? 0f : OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg)) +
+                      (tab == OctopusSampleTab.Scenarios ? OctopusSampleBranding.Dp(OctopusScenariosListView.TopBlockDp) : 0f);
+            Assert.AreEqual(-top, viewport.offsetMax.y);
         }
         var scenario = OctopusScenarioScreenView.Open(new ConnectionScenario());
         _objects.Add(scenario.gameObject);
@@ -93,7 +100,7 @@ public class OctopusSampleAppBarTests
             _shell = OctopusSampleShell.Create();
             _objects.Add(_shell.gameObject);
             Assert.AreEqual("AppBar", entry.parent.name);
-            AssertChromeStyled(entry);
+            AssertOnShellBar(entry, _shell);
 
             // A pushed route's header takes the entry over, then gives it back to the shell bar.
             var detail = SampleUi.AppBar("Header", owner, "Detail", () => { });
@@ -102,7 +109,7 @@ public class OctopusSampleAppBarTests
             AssertChromeStyled(entry);
             SampleUiDebugEntryHost.ReleaseAll();
             Assert.AreEqual("AppBar", entry.parent.name);
-            AssertChromeStyled(entry);
+            AssertOnShellBar(entry, _shell);
 
             _shell.Shutdown();
             Assert.AreSame(owner, entry.parent);
@@ -130,7 +137,7 @@ public class OctopusSampleAppBarTests
             _objects.Add(_shell.gameObject);
             OctopusSampleBranding.Theme = OctopusSampleTheme.Light;
             Assert.AreEqual("AppBar", entry.parent.name);
-            AssertChromeStyled(entry);
+            AssertOnShellBar(entry, _shell);
         }
         finally
         {
@@ -152,7 +159,7 @@ public class OctopusSampleAppBarTests
             SampleUi.RegisterDebugEntry(entry);
             _shell = OctopusSampleShell.Create();
             _objects.Add(_shell.gameObject);
-            AssertChromeStyled(entry);
+            AssertOnShellBar(entry, _shell);
 
             OctopusSampleBranding.Theme = after;
             _shell.Shutdown();
@@ -180,13 +187,27 @@ public class OctopusSampleAppBarTests
             var palette = OctopusSampleBranding.Palette;
             Assert.AreNotEqual(palette.Chrome, palette.ChromeControl);
             if (theme == OctopusSampleTheme.Light)
-                Assert.AreEqual(palette.Chrome, palette.Accent,
-                    "The light accent is the navy chrome: an accent fill cannot sit on the app bar.");
+                Assert.AreEqual(palette.Chrome, palette.ButtonBackground,
+                    "The light primary fill is the navy chrome: it cannot be reused on the app bar.");
         }
         finally
         {
             OctopusSampleBranding.Theme = previous;
         }
+    }
+
+    /// <summary>
+    /// On the shell's bar the entry is Android's bare bug `IconButton`: no disc, the glyph and the
+    /// label in the header's content colour — Title ink on the Scenarios page header.
+    /// </summary>
+    private static void AssertOnShellBar(RectTransform entry, OctopusSampleShell shell)
+    {
+        Assert.IsTrue(entry.GetComponent<SampleUiButton>().IsChromeStyled);
+        Assert.AreEqual(OctopusSampleBranding.Clear, entry.GetComponent<Image>().color, "No disc behind the bug.");
+        Assert.AreEqual(shell.HeaderInk, entry.GetComponentInChildren<TMP_Text>(true).color);
+        var icon = entry.Find(SampleUi.DebugEntryIconName);
+        Assert.IsNotNull(icon, "The bug glyph is missing.");
+        Assert.IsTrue(icon.gameObject.activeSelf, "The bug glyph is hidden.");
     }
 
     private static void AssertChromeStyled(RectTransform entry)
@@ -200,7 +221,7 @@ public class OctopusSampleAppBarTests
     }
 
     [Test]
-    public void IdentityAndInjectedDebugShareHeightAndCenterAndRestoreTheOwnerLayout()
+    public void InjectedDebugKeepsItsAppBarHeightAndCenterAndRestoresTheOwnerLayout()
     {
         var owner = Container();
         var entry = SampleUi.Button("debug-open-button", owner, "Debug", () => { });
@@ -216,13 +237,10 @@ public class OctopusSampleAppBarTests
             _objects.Add(_shell.gameObject);
             var bar = (RectTransform)entry.parent;
             LayoutRebuilder.ForceRebuildLayoutImmediate(bar);
-            var chip = _shell.GetComponentsInChildren<RectTransform>().Single(
-                item => item.name == OctopusSampleHomeView.PlatformChipId);
-            var chipBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(bar, chip);
             var entryBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(bar, entry);
-            Assert.AreEqual(OctopusSampleBranding.MinTouchUnits, chip.rect.height);
-            Assert.AreEqual(chip.rect.height, entry.rect.height);
-            Assert.AreEqual(chipBounds.center.y, entryBounds.center.y, 0.1f);
+            Assert.AreEqual(OctopusSampleBranding.MinTouchUnits, entry.rect.height);
+            Assert.AreEqual(bar.rect.center.y, entryBounds.center.y, 0.1f);
+            Assert.AreEqual("Scenarios", bar.Find("Title").GetComponent<TMP_Text>().text);
             var detail = SampleUi.AppBar("Header", owner, "Detail", () => { });
             SampleUiDebugEntryHost.Attach(detail);
             LayoutRebuilder.ForceRebuildLayoutImmediate(detail);
@@ -245,9 +263,9 @@ public class OctopusSampleAppBarTests
         }
     }
 
-    [TestCase(4, 66f, false)]
-    [TestCase(100, 48f, true)]
-    public void TitleLengthPinsRenderedSizeWithoutOverlappingControls(int length, float size, bool truncated)
+    [TestCase(4, false)]
+    [TestCase(100, true)]
+    public void TitlesStayWithinTokenSizesWithoutOverlappingControls(int length, bool truncated)
     {
         var root = Container();
         var bar = SampleUi.AppBar("Header", root, new string('W', length), () => { });
@@ -259,9 +277,11 @@ public class OctopusSampleAppBarTests
         Assert.AreEqual(TextWrappingModes.NoWrap, title.textWrappingMode);
         Assert.AreEqual(TextOverflowModes.Ellipsis, title.overflowMode);
         Assert.AreEqual(truncated, title.isTextTruncated);
-        Assert.AreEqual(size, title.fontSize, 0.1f);
+        Assert.GreaterOrEqual(title.fontSize, OctopusSampleBranding.HeadlineTextUnits);
+        Assert.LessOrEqual(title.fontSize, OctopusSampleBranding.TitleTextUnits);
+        if (truncated) Assert.AreEqual(OctopusSampleBranding.HeadlineTextUnits, title.fontSize, 0.1f);
         Assert.Greater(title.textInfo.characterCount, 0);
-        Assert.AreEqual(size, title.textInfo.characterInfo[0].pointSize, 0.1f,
+        Assert.AreEqual(title.fontSize, title.textInfo.characterInfo[0].pointSize, 0.1f,
             "Pin the generated glyph size, not only the configured autosizing bounds.");
         if (truncated) Assert.Less(title.rectTransform.rect.width, title.preferredWidth);
         var titleBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(bar, title.transform);
@@ -293,27 +313,25 @@ public class OctopusSampleAppBarTests
 
     [TestCase(0f, 0f)] // Edge-to-edge emulator.
     [TestCase(120f, 90f)] // Notch and home indicator (physical pixels).
-    public void HomeBarsAndScrolledContentClearTheRealDockInsideTheSafeArea(float top, float bottom)
+    public void SettingsBarsAndScrolledContentStayInsideTheSafeArea(float top, float bottom)
     {
         _shell = OctopusSampleShell.Create();
         _objects.Add(_shell.gameObject);
-        _shell.Select(OctopusSampleTab.Home);
+        _shell.Select(OctopusSampleTab.Settings);
         _shell.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
         var root = (RectTransform)_shell.transform;
         root.sizeDelta = new Vector2(1080f, 2400f);
         var safe = (RectTransform)_shell.GetComponentInChildren<SampleUiSafeArea>().transform;
         var header = (RectTransform)safe.Find("AppBar");
         var tabs = (RectTransform)safe.Find("TabBar");
-        var home = _shell.GetComponentInChildren<OctopusSampleHomeView>();
-        var dock = (RectTransform)home.transform.Find("HomeDock");
+        var settings = _shell.GetComponentInChildren<OctopusSampleSettingsView>();
         safe.GetComponent<SampleUiSafeArea>().Apply(new Rect(0f, bottom, 1080f, 2400f - top - bottom),
             new Rect(), new Vector2(1080f, 2400f));
         LayoutRebuilder.ForceRebuildLayoutImmediate(safe);
-        var scroll = home.GetComponentInChildren<ScrollRect>();
+        var scroll = settings.GetComponentInChildren<ScrollRect>();
         scroll.verticalNormalizedPosition = 0f;
         var headerBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(root, header);
         var tabsBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(root, tabs);
-        var dockBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(root, dock);
         // Recursive bounds include the scrolled content outside the mask. Measure only the
         // viewport's own rectangle, in the same root-local coordinates as the bars.
         var viewportCorners = new Vector3[4];
@@ -328,11 +346,13 @@ public class OctopusSampleAppBarTests
         }
         Assert.LessOrEqual(headerBounds.max.y, root.rect.yMax - top + 0.1f);
         Assert.GreaterOrEqual(tabsBounds.min.y, root.rect.yMin + bottom - 0.1f);
-        Assert.Less(viewportMaxY, headerBounds.min.y);
-        Assert.Greater(viewportMinY, tabsBounds.max.y);
-        Assert.Greater(viewportMinY, dockBounds.max.y,
-            "The real Home scroll host must reserve the dock's height as well as the tab bar.");
-        Assert.GreaterOrEqual(dockBounds.min.y, tabsBounds.max.y - 0.1f);
+        // Flat Settings rows scroll from right under the bar (the first block pads itself).
+        Assert.LessOrEqual(viewportMaxY, headerBounds.min.y + 0.1f);
+        Assert.GreaterOrEqual(viewportMinY, tabsBounds.max.y - 0.1f);
+        // The legacy scenes route moved to About with the Android-aligned Settings, so nothing
+        // floats over the end of the scroll any more.
+        Assert.IsFalse(settings.GetComponentsInChildren<Transform>(true)
+            .Any(item => item.name == OctopusSampleShell.LegacyScenesId));
         Assert.IsNotNull(scroll.viewport.GetComponent<RectMask2D>());
     }
 

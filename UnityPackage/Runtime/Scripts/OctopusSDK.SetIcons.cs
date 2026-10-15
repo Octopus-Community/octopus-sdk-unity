@@ -132,7 +132,12 @@ public partial class OctopusSDK
             case OctopusIconSlot.CommonMoreActions: return "common.moreActions";
             case OctopusIconSlot.CommonActivityButton: return "common.activityButton";
             case OctopusIconSlot.CommonListCellNavIndicator: return "common.listCellNavIndicator";
+            case OctopusIconSlot.CommonClearText: return "common.clearText";
             case OctopusIconSlot.CommonClose: return "common.close";
+            case OctopusIconSlot.ScreenStatesEmptyContent: return "screenStates.emptyContent";
+            case OctopusIconSlot.ScreenStatesEmptyNotifications: return "screenStates.emptyNotifications";
+            case OctopusIconSlot.ScreenStatesNetworkError: return "screenStates.networkError";
+            case OctopusIconSlot.ScreenStatesError: return "screenStates.error";
             default: return null;
         }
     }
@@ -345,7 +350,7 @@ public enum OctopusIconSlot
     ProfileEditPicture = 51,
     /// <summary>Button that adds a bio.</summary>
     ProfileAddBio = 52,
-    /// <summary>Illustration of an empty notification list.</summary>
+    /// <summary>Accepted and ignored on Android and iOS; use <see cref="ScreenStatesEmptyNotifications"/> instead.</summary>
     ProfileEmptyNotifications = 53,
     /// <summary>Report action in a profile menu.</summary>
     ProfileReport = 54,
@@ -360,14 +365,17 @@ public enum OctopusIconSlot
     /// <summary>Header illustration of the gamification rules.</summary>
     GamificationRulesHeader = 59,
     /// <summary>Account entry in the settings.</summary>
+    [Obsolete("Legacy icon; customize SettingsHelp and SettingsInfo instead. Accounts are managed by your app.", false)]
     SettingsAccount = 60,
     /// <summary>Help entry in the settings.</summary>
     SettingsHelp = 61,
     /// <summary>Information entry in the settings.</summary>
     SettingsInfo = 62,
     /// <summary>Logout entry in the settings.</summary>
+    [Obsolete("Legacy icon; customize SettingsHelp and SettingsInfo instead. Accounts are managed by your app.", false)]
     SettingsLogout = 63,
     /// <summary>Warning illustration on the account deletion screen.</summary>
+    [Obsolete("Legacy icon; customize SettingsHelp and SettingsInfo instead. Accounts are managed by your app.", false)]
     SettingsDeleteAccountWarning = 64,
     /// <summary>Radio button, selected. Applied only together with CommonRadioOff.</summary>
     CommonRadioOn = 65,
@@ -389,4 +397,14 @@ public enum OctopusIconSlot
     CommonListCellNavIndicator = 73,
     /// <summary>Close button. iOS only: ignored on Android.</summary>
     CommonClose = 74,
+    /// <summary>Untinted illustration of an empty list of posts or comments; preserves its original colors.</summary>
+    ScreenStatesEmptyContent = 75,
+    /// <summary>Untinted illustration of an empty notification list; preserves its original colors.</summary>
+    ScreenStatesEmptyNotifications = 76,
+    /// <summary>Untinted illustration of a first load that failed because the device is offline; preserves its original colors.</summary>
+    ScreenStatesNetworkError = 77,
+    /// <summary>Untinted illustration of a first load that failed for another reason; preserves its original colors.</summary>
+    ScreenStatesError = 78,
+    /// <summary>Button that clears a text field, including the nickname-choice field.</summary>
+    CommonClearText = 79,
 }

@@ -54,6 +54,9 @@ public interface IOctopusScenarioSdk
     /// </summary>
     OctopusExampleConfig.ExampleProfile Profile { get; }
 
+    OctopusExampleConfig.ExampleProfile ConfigurationProfile(int selection);
+    string DemoServerHost { get; }
+
     event Action<OctopusEvent> OnOctopusEvent;
     void TrackAccessToCommunity(bool hasAccess);
     bool HasAccessToCommunity { get; }
@@ -96,6 +99,8 @@ public interface IOctopusScenarioSdk
 
     /// <summary>Sets a native resource logo; null restores the default.</summary>
     void SetLogo(OctopusLogo logo);
+    /// <summary>Sets native icon overrides; null restores defaults.</summary>
+    void SetIcons(OctopusIcons icons);
     /// <summary>Sets native font overrides; null restores defaults.</summary>
     void SetFonts(OctopusFonts fonts);
     /// <summary>Latest native profile snapshot; null when no profile is available.</summary>
@@ -106,6 +111,10 @@ public interface IOctopusScenarioSdk
     void RefreshEntitlements(Action onSuccess, Action<OctopusRefreshEntitlementsError> onError);
     /// <summary>Debug override; null restores backend consent configuration.</summary>
     void DebugOverrideTermsAcceptanceMode(OctopusTermsAcceptanceMode? mode);
+    /// <summary>Debug nickname choice override; null restores backend configuration.</summary>
+    void DebugOverrideForceNicknameChoice(bool? enabled);
+    /// <summary>Debug wording override, independent of consent mode; null restores backend texts.</summary>
+    void DebugOverrideConsentTexts(OctopusConsentTexts texts);
     /// <summary>Reads effective configuration asynchronously; a null result means unavailable.</summary>
     void DebugGetCommunityConfig(Action<OctopusCommunityConfig> onResult, Action<string> onError);
     /// <summary>Debug override of exposeClientUserId; null restores the backend value.</summary>
@@ -139,6 +148,7 @@ public interface IOctopusScenarioSdk
 
     /// <summary>Opens a member profile by client user id, or the own profile with null.</summary>
     void OpenProfile(string clientUserId);
+    void OpenActivity(OctopusCommunityMemberId memberId);
 
     /// <summary>
     /// `OctopusSDK.OpenCreatePost(prefilled)` — the community's post editor, blank when
@@ -227,6 +237,18 @@ public sealed class OctopusLiveScenarioSdk : IOctopusScenarioSdk
         }
     }
 
+    public OctopusExampleConfig.ExampleProfile ConfigurationProfile(int selection)
+    {
+        var config = OctopusExampleConfig.LoadedOrNull;
+        return config == null ? null : config.ConfigurationProfile(selection);
+    }
+
+    public string DemoServerHost
+    {
+        get { return OctopusExampleConfig.LoadedOrNull == null ? OctopusExampleConfig.DemoApiServerHost
+            : OctopusExampleConfig.LoadedOrNull.ApiServerHost; }
+    }
+
     public event Action<OctopusEvent> OnOctopusEvent
     {
         add { OctopusSDK.OnOctopusEvent += value; }
@@ -308,6 +330,7 @@ public sealed class OctopusLiveScenarioSdk : IOctopusScenarioSdk
     }
 
     public void SetLogo(OctopusLogo logo) { OctopusSDK.SetLogo(logo); }
+    public void SetIcons(OctopusIcons icons) { OctopusSDK.SetIcons(icons); }
     public void SetFonts(OctopusFonts fonts) { OctopusSDK.SetFonts(fonts); }
     public OctopusProfile CurrentProfile { get { return OctopusSDK.CurrentProfile; } }
     public event Action<OctopusProfile> ProfileChanged
@@ -327,6 +350,10 @@ public sealed class OctopusLiveScenarioSdk : IOctopusScenarioSdk
     {
         OctopusSDK.DebugGetCommunityConfig(onResult, onError);
     }
+    public void DebugOverrideConsentTexts(OctopusConsentTexts texts)
+    { OctopusSDK.DebugOverrideConsentTexts(texts); }
+    public void DebugOverrideForceNicknameChoice(bool? enabled)
+    { OctopusSDK.DebugOverrideForceNicknameChoice(enabled); }
     public void DebugOverrideExposeClientUserId(bool? enabled)
     {
         OctopusSDK.DebugOverrideExposeClientUserId(enabled);
@@ -371,6 +398,8 @@ public sealed class OctopusLiveScenarioSdk : IOctopusScenarioSdk
     { OctopusSDK.OpenProfile(clientUserId); }
 
     /// <inheritdoc/>
+    public void OpenActivity(OctopusCommunityMemberId memberId) { OctopusSDK.OpenActivity(memberId); }
+
     public void OpenPost(string postId)
     {
         OctopusSDK.OpenPost(postId);

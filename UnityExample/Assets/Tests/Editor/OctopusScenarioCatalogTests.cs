@@ -16,6 +16,8 @@ public class OctopusScenarioCatalogTests
     [TestCase("groupAccessDenied")]
     [TestCase("communityAccess")]
     [TestCase("contentOptions")]
+    [TestCase("forceNicknameChoice")]
+    [TestCase("consentTexts")]
     [TestCase("reactions")]
     [TestCase("bridge")]
     [TestCase("createPost")]
@@ -59,9 +61,9 @@ public class OctopusScenarioCatalogTests
     }
 
     [Test]
-    public void CatalogHasTwentySevenScenarios()
+    public void CatalogHasSharedScenariosAndUnifiedProfile()
     {
-        Assert.AreEqual(27, OctopusScenarioCatalog.All.Count);
+        Assert.AreEqual(30, OctopusScenarioCatalog.All.Count);
     }
 
     [Test]
@@ -88,6 +90,7 @@ public class OctopusScenarioCatalogTests
         foreach (var scenario in OctopusScenarioCatalog.All)
         {
             Assert.IsNotNull(scenario.PresetTestIds, $"Scenario '{scenario.Id}' has null PresetTestIds.");
+            if (scenario.Id == "unifiedProfile") continue;
             Assert.IsNotEmpty(scenario.PresetTestIds, $"Scenario '{scenario.Id}' has no preset test ids.");
         }
     }

@@ -33,6 +33,6 @@ public static class OctopusSampleQaDestinations
     /// <summary>The tab a destination is reached from, so QA lands on the same screen a player does.</summary>
     public static string TabOf(string id)
     {
-        return id == Arcade ? "home" : id == Config || id == Account ? "settings" : null;
+        return id == Arcade || id == Config || id == Account ? "settings" : null;
     }
 }

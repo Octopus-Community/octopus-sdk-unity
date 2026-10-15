@@ -155,7 +155,7 @@ public abstract class OctopusScenarioPilot : IDisposable
             throw new ArgumentException(
                 "No scenario '" + scenarioId + "' in OctopusScenarioCatalog.", "scenarioId");
         }
-        Result = "Ready — no SDK call made yet. Tap a preset to run one.";
+        Result = "Not run yet";
     }
 
     /// <summary>The catalogue id, e.g. "connection".</summary>
@@ -167,6 +167,8 @@ public abstract class OctopusScenarioPilot : IDisposable
     /// own spelling stays reachable as <see cref="OctopusScenario.Title"/>.
     /// </summary>
     public string Title { get { return _row.DisplayTitle; } }
+
+    public OctopusScenario Row { get { return _row; } }
 
     /// <summary>The catalogue's (abridged) capability line.</summary>
     public virtual string Capability { get { return _row.Capability; } }
@@ -323,12 +325,15 @@ public static class OctopusScenarioPilots
     /// <summary>The catalogue ids this sample has a scenario screen for.</summary>
     public static readonly IReadOnlyList<string> Ids = new List<string>
     {
+        "unifiedProfile",
         "connection",
         "customEvents",
         "locale",
         "theme",
         "refreshEntitlements",
         "termsAcceptance",
+        "consentTexts",
+        "forceNicknameChoice",
         "profileFieldsLock",
         "communityData",
         "groups",
@@ -366,12 +371,15 @@ public static class OctopusScenarioPilots
     {
         switch (scenarioId)
         {
+            case "unifiedProfile": return new UnifiedProfileScenario();
             case "initialScreen": return new InitialScreenScenario();
             case "connection": return new ConnectionScenario();
             case "customEvents": return new CustomEventsScenario();
             case "locale": return new LocaleScenario();
             case "communityData": return new CommunityDataScenario();
             case "profileFieldsLock": return new ProfileFieldsLockScenario();
+            case "forceNicknameChoice": return new ForceNicknameChoiceScenario();
+            case "consentTexts": return new ConsentTextsScenario();
             case "termsAcceptance": return new TermsAcceptanceScenario();
             case "refreshEntitlements": return new RefreshEntitlementsScenario();
             case "theme": return new ThemeScenario();

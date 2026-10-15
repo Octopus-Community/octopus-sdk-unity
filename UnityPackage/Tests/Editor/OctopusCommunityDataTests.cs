@@ -184,6 +184,10 @@ public class OctopusCommunityDataTests
 
     [TestCase("offline\nretry")]
     [TestCase("Could not fetch community data.")]
+    [TestCase("Could not fetch community data. Details: IllegalArgumentException")]
+    [TestCase("Could not fetch community data. Details: IllegalStateException")]
+    [TestCase("Could not fetch community data. Details: IOException")]
+    [TestCase("Could not fetch community data. Details: SecurityException")]
     [TestCase("Could not fetch community data. Details: Network unavailable")]
     [TestCase("Could not fetch community data. Details: Network unavailable\nRetry later")]
     public void Fetch_CorrelatesConcurrentResponsesOnceAndIgnoresMalformedPayloads(string nativeMessage)
@@ -200,6 +204,30 @@ public class OctopusCommunityDataTests
         Drain();
         Assert.AreEqual(1, successes);
         Assert.AreEqual(1, errors);
+    }
+
+    [TestCase("Dispatch unavailable")]
+    [TestCase("token=FAKE_SECRET\nRetry later")]
+    [TestCase("")]
+    public void Fetch_DispatchFailureIsDistinctFromNativeFailureAndCompletesOnce(string detail)
+    {
+        var errors = new List<string>();
+        int requestId = 0;
+        OctopusSDK.DispatchCommunityDataFetch(data => Assert.Fail("Unexpected result"), errors.Add, id =>
+        {
+            requestId = id;
+            throw new InvalidOperationException(detail, new Exception("token=FAKE_SECRET"));
+        });
+        Assert.IsEmpty(errors);
+        Drain();
+        Assert.AreEqual(new[] { "Could not start community data fetch. Details: InvalidOperationException" }, errors);
+        StringAssert.DoesNotContain("token=FAKE_SECRET", errors[0]);
+
+        _channel.OnFetchCommunityDataError(requestId + "\nCould not fetch community data.");
+        _channel.OnFetchCommunityDataResult(requestId + "\nnull");
+        OctopusSDK.ResetCommunityDataState(true);
+        Drain();
+        Assert.AreEqual(1, errors.Count);
     }
 
     [Test]

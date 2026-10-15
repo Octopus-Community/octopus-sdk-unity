@@ -55,7 +55,7 @@ public sealed class OctopusSampleQaLaunchOptions
         string value;
         if (extras.TryGetValue("qaTab", out value))
         {
-            if (value != "home" && value != "scenarios" && value != "community" && value != "settings")
+            if (value != "scenarios" && value != "community" && value != "settings")
                 return options.Fail("unknown tab");
             options.Tab = value;
         }

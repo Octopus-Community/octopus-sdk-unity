@@ -15,7 +15,9 @@ public class OpenScreenExample : MonoBehaviour
 
     void Start()
     {
-        OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.OctopusAuth());
+        MainMenu.RegisterSsoLoginRoute();
+        OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.SSO(),
+            OctopusExampleConfig.Instance.ApiServerHost);
 
         // Intercept CTA/link taps so the app can deep-link or defer to Octopus.
         OctopusSDK.NavigateToUrlHandler = OnNavigateToUrl;
@@ -25,6 +27,7 @@ public class OpenScreenExample : MonoBehaviour
 
     void OnDestroy()
     {
+        MainMenu.UnregisterSsoLoginRoute();
         // NavigateToUrlHandler is a single shared slot (not a multicast event), so only
         // clear it if it's still ours — avoid clobbering a handler set by another scene.
         if (OctopusSDK.NavigateToUrlHandler == OnNavigateToUrl)

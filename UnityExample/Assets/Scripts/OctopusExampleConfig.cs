@@ -52,14 +52,17 @@ public class OctopusExampleConfig : ScriptableObject
     [Tooltip("Backend host passed to OctopusSDK.Initialize and SwitchCommunity. Host only: no scheme, port or path (e.g. api.example.test, never https://api.example.test:443). Empty targets the demo backend (" + DemoApiServerHost + "), where the demo keys live. Set it only to point the sample at another environment.")]
     [SerializeField] string apiServerHost = "";
 
-    [Header("Default profile (OctopusAuth examples)")]
+    [Header("Default profile (SSO)")]
     [SerializeField] ExampleProfile defaultProfile = new ExampleProfile();
 
     [Header("Forced Login profile (SSO with forced login)")]
     [SerializeField] ExampleProfile forcedLoginProfile = new ExampleProfile();
 
-    [Header("Managed Fields profile (SSO with managed fields)")]
+    [Header("Managed Fields profile (SSO with all managed fields and forced login)")]
     [SerializeField] ExampleProfile managedFieldsProfile = new ExampleProfile();
+
+    [Header("Some Managed Fields profile (SSO with nickname managed and forced login)")]
+    [SerializeField] ExampleProfile someManagedFieldsProfile = new ExampleProfile();
 
     // Where About > Design reference points, empty by default. It lives here rather than in a
     // source file for the same reason the API keys do: this asset is git-ignored, and
@@ -72,6 +75,17 @@ public class OctopusExampleConfig : ScriptableObject
     public ExampleProfile Default => ResolveProfile(defaultProfile, 0);
     public ExampleProfile ForcedLogin => ResolveProfile(forcedLoginProfile, 1);
     public ExampleProfile ManagedFields => ResolveProfile(managedFieldsProfile, 2);
+
+    // Configuration presets must not silently fall back to the default community key.
+    public ExampleProfile ConfigurationProfile(int selection)
+    {
+        var source = selection == 1 ? defaultProfile : selection == 2 ? forcedLoginProfile
+            : selection == 3 ? managedFieldsProfile : selection == 4 ? someManagedFieldsProfile : null;
+        if (source == null) return null;
+        var result = ResolveProfile(source, 0);
+        result.apiKey = source.apiKey;
+        return result;
+    }
 
     private ExampleProfile ResolveProfile(ExampleProfile configured, int fixtureIndex)
     {

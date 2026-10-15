@@ -2,12 +2,14 @@
 //
 // 1. Use Assets > Create > Octopus Example Config in Unity.
 // 2. Fill the config-level ssoTokenSecret (demo HS256 secret for SSO and bridge posts)
-//    and the Default Profile apiKey. All three SSO profiles can use this same community.
+//    and the Default Profile apiKey. Configuration presets each need an explicit demo key
+//    configured for their advertised auth policy; there is no fallback to Default in that form.
 //    Lifecycle Switch community requires a second, distinct community key in
 //    forcedLoginProfile.apiKey (Forced Login > Api Key in the Inspector).
 //    The global secret defaults to empty when loading an older asset.
 // 3. Optional per-profile overrides:
-//      apiKey: overrides Default's key for Forced Login or Managed Fields
+//      apiKey: each Configuration preset key, including someManagedFieldsProfile
+//        (nickname managed + forced login); legacy scenes retain their existing fallback
 //      authToken: static fallback when the global secret is empty
 //      userId, nickname, bio, picture, entitlements: custom demo identity
 //    Empty userId uses the complete OctopusSampleFixtures identity:

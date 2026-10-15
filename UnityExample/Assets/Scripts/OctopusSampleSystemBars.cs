@@ -10,17 +10,46 @@ public class OctopusSampleSystemBars : MonoBehaviour
     }
 
     private void OnDisable() { OctopusSampleBranding.ThemeChanged -= Apply; }
-    private void OnApplicationFocus(bool focused) { if (focused) Apply(); }
+    private void OnApplicationFocus(bool focused) { if (focused) { OctopusSampleNativeTheme.RefreshSystemAppearance(); OctopusSampleLanguage.ApplySaved(); Apply(); } }
     private void OnApplicationPause(bool paused) { if (!paused) Apply(); }
+
+    /// <summary>
+    /// Set by the shell when its app bar sits on the page (Scenarios, as Android's top bars do)
+    /// rather than on the navy chrome: in light theme the status bar above it then needs dark icons,
+    /// white ones would vanish on #F5F7FA. A detail page drawn on top brings the navy back.
+    /// </summary>
+    public static bool PageStatusGround { get; set; }
+
+    /// <summary>Whether the status bar should carry dark icons right now.</summary>
+    public static bool WantsDarkStatusIcons
+    {
+        get
+        {
+            return PageStatusGround && !SampleUiDetailPage.AnyShown &&
+                   OctopusSampleBranding.Theme == OctopusSampleTheme.Light;
+        }
+    }
+
+    private bool _darkStatusIcons;
+    private float _nextThemeCheck;
+    private void Update()
+    {
+        if (WantsDarkStatusIcons != _darkStatusIcons) Apply();
+        if (Time.unscaledTime < _nextThemeCheck) return;
+        _nextThemeCheck = Time.unscaledTime + 0.5f;
+        OctopusSampleNativeTheme.RefreshSystemAppearance();
+    }
 
     private void Apply()
     {
+        _darkStatusIcons = WantsDarkStatusIcons;
         if (!Application.isPlaying) return;
 #if UNITY_ANDROID && !UNITY_EDITOR
         Screen.fullScreen = false;
         int bottom = Argb(OctopusSampleBranding.Palette.TabBar);
         int legacyBottom = Argb(OctopusSampleBranding.DarkSurfaceLow);
         bool lightNavigation = OctopusSampleBranding.Theme == OctopusSampleTheme.Light;
+        bool lightStatus = _darkStatusIcons;
         using (var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
         using (var activity = player.GetStatic<AndroidJavaObject>("currentActivity"))
         {
@@ -43,10 +72,12 @@ public class OctopusSampleSystemBars : MonoBehaviour
                     window.Call("setStatusBarColor", 0);
                     window.Call("setNavigationBarColor", api >= 26 ? bottom : legacyBottom);
                     int flags = decor.Call<int>("getSystemUiVisibility");
-                    // Visible bars, white status icons on navy/ink, navigation icons from app theme.
+                    // Visible bars, white status icons on navy/ink (dark ones over a light page header),
+                    // navigation icons from app theme.
                     flags &= ~(4 | 2 | 4096 | 2048 | 8192 | 16);
                     flags |= 1024 | 256; // SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | SYSTEM_UI_FLAG_LAYOUT_STABLE
                     if (api >= 26 && lightNavigation) flags |= 16;
+                    if (lightStatus) flags |= 8192; // SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
                     decor.Call("setSystemUiVisibility", flags);
                     if (api >= 29)
                     {
@@ -58,7 +89,8 @@ public class OctopusSampleSystemBars : MonoBehaviour
                         using (var controller = window.Call<AndroidJavaObject>("getInsetsController"))
                         {
                             controller.Call("show", 3); // statusBars | navigationBars
-                            controller.Call("setSystemBarsAppearance", lightNavigation ? 16 : 0, 8 | 16);
+                            controller.Call("setSystemBarsAppearance",
+                                (lightNavigation ? 16 : 0) | (lightStatus ? 8 : 0), 8 | 16);
                         }
                     }
                 }

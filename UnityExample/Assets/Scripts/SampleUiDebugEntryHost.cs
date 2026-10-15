@@ -45,8 +45,13 @@ public class SampleUiDebugEntryHost : MonoBehaviour
         var host = header.gameObject.AddComponent<SampleUiDebugEntryHost>();
         host._trailingInset = trailingInsetUnits > 0f
             ? trailingInsetUnits : OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg);
-        host.Adopt();
+        if (header.gameObject.activeInHierarchy) host.Adopt();
         return host;
+    }
+
+    public void Resume()
+    {
+        if (_entry == null && SampleUi.DebugEntry != null) Adopt();
     }
 
     private void Adopt()
@@ -109,6 +114,13 @@ public class SampleUiDebugEntryHost : MonoBehaviour
     /// entry — a child of the header — is already destroyed with it: a route therefore calls this
     /// immediately before it destroys its root, whether it is closing or rebuilding itself.
     /// </summary>
+    public static void ReleaseFor(GameObject owner)
+    {
+        if (owner == null) return;
+        foreach (var host in owner.GetComponentsInChildren<SampleUiDebugEntryHost>(true))
+            host.Release(true);
+    }
+
     public static void ReleaseAll()
     {
         for (int i = Hosts.Count - 1; i >= 0; i--)

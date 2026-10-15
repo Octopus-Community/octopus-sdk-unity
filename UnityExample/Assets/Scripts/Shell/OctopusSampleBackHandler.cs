@@ -13,8 +13,8 @@ public enum OctopusSampleBackOutcome
     Cancelled,
     /// <summary>The topmost screen's on-screen Back was pressed: one level popped.</summary>
     Popped,
-    /// <summary>A root tab other than Home was showing; Home is selected.</summary>
-    Home,
+    /// <summary>A root tab other than Scenarios was showing; Scenarios is selected.</summary>
+    Scenarios,
     /// <summary>Nothing left to pop: the app was asked to go to the background.</summary>
     Background
 }
@@ -25,7 +25,7 @@ public enum OctopusSampleBackOutcome
 /// On Android the system back (button or gesture) reaches the Input System as
 /// <c>Keyboard.escapeKey</c>. The key is only listened to in an Android player
 /// (<see cref="ListensForHardwareBack"/>): iOS has no system back, and on an iPad with a hardware
-/// keyboard, or in the Editor, Escape would otherwise close screens and send tabs to Home. One
+/// keyboard, or in the Editor, Escape would otherwise close screens and send tabs to Scenarios. One
 /// press does what the visible topmost screen's own controls would, in the order the native
 /// Android sample follows:
 /// <list type="number">
@@ -34,8 +34,8 @@ public enum OctopusSampleBackOutcome
 /// <c>settings-reset-cancel</c>);</item>
 /// <item>otherwise the screen's on-screen Back is pressed — the same <see cref="Button"/>, so the
 /// same code path, including a view's own nested pop (Developer tools sub-screen → index);</item>
-/// <item>otherwise, on the shell, a root tab other than Home goes to Home;</item>
-/// <item>otherwise (Home root, or a screen with no Back such as first-launch configuration) the app
+/// <item>otherwise, on the shell, a root tab other than Scenarios goes to Scenarios;</item>
+/// <item>otherwise (Scenarios root, or a screen with no Back such as first-launch configuration) the app
 /// goes to the background, as a root Android activity does. It never quits.</item>
 /// </list>
 ///
@@ -164,10 +164,10 @@ public sealed class OctopusSampleBackHandler : MonoBehaviour
                 return OctopusSampleBackOutcome.Popped;
             }
             if (_shell != null && screen.transform.IsChildOf(_shell.transform) &&
-                _shell.Selected != OctopusSampleTab.Home)
+                _shell.Selected != OctopusSampleTab.Scenarios)
             {
-                _shell.Select(OctopusSampleTab.Home);
-                return OctopusSampleBackOutcome.Home;
+                _shell.Select(OctopusSampleTab.Scenarios);
+                return OctopusSampleBackOutcome.Scenarios;
             }
         }
         if (BackgroundRequest != null) BackgroundRequest();

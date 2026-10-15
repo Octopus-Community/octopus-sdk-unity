@@ -117,8 +117,6 @@ public class OctopusSampleFeatureTogglesTests
         shell.Select(OctopusSampleTab.Scenarios);
         var view = shell.GetComponentInChildren<OctopusScenariosListView>();
 
-        view.ToggleSection(ScenarioSection.SignIn);
-
         Assert.IsFalse(view.IsSectionOpen(ScenarioSection.SignIn));
         Assert.IsNotNull(Find(shell.transform, OctopusSampleFeatureToggles.ForceLoginId),
             "Collapsing Sign-in took its `Force login` switch with it.");
@@ -234,6 +232,7 @@ public class OctopusSampleFeatureTogglesTests
     {
         var shell = Create();
         shell.Select(OctopusSampleTab.Scenarios);
+        shell.GetComponentInChildren<OctopusScenariosListView>().ToggleSection(ScenarioSection.Notifications);
         var head = Find(shell.transform, "scenarios-section-notifications");
         var row = Find(shell.transform, "scenarios-toggle-push-registration-row");
         var card = Find(shell.transform, "scenarios-pushNotifications-card");
@@ -247,7 +246,7 @@ public class OctopusSampleFeatureTogglesTests
     }
 
     [Test]
-    public void PushToggleSurvivesCollapseAndCanBeFoundBySearch()
+    public void PushToggleSurvivesCollapseButSearchOnlyMatchesCards()
     {
         var shell = Create();
         shell.Select(OctopusSampleTab.Scenarios);
@@ -255,7 +254,7 @@ public class OctopusSampleFeatureTogglesTests
         view.ToggleSection(ScenarioSection.Notifications);
         Assert.IsNotNull(Find(shell.transform, OctopusSampleFeatureToggles.PushRegistrationId));
         view.SetQuery("  PUSH REGISTRATION  ");
-        Assert.IsNotNull(Find(shell.transform, OctopusSampleFeatureToggles.PushRegistrationId));
+        Assert.IsNull(Find(shell.transform, OctopusSampleFeatureToggles.PushRegistrationId));
         Assert.IsNull(Find(shell.transform, "scenarios-connection-card"));
         view.SetQuery("locale");
         Assert.IsNull(Find(shell.transform, OctopusSampleFeatureToggles.PushRegistrationId));
@@ -279,7 +278,7 @@ public class OctopusSampleFeatureTogglesTests
             OctopusSampleFeatureToggles.PushRegistrationEffect(false));
 
         OctopusSampleFeatureToggles.SetForceLogin(true);
-        shell.Select(OctopusSampleTab.Home);
+        shell.Select(OctopusSampleTab.Scenarios);
         shell.Select(OctopusSampleTab.Scenarios);
         OctopusSampleBranding.Theme = OctopusSampleTheme.Light;
         Object.DestroyImmediate(shell.gameObject);
@@ -429,7 +428,7 @@ public class OctopusSampleFeatureTogglesTests
     public void TokenForwardingHonoursPushAfterInitializationAndLogsWithoutTokens(bool enabled)
     {
         OctopusSampleFeatureToggles.SetPushRegistration(enabled);
-        OctopusSampleState.ReportInitialized("OctopusAuth");
+        OctopusSampleState.ReportInitialized("SSO");
         var probe = new ProbeLog();
         OctopusSampleLog.Current = probe;
         var sent = new List<string>();
@@ -470,14 +469,15 @@ public class OctopusSampleFeatureTogglesTests
     private static void AssertPushCopy(Transform row, string effect)
     {
         Assert.IsNotNull(row);
+        // The row holds the switch alone; the words live on the collapsed group head it overlays,
+        // its sibling, as one "label: effect" caption under the section title.
         var texts = new List<string>();
-        foreach (var child in row.GetComponentsInChildren<Transform>(true))
+        foreach (var child in row.parent.GetComponentsInChildren<Transform>(true))
         {
             var label = child.GetComponent("TMPro.TMP_Text");
             if (label != null) texts.Add((string)label.GetType().GetProperty("text").GetValue(label, null));
         }
-        CollectionAssert.Contains(texts, "Push registration");
-        CollectionAssert.Contains(texts, effect);
+        CollectionAssert.Contains(texts, "Push registration: " + effect);
     }
 
     private OctopusSampleShell Create()

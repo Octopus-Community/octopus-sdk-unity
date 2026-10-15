@@ -143,8 +143,8 @@ public class OctopusScenariosListViewTests
 
         Assert.IsTrue(OctopusScenarioSections.Matches(connection, "CONNECTION"), "Id, upper case.");
         Assert.IsTrue(OctopusScenarioSections.Matches(connection, "connect"), "Title, partial.");
-        Assert.IsTrue(OctopusScenarioSections.Matches(connection, "disconnectUser"),
-            "Capability line, which is where the SDK symbol a tester searches for lives.");
+        Assert.IsFalse(OctopusScenarioSections.Matches(connection, "disconnectUser"),
+            "Only card copy and its chip are searched, not hidden capability text.");
         Assert.IsTrue(OctopusScenarioSections.Matches(connection, "   "),
             "A whitespace-only query is not a query.");
         Assert.IsFalse(OctopusScenarioSections.Matches(connection, "reactions"));
@@ -192,12 +192,12 @@ public class OctopusScenariosListViewTests
         shell.Select(OctopusSampleTab.Scenarios);
         var view = shell.GetComponentInChildren<OctopusScenariosListView>();
         Assert.IsNotNull(Find(shell.transform, presentation.HeaderId));
-        Assert.IsNotNull(Find(shell.transform, "scenarios-initialScreen-card"));
-        view.ToggleSection(ScenarioSection.Presentation);
-        Assert.IsNotNull(Find(shell.transform, presentation.HeaderId));
         Assert.IsNull(Find(shell.transform, "scenarios-initialScreen-card"));
         view.ToggleSection(ScenarioSection.Presentation);
+        Assert.IsNotNull(Find(shell.transform, presentation.HeaderId));
         Assert.IsNotNull(Find(shell.transform, "scenarios-initialScreen-card"));
+        view.ToggleSection(ScenarioSection.Presentation);
+        Assert.IsNull(Find(shell.transform, "scenarios-initialScreen-card"));
     }
 
     [Test]
@@ -209,6 +209,9 @@ public class OctopusScenariosListViewTests
         {
             var shell = Create();
             shell.Select(OctopusSampleTab.Scenarios);
+
+            foreach (var group in OctopusScenarioSections.Filter(""))
+                shell.GetComponentInChildren<OctopusScenariosListView>().ToggleSection(group.Section);
 
             foreach (var scenario in OctopusScenarioSections.Filter("").SelectMany(g => g.Scenarios))
             {
@@ -245,6 +248,7 @@ public class OctopusScenariosListViewTests
         var view = shell.GetComponentInChildren<OctopusScenariosListView>();
         Assert.IsNotNull(view, "The Scenarios tab built no list view.");
 
+        view.ToggleSection(ScenarioSection.SignIn);
         view.SetQuery("locale");
         Assert.IsNotNull(Find(shell.transform, "scenarios-locale-card"));
         Assert.IsNull(Find(shell.transform, "scenarios-connection-card"),
@@ -280,7 +284,7 @@ public class OctopusScenariosListViewTests
         var list = shell.GetComponentInChildren<OctopusScenariosListView>();
         list.ToggleSection(ScenarioSection.Theme);
         list.SetQuery("zzz-no-match");
-        shell.Select(OctopusSampleTab.Home);
+        shell.Select(OctopusSampleTab.Community);
 
         shell.ShowScenarioSection(ScenarioSection.Theme);
 
@@ -289,23 +293,29 @@ public class OctopusScenariosListViewTests
         Assert.AreEqual("", list.Query);
         Assert.IsTrue(list.IsSectionOpen(ScenarioSection.Theme));
         Assert.AreEqual(ScenarioSection.Theme, list.FocusedSection);
+        // Clearing the query arms a return to the top; the section scroll must cancel it, or the
+        // next frame throws the reader back to the first card.
+        var scroll = list.GetComponentInChildren<ScrollRect>();
+        var landed = scroll.verticalNormalizedPosition;
+        Assert.IsFalse(list.HoldTop(Time.unscaledTime), "The return to the top undid the section scroll.");
+        Assert.AreEqual(landed, scroll.verticalNormalizedPosition, 0.001f);
         Assert.IsTrue(list.ScrollTo(ScenarioSection.Theme), "The section's card is not on screen.");
     }
 
     [Test]
-    public void APlainTabSwitchKeepsTheListAsTheReaderLeftIt()
+    public void APlainTabSwitchResetsExpansionAndScroll()
     {
         var shell = Create();
         shell.Select(OctopusSampleTab.Scenarios);
         var list = shell.GetComponentInChildren<OctopusScenariosListView>();
         list.ToggleSection(ScenarioSection.Theme);
-        shell.Select(OctopusSampleTab.Home);
+        shell.Select(OctopusSampleTab.Community);
 
         shell.Select(OctopusSampleTab.Scenarios);
 
         list = shell.GetComponentInChildren<OctopusScenariosListView>();
         Assert.IsFalse(list.IsSectionOpen(ScenarioSection.Theme),
-            "Only a link reopens a section; a tab tap must not.");
+            "A tab switch resets groups to collapsed, like Android.");
         Assert.IsNull(list.FocusedSection);
     }
 
@@ -317,8 +327,7 @@ public class OctopusScenariosListViewTests
         var view = shell.GetComponentInChildren<OctopusScenariosListView>();
         var section = OctopusScenarioSections.SectionOf("connection");
 
-        Assert.IsTrue(view.IsSectionOpen(section), "Sections start open.");
-        view.ToggleSection(section);
+        Assert.IsFalse(view.IsSectionOpen(section), "Sections start collapsed.");
 
         Assert.IsFalse(view.IsSectionOpen(section));
         Assert.IsNotNull(Find(shell.transform, OctopusScenarioSections.HeaderIdOf(section)),
@@ -336,7 +345,6 @@ public class OctopusScenariosListViewTests
         shell.Select(OctopusSampleTab.Scenarios);
         var view = shell.GetComponentInChildren<OctopusScenariosListView>();
         var section = OctopusScenarioSections.SectionOf("connection");
-        view.ToggleSection(section);
 
         view.SetQuery("connection");
         Assert.IsTrue(view.IsSectionOpen(section),
@@ -379,7 +387,6 @@ public class OctopusScenariosListViewTests
     {
         var shell = Create();
         shell.Select(OctopusSampleTab.Scenarios);
-        shell.GetComponentInChildren<OctopusScenariosListView>().ToggleSection(ScenarioSection.SignIn);
         var head = Find(shell.transform, OctopusScenarioSections.HeaderIdOf(ScenarioSection.SignIn));
         var toggle = Find(shell.transform, OctopusScenariosListView.ForceLoginRowId);
         Assert.AreSame(head.parent, toggle.parent);
@@ -450,6 +457,9 @@ public class OctopusScenariosListViewTests
     {
         var shell = Create();
         shell.Select(OctopusSampleTab.Scenarios);
+        // Sections open collapsed, as on Android; open them all so every card is built.
+        foreach (var group in OctopusScenarioSections.Filter(""))
+            shell.GetComponentInChildren<OctopusScenariosListView>().ToggleSection(group.Section);
 
         var expected = OctopusScenarioSections.Filter("").SelectMany(g => g.Scenarios)
             .Select(scenario => "scenarios-" + scenario.Id + "-card-panel").ToArray();
@@ -474,6 +484,8 @@ public class OctopusScenariosListViewTests
     {
         var shell = Create();
         shell.Select(OctopusSampleTab.Scenarios);
+        foreach (var group in OctopusScenarioSections.Filter(""))
+            shell.GetComponentInChildren<OctopusScenariosListView>().ToggleSection(group.Section);
 
         foreach (var scenario in OctopusScenarioSections.Filter("").SelectMany(g => g.Scenarios))
         {
@@ -485,12 +497,15 @@ public class OctopusScenariosListViewTests
                 "The card for " + scenario.Id + " does not show its product title.");
             CollectionAssert.Contains(lines, scenario.Subtitle,
                 "The card for " + scenario.Id + " does not show its subtitle.");
-            CollectionAssert.DoesNotContain(lines, scenario.Capability,
-                "The card for " + scenario.Id + " still shows the catalogue capability line.");
+            // A capability line identical to the reference API (groupAccessDenied) is the chip's
+            // own text, not the old capability row.
+            if (scenario.Capability != scenario.ReferenceApi)
+                CollectionAssert.DoesNotContain(lines, scenario.Capability,
+                    "The card for " + scenario.Id + " still shows the catalogue capability line.");
 
             var chip = Find(card, scenario.CardTestId + "-api");
             Assert.IsNotNull(chip, "No API chip on the card for " + scenario.Id);
-            Assert.AreEqual(scenario.ApiSymbol,
+            Assert.AreEqual(scenario.ReferenceApi,
                 chip.GetComponentInChildren<TMP_Text>(true).text);
         }
     }
@@ -505,6 +520,8 @@ public class OctopusScenariosListViewTests
     {
         var shell = Create();
         shell.Select(OctopusSampleTab.Scenarios);
+        foreach (var group in OctopusScenarioSections.Filter(""))
+            shell.GetComponentInChildren<OctopusScenariosListView>().ToggleSection(group.Section);
 
         foreach (var scenario in OctopusScenarioSections.Filter("").SelectMany(g => g.Scenarios))
         {
@@ -530,7 +547,7 @@ public class OctopusScenariosListViewTests
         canvas.renderMode = RenderMode.WorldSpace;
         var hostRect = (RectTransform)host.transform;
         hostRect.sizeDelta = new Vector2(canvasWidth, 2340f);
-        OctopusScenariosListView.BuildInto(hostRect);
+        OctopusScenariosListView.BuildInto(hostRect).ToggleSection(ScenarioSection.SignIn);
 
         // Exercise the actual nested groups, not just explicit LayoutElement components:
         // a layout group can report flexible width even when no LayoutElement requests it.
@@ -574,7 +591,7 @@ public class OctopusScenariosListViewTests
         // "SetLightColorScheme" appears in no other field of the theme row — its capability line
         // reads "custom OctopusTheme (colors, fonts, logo)" — so a hit here can only come from the
         // chip. Most symbols also occur in the capability line and would prove nothing.
-        var hits = OctopusScenarioSections.Filter("SetLightColorScheme")
+        var hits = OctopusScenarioSections.Filter("OctopusTheme")
             .SelectMany(g => g.Scenarios).Select(s => s.Id).ToArray();
 
         CollectionAssert.AreEqual(new[] { "theme" }, hits);
@@ -585,6 +602,58 @@ public class OctopusScenariosListViewTests
         var shell = OctopusSampleShell.Create();
         _spawned.Add(shell.gameObject);
         return shell;
+    }
+
+    [Test]
+    public void ProfileSearchKeepsOnlyMatchingCardsAndTheFeatureSwitch()
+    {
+        var shell = Create();
+        var list = shell.GetComponentInChildren<OctopusScenariosListView>();
+        list.SetQuery("profile");
+        CollectionAssert.AreEqual(new[] { "unifiedProfile", "communityData", "profileFieldsLock", "initialScreen" },
+            OctopusScenarioSections.Filter("profile").SelectMany(g => g.Scenarios).Select(s => s.Id));
+        // Android keeps a section's switch while filtering: the matching cards still need it.
+        Assert.IsNotNull(Find(list.transform, OctopusScenariosListView.ForceLoginRowId));
+        Assert.IsNull(Find(list.transform, "scenarios-refreshEntitlements-card"));
+        list.SetQuery("zzzz");
+        var empty = Find(list.transform, OctopusScenariosListView.EmptyStateId);
+        CollectionAssert.AreEqual(new[] { "No scenario matches \"zzzz\"." },
+            empty.GetComponentsInChildren<TMP_Text>().Select(t => t.text));
+    }
+
+    [Test]
+    public void TypingOnlyQueuesFilteringAndKeepsTheInputObjectAndBuffer()
+    {
+        var list = Create().GetComponentInChildren<OctopusScenariosListView>();
+        var input = list.GetComponentInChildren<TMP_InputField>();
+        input.text = "p";
+        input.text = "pr";
+        input.text = "profile";
+        Assert.IsNull(Find(list.transform, "scenarios-communityData-card"), "Filtering must leave the input event path immediately.");
+        typeof(OctopusScenariosListView).GetField("_queryChangedAt",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(list, -1f);
+        // Invoked directly: SendMessage asserts ShouldRunBehaviour() on a component that does not
+        // run in edit mode, and the test runner fails on that unhandled log.
+        typeof(OctopusScenariosListView).GetMethod("LateUpdate",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(list, null);
+        Assert.AreSame(input, list.GetComponentInChildren<TMP_InputField>());
+        Assert.AreEqual("profile", input.text);
+        Assert.IsNotNull(Find(list.transform, "scenarios-communityData-card"));
+    }
+
+    [Test]
+    public void GroupOrderCardsAndBadgeFollowTheReference()
+    {
+        var groups = OctopusScenarioSections.Filter("");
+        CollectionAssert.AreEqual(new[] { "unifiedProfile", "connection", "communityData", "profileFieldsLock", "termsAcceptance", "consentTexts", "forceNicknameChoice", "refreshEntitlements" },
+            groups[0].Scenarios.Select(s => s.Id));
+        CollectionAssert.AreEqual(new[] { "groups", "syncFollowGroups", "communityAccess", "bridge", "createPost", "reactions", "contentOptions", "groupAccessDenied" },
+            groups[2].Scenarios.Select(s => s.Id));
+        var shell = Create();
+        var head = Find(shell.transform, groups[0].HeaderId);
+        Assert.AreEqual("8", Find(head, "Count").GetComponent<TMP_Text>().text);
+        Assert.IsNotNull(Find(head, "CountBadge"));
+        Assert.IsNotNull(Find(head, "Chevron"));
     }
 
     private static Transform Find(Transform root, string name)

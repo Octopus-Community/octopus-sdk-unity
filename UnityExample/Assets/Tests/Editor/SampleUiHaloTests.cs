@@ -120,14 +120,58 @@ public class SampleUiHaloTests
         {
             Assert.IsTrue(image.enabled);
             Assert.IsNotNull(image.texture);
+            // Android's Scenarios header is its page ground (`bg`) in dark too; the other tabs keep
+            // a clear band, where a painted header would draw a hard edge across the halo.
+            AssertPaintsThePageGround(root, image);
+            _shell.Select(OctopusSampleTab.Community);
+            appBar = FindDeep(_shell.transform, "AppBar").GetComponent<Image>();
+            topBleed = FindDeep(_shell.transform, "TopBleed").GetComponent<Image>();
             Assert.AreEqual(0f, appBar.color.a, "A painted header draws a hard edge across the halo.");
             Assert.AreEqual(0f, topBleed.color.a);
         }
         else
         {
             Assert.IsFalse(image.enabled, "Light theme draws no halo.");
+            // Android's Scenarios header sits on the page ground; the other tabs keep the chrome.
+            AssertPaintsThePageGround(root, image);
+            _shell.Select(OctopusSampleTab.Community);
+            appBar = FindDeep(_shell.transform, "AppBar").GetComponent<Image>();
+            topBleed = FindDeep(_shell.transform, "TopBleed").GetComponent<Image>();
             Assert.AreEqual(OctopusSampleBranding.Palette.Chrome, appBar.color);
             Assert.AreEqual(OctopusSampleBranding.Palette.Chrome, topBleed.color);
+        }
+    }
+
+    /// <summary>
+    /// The Scenarios header bands (status bleed, app bar, large title) render exactly as the page
+    /// ground under them: the same source, not merely the same <see cref="Color"/>. A vertex tint of
+    /// the dark page renders #0D0D16 through 8-bit linear, a visible seam on #070D17 (device QA).
+    /// </summary>
+    private void AssertPaintsThePageGround(Transform root, RawImage halo)
+    {
+        var palette = OctopusSampleBranding.Palette;
+        var ground = root.GetComponent<Image>();
+        foreach (var name in new[] { "TopBleed", "AppBar", "LargeTitle" })
+        {
+            var band = FindDeep(_shell.transform, name).GetComponent<Image>();
+            if (halo.enabled)
+            {
+                Assert.IsNotNull(band.sprite, name + " is a vertex tint, which renders #0D0D16 in dark.");
+                Assert.AreSame(SampleUiHalo.PlainFor(palette.Page), band.sprite.texture,
+                    name + " must sample the page ground's own texels.");
+                Assert.AreEqual(Color.white, band.color, name + " must not tint the page texels.");
+                // The halo's texels away from the corner are those very page texels.
+                var plain = (Color32)SampleUiHalo.PlainFor(palette.Page).GetPixel(0, 0);
+                var texture = (Texture2D)halo.texture;
+                Assert.AreEqual(plain, (Color32)texture.GetPixel(0, SampleUiHalo.TextureSize - 1),
+                    "The header's texels differ from the halo's page texels.");
+            }
+            else
+            {
+                Assert.IsNull(band.sprite, name);
+                Assert.IsNull(ground.sprite);
+                Assert.AreEqual(ground.color, band.color, name + " must take the root ground's own colour.");
+            }
         }
     }
 
@@ -159,7 +203,7 @@ public class SampleUiHaloTests
         OctopusSampleBranding.Theme = OctopusSampleTheme.Dark;
         AssertPlainPage(_shell.transform.Find("Root").GetChild(0).GetComponent<RawImage>());
 
-        foreach (var tab in new[] { OctopusSampleTab.Home, OctopusSampleTab.Scenarios, OctopusSampleTab.Settings })
+        foreach (var tab in new[] { OctopusSampleTab.Scenarios, OctopusSampleTab.Scenarios, OctopusSampleTab.Settings })
         {
             _shell.Select(tab);
             halo = _shell.transform.Find("Root").GetChild(0);

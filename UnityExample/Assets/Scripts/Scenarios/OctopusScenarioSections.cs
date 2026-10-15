@@ -83,7 +83,7 @@ public static class OctopusScenarioSections
         {
             {
                 ScenarioSection.SignIn,
-                new[] { "connection", "refreshEntitlements", "communityData", "profileFieldsLock", "termsAcceptance" }
+                new[] { "unifiedProfile", "connection", "communityData", "profileFieldsLock", "termsAcceptance", "consentTexts", "forceNicknameChoice", "refreshEntitlements" }
             },
             {
                 ScenarioSection.Presentation,
@@ -91,7 +91,7 @@ public static class OctopusScenarioSections
             },
             {
                 ScenarioSection.Community,
-                new[] { "groups", "syncFollowGroups", "communityAccess", "groupAccessDenied", "contentOptions", "reactions", "bridge", "createPost" }
+                new[] { "groups", "syncFollowGroups", "communityAccess", "bridge", "createPost", "reactions", "contentOptions", "groupAccessDenied" }
             },
             {
                 ScenarioSection.Notifications,
@@ -99,11 +99,11 @@ public static class OctopusScenarioSections
             },
             {
                 ScenarioSection.Theme,
-                new[] { "theme", "locale" }
+                new[] { "locale", "theme" }
             },
             {
                 ScenarioSection.Host,
-                new[] { "customEvents", "events", "trackABTests", "forceOctopusABTests", "lifecycle" }
+                new[] { "customEvents", "lifecycle", "events", "trackABTests", "forceOctopusABTests" }
             },
         };
 
@@ -168,25 +168,14 @@ public static class OctopusScenarioSections
         return OctopusScenarioPilots.Has(scenario.Id);
     }
 
-    /// <summary>
-    /// Whether <paramref name="scenario"/> survives <paramref name="query"/>: a blank query keeps
-    /// everything, and otherwise every string the card can show — the displayed title, the
-    /// subtitle, the API symbol — plus the id and the capability line behind it are matched
-    /// case-insensitively. Android matches title, subtitle, api and id; the capability line is
-    /// this sample's own addition and stays, because it is what the Scenarios tab matched on
-    /// before the cards were reworded and a search that used to find a row should keep finding it.
-    /// The section title is deliberately not matched: a query that hit a head would return cards
-    /// that do not contain it.
-    /// </summary>
+    /// <summary>Matches only displayed card copy, the reference API chip and id, like Android.</summary>
     public static bool Matches(OctopusScenario scenario, string query)
     {
         if (string.IsNullOrEmpty(query) || query.Trim().Length == 0) return true;
         var needle = query.Trim().ToLowerInvariant();
         return Hit(scenario.DisplayTitle, needle)
                || Hit(scenario.Subtitle, needle)
-               || Hit(scenario.ApiSymbol, needle)
-               || Hit(scenario.Title, needle)
-               || Hit(scenario.Capability, needle)
+               || Hit(scenario.ReferenceApi, needle)
                || Hit(scenario.Id, needle);
     }
 
@@ -208,21 +197,15 @@ public static class OctopusScenarioSections
         foreach (var section in All)
         {
             var scenarios = new List<OctopusScenario>();
-            foreach (var scenario in OctopusScenarioCatalog.All)
+            foreach (var id in Members[section])
             {
-                if (SectionOf(scenario.Id) != section) continue;
-                if (!IsListed(scenario)) continue;
-                if (!Matches(scenario, query)) continue;
-                scenarios.Add(scenario);
+                foreach (var scenario in OctopusScenarioCatalog.All)
+                {
+                    if (scenario.Id != id || !IsListed(scenario) || !Matches(scenario, query)) continue;
+                    scenarios.Add(scenario);
+                }
             }
-
-            var pushToggleMatches = section == ScenarioSection.Notifications &&
-                (string.IsNullOrWhiteSpace(query) ||
-                 OctopusSampleFeatureToggles.PushRegistrationLabel.IndexOf(query.Trim(),
-                     System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 TitleOf(section).IndexOf(query.Trim(), System.StringComparison.OrdinalIgnoreCase) >= 0);
-            if (scenarios.Count > 0 || pushToggleMatches)
-                groups.Add(new ScenarioSectionGroup(section, scenarios));
+            if (scenarios.Count > 0) groups.Add(new ScenarioSectionGroup(section, scenarios));
         }
 
         return groups;

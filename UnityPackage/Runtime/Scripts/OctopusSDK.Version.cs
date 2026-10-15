@@ -16,5 +16,5 @@ public partial class OctopusSDK
     /// this line cannot merge.
     /// </para>
     /// </summary>
-    public const string Version = "1.14.3";
+    public const string Version = "1.15.0";
 }

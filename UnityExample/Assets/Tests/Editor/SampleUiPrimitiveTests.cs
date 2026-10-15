@@ -76,7 +76,9 @@ public class SampleUiPrimitiveTests
             Assert.AreEqual(textCorner.y, hintCorner.y, 0.1f);
         }
         float leftInset = fieldRect.InverseTransformPoint(hintCorners[0]).x - fieldRect.rect.xMin;
-        Assert.AreEqual(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceMd), leftInset, 0.1f);
+        // The Scenarios search is Android's outlined field with a leading magnifier: its text starts
+        // at 52dp (16dp + the 24dp icon + 12dp); a plain field keeps the 12dp inset.
+        Assert.AreEqual(OctopusSampleBranding.Dp(scenarios ? 52f : OctopusSampleBranding.SpaceMd), leftInset, 0.1f);
         Assert.GreaterOrEqual(fieldRect.rect.height, OctopusSampleBranding.MinTouchUnits);
         Assert.IsTrue(fieldRect.GetComponent<Image>().raycastTarget);
         Assert.AreEqual(string.IsNullOrEmpty(value), hint.enabled);
@@ -262,7 +264,7 @@ public class SampleUiPrimitiveTests
         AssertTouchFloor((RectTransform)input.transform);
         input.OnSelect(new BaseEventData(EventSystem.current));
         Assert.AreEqual(p.Focus, border.color);
-        Assert.AreSame(SampleUiShapes.Rounded(12f, 2f), border.sprite);
+        Assert.AreSame(SampleUiShapes.Rounded(OctopusSampleBranding.FieldRadius, OctopusSampleBranding.FocusStroke), border.sprite);
         SampleUi.SetFieldError(input, "A value is required.");
         Assert.AreEqual(p.Negative, border.color);
         var texts = input.transform.parent.GetComponentsInChildren<TMP_Text>();
@@ -352,7 +354,7 @@ public class SampleUiPrimitiveTests
     [Test]
     public void ShapesAreSharedAcrossInstancesThemesAndStateRebuilds()
     {
-        var fill = SampleUiShapes.Rounded(16f);
+        var fill = SampleUiShapes.Rounded(OctopusSampleBranding.CardRadius);
         var stroke = SampleUiShapes.Rounded(12f, 2f);
         Assert.AreNotSame(fill, stroke);
         foreach (var theme in new[] { OctopusSampleTheme.Light, OctopusSampleTheme.Dark })

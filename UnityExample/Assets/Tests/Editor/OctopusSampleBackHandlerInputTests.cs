@@ -81,7 +81,7 @@ public class OctopusSampleBackHandlerInputTests : InputTestFixture
         Assert.IsTrue(about == null);
         Assert.AreEqual(OctopusSampleTab.Scenarios, _shell.Selected, "Both presses were handled at once.");
         Assert.IsTrue(_handler.HandlePendingPress());
-        Assert.AreEqual(OctopusSampleTab.Home, _shell.Selected);
+        Assert.AreEqual(OctopusSampleTab.Scenarios, _shell.Selected);
     }
 
     [Test]

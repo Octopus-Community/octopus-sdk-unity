@@ -7,7 +7,8 @@ using UnityEngine.UI;
 /// the same geometry on the four samples.
 ///
 /// Drawn as a <see cref="RawImage"/> filling a page ground, under the bleeds, the header (clear in
-/// dark theme, see <see cref="OctopusSamplePalette.Header"/>) and the content. Its UV rect is
+/// dark theme, see <see cref="OctopusSamplePalette.Header"/>; the Scenarios header covers it with
+/// the page itself, see <see cref="PaintPage"/>) and the content. Its UV rect is
 /// resolved from where that ground sits on screen, so the halo stays fixed to the viewport whatever
 /// the ground's inset, and follows a rotation or a resize.
 ///
@@ -29,6 +30,7 @@ public class SampleUiHalo : MonoBehaviour
     public const int TextureSize = 256;
 
     private static Texture2D _texture, _plain;
+    private static Sprite _plainSprite;
     private static Color _bakedPage, _bakedHalo, _plainPage;
 
     private readonly Vector3[] _corners = new Vector3[4];
@@ -52,6 +54,15 @@ public class SampleUiHalo : MonoBehaviour
     /// </summary>
     public static void ReleaseTextures()
     {
+        if (_plainSprite != null)
+        {
+#if UNITY_EDITOR
+            Object.DestroyImmediate(_plainSprite);
+#else
+            Object.Destroy(_plainSprite);
+#endif
+        }
+        _plainSprite = null;
         DestroyTexture(ref _texture);
         DestroyTexture(ref _plain);
     }
@@ -200,6 +211,46 @@ public class SampleUiHalo : MonoBehaviour
         _plain.Apply(false);
         _plainPage = page;
         return _plain;
+    }
+
+    /// <summary>
+    /// <see cref="PlainFor"/> as a sprite, for an <see cref="Image"/> that must paint the page: the
+    /// same texels as the page ground, so the two match pixel for pixel. Rebuilt only when the
+    /// texture itself is (after <see cref="ReleaseTextures"/>).
+    /// </summary>
+    public static Sprite PlainSpriteFor(Color page)
+    {
+        var texture = PlainFor(page);
+        if (_plainSprite != null && _plainSprite.texture == texture) return _plainSprite;
+        _plainSprite = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height),
+            new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect);
+        _plainSprite.name = "OctopusSamplePlainPage";
+        _plainSprite.hideFlags = HideFlags.HideAndDontSave;
+        return _plainSprite;
+    }
+
+    /// <summary>
+    /// Paints <paramref name="image"/> exactly as the page ground under it, for a band that sits on
+    /// the page (the Scenarios header). In dark the ground is a texture, the halo's, whose texels
+    /// away from the corner are the page itself; a vertex colour cannot match it, since uGUI stores
+    /// it in 8-bit linear and the ink page #070D17 comes out #0D0D16. So the band samples the
+    /// same opaque sRGB page texels through <see cref="PlainSpriteFor"/>. In light there is no halo
+    /// and the ground is the root's vertex colour, so the band takes that very colour.
+    /// </summary>
+    public static void PaintPage(Image image)
+    {
+        var palette = OctopusSampleBranding.Palette;
+        if (palette.Halo.a > 0f)
+        {
+            image.sprite = PlainSpriteFor(palette.Page);
+            image.type = Image.Type.Simple;
+            image.color = Color.white;
+        }
+        else
+        {
+            image.sprite = null;
+            image.color = palette.Page;
+        }
     }
 
     /// <summary>Shows or hides the halo for the theme in force and re-aims it at the screen corner.</summary>

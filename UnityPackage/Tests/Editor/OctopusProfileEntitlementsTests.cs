@@ -161,6 +161,7 @@ public class OctopusProfileEntitlementsTests
     public void Mock_RefreshSimulatesSuccessAndTypedFailuresAndAlwaysCompletes()
     {
         OctopusSDK.MockBackend.InitializeProfileMock(ConnectionMode.SSO());
+        OctopusSDK.ConnectUser("user1", null, null, null, () => Task.FromResult("test-token")).GetAwaiter().GetResult();
         OctopusSDK.Mock.EmitProfileChanged(new OctopusProfile(new[] { "premium" }, "user1"));
         Drain();
         int success = 0;
@@ -190,16 +191,49 @@ public class OctopusProfileEntitlementsTests
     }
 
     [Test]
-    public void Mock_RefreshRejectsOctopusAuthAndDisconnectedSso()
+    public void Mock_RefreshRequiresRegisteredProviderAndConnectedUser()
     {
+        OctopusSDK.MockBackend.InitializeProfileMock(ConnectionMode.SSO());
+        // A native profile can be restored before the host registers its token provider.
+        OctopusSDK.Mock.EmitProfileChanged(new OctopusProfile(clientUserId: "restored-user"));
+        Drain();
         OctopusRefreshEntitlementsError error = null;
-        OctopusSDK.MockBackend.InitializeProfileMock(ConnectionMode.OctopusAuth());
-        OctopusSDK.RefreshEntitlements(null, e => error = e);
+        OctopusSDK.RefreshEntitlements(() => Assert.Fail(), e => error = e);
+        Assert.IsNull(error, "Failure delivery must wait for the Unity thread queue");
         Drain();
         Assert.AreEqual(OctopusRefreshEntitlementsErrorKind.NoClientTokenProvider, error.Kind);
-        OctopusSDK.MockBackend.InitializeProfileMock(ConnectionMode.SSO());
-        OctopusSDK.RefreshEntitlements(null, e => error = e);
+        Assert.AreEqual("restored-user", OctopusSDK.CurrentProfile.ClientUserId);
+        Assert.IsFalse(OctopusSDK.Mock.LastCall("RefreshEntitlements").HasValue);
+        Assert.IsFalse(OctopusSDK.Mock.LastCall("DisconnectUser").HasValue);
+
+        OctopusSDK.ConnectUser("user1", null, null, null, () => Task.FromResult("test-token")).GetAwaiter().GetResult();
+        Drain();
+        OctopusSDK.DisconnectUser().GetAwaiter().GetResult();
+        Drain();
+        OctopusSDK.RefreshEntitlements(() => Assert.Fail(), e => error = e);
         Drain();
         Assert.AreEqual(OctopusRefreshEntitlementsErrorKind.UserNotConnected, error.Kind);
     }
+    [Test]
+    public void Mock_CommunitySwitchAndStopForgetProviderRegistration()
+    {
+        OctopusSDK.MockBackend.InitializeProfileMock(ConnectionMode.SSO());
+        OctopusSDK.ConnectUser("user1", null, null, null, () => Task.FromResult("test-token")).GetAwaiter().GetResult();
+        Drain();
+        OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.SSO());
+        Drain();
+        OctopusRefreshEntitlementsError error = null;
+        OctopusSDK.RefreshEntitlements(() => Assert.Fail(), e => error = e);
+        Drain();
+        Assert.AreEqual(OctopusRefreshEntitlementsErrorKind.NoClientTokenProvider, error.Kind);
+
+        OctopusSDK.ConnectUser("user2", null, null, null, () => Task.FromResult("test-token")).GetAwaiter().GetResult();
+        Drain();
+        OctopusSDK.Stop();
+        Drain();
+        OctopusSDK.RefreshEntitlements(() => Assert.Fail(), e => error = e);
+        Drain();
+        Assert.AreEqual(OctopusRefreshEntitlementsErrorKind.NoClientTokenProvider, error.Kind);
+    }
+
 }

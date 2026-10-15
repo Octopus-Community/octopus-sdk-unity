@@ -102,6 +102,8 @@ public class OctopusScenario
         get { return string.IsNullOrEmpty(ProductTitle) ? Title : ProductTitle; }
     }
 
+    public string ReferenceApi { get { return OctopusScenarioPresentation.ApiFor(Id); } }
+
     /// <summary>The id the QA pipeline taps, per the catalogue's `&lt;section&gt;-&lt;element&gt;-&lt;action&gt;` rule.</summary>
     public string CardTestId => "scenarios-" + Id + "-card";
 }
@@ -147,6 +149,12 @@ public static class OctopusScenarioCatalog
 
     public static readonly IReadOnlyList<OctopusScenario> All = new List<OctopusScenario>
     {
+        new OctopusScenario("unifiedProfile", "Unified Profile", "Host profile callback and exposed client user ids",
+            presetTestIds: new string[0], resultTestId: "unifiedProfile-result",
+            productTitle: "Unified Profile",
+            subtitle: "Open member profiles in the host app or in the community.",
+            apiSymbol: "DebugOverrideExposeClientUserId",
+            youWillSee: "with the switch on, a member with an app id opens Client profile; with it off, profile taps open native profiles."),
         new OctopusScenario("connection", "Connection",
             "connectUser / disconnectUser, connectionState stream",
             "SSOExample",
@@ -268,11 +276,25 @@ public static class OctopusScenarioCatalog
             apiSymbol: "DebugOverrideProfileFieldsLock"),
         new OctopusScenario("contentOptions", "Content Options",
             "per-content-type content options (pictures post/comment/reply, polls post)",
-            presetTestIds: new[] { "qa-preset-contentOptions-1", "qa-preset-contentOptions-2", "qa-preset-contentOptions-3", "qa-preset-contentOptions-4", "qa-preset-contentOptions-5", "qa-preset-contentOptions-6", "qa-preset-contentOptions-clear" },
+            presetTestIds: new[] { "qa-preset-contentOptions-1", "qa-preset-contentOptions-2", "qa-preset-contentOptions-3", "qa-preset-contentOptions-4", "qa-preset-contentOptions-5", "qa-preset-contentOptions-6", "qa-preset-contentOptions-7", "qa-preset-contentOptions-clear" },
             resultTestId: "contentOptions-result",
             productTitle: "Change what members are allowed to post",
             subtitle: "The composer offers only the kinds of content the community allows.",
             apiSymbol: "DebugOverrideContentOptions"),
+        new OctopusScenario("forceNicknameChoice", "Force Nickname Choice",
+            "CommunityConfig.forceNicknameChoice + the nickname choice screen before the first contribution",
+            presetTestIds: new[] { "qa-preset-forceNicknameChoice-1", "qa-preset-forceNicknameChoice-2", "qa-preset-forceNicknameChoice-clear" },
+            resultTestId: "forceNicknameChoice-result",
+            productTitle: "Ask members to choose their nickname",
+            subtitle: "Start the first-contribution nickname field empty or prefilled.",
+            apiSymbol: "DebugOverrideForceNicknameChoice"),
+        new OctopusScenario("consentTexts", "Consent Texts (community wording)",
+            "CommunityConfig.consentTexts — markdown wordings per terms-acceptance mode, with native fallback",
+            presetTestIds: new[] { "qa-preset-consentTexts-1", "qa-preset-consentTexts-2", "qa-preset-consentTexts-3", "qa-preset-consentTexts-4", "qa-preset-consentTexts-5", "qa-preset-consentTexts-6", "qa-preset-consentTexts-7", "qa-preset-consentTexts-8", "qa-preset-consentTexts-clear" },
+            resultTestId: "consentTexts-result",
+            productTitle: "Try the community's consent wordings",
+            subtitle: "Preview short, long, empty and mismatched consent texts in the native composer.",
+            apiSymbol: "DebugOverrideConsentTexts"),
         new OctopusScenario("termsAcceptance", "Terms Acceptance (Consent)",
             "CommunityConfig.termsAcceptanceMode + the consent sheet at the first contribution",
             presetTestIds: new[] { "qa-preset-termsAcceptance-1", "qa-preset-termsAcceptance-2", "qa-preset-termsAcceptance-3", "qa-preset-termsAcceptance-clear" },

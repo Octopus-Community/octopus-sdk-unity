@@ -57,6 +57,8 @@ public class OctopusSampleClientProfileViewTests
         var view = OpenCommunityData();
 
         Tap(view.transform, "qa-preset-communityData-6");
+        Assert.IsEmpty(_sdk.Calls, "Selecting a preset must not execute it.");
+        Tap(view.transform, "communityData-run");
 
         var page = Object.FindAnyObjectByType<OctopusSampleClientProfileView>();
         Assert.IsNotNull(page, "Preset 6 must present the host profile page.");
@@ -81,6 +83,8 @@ public class OctopusSampleClientProfileViewTests
         var view = OpenCommunityData();
 
         Tap(view.transform, "qa-preset-communityData-6");
+        Assert.IsEmpty(_sdk.Calls, "Selecting a preset must not execute it.");
+        Tap(view.transform, "communityData-run");
         var page = Object.FindAnyObjectByType<OctopusSampleClientProfileView>();
         Assert.IsNotNull(page);
         Assert.IsNotNull(Find(page.transform, OctopusSampleClientProfileView.LoadingTestId));
@@ -100,6 +104,8 @@ public class OctopusSampleClientProfileViewTests
         var view = OpenCommunityData();
 
         Tap(view.transform, "qa-preset-communityData-6");
+        Assert.IsEmpty(_sdk.Calls, "Selecting a preset must not execute it.");
+        Tap(view.transform, "communityData-run");
 
         var page = Object.FindAnyObjectByType<OctopusSampleClientProfileView>();
         Assert.IsNotNull(page);
@@ -113,6 +119,8 @@ public class OctopusSampleClientProfileViewTests
         _sdk.CommunityDataResult = new OctopusCommunityData("profile-42");
         var view = OpenCommunityData();
         Tap(view.transform, "qa-preset-communityData-6");
+        Assert.IsEmpty(_sdk.Calls, "Selecting a preset must not execute it.");
+        Tap(view.transform, "communityData-run");
         var page = Object.FindAnyObjectByType<OctopusSampleClientProfileView>();
         Assert.IsNotNull(page);
 
@@ -128,6 +136,8 @@ public class OctopusSampleClientProfileViewTests
         _sdk.CommunityDataResult = new OctopusCommunityData("profile-42");
         var view = OpenCommunityData();
         Tap(view.transform, "qa-preset-communityData-6");
+        Assert.IsEmpty(_sdk.Calls, "Selecting a preset must not execute it.");
+        Tap(view.transform, "communityData-run");
         Assert.IsNotNull(Object.FindAnyObjectByType<OctopusSampleClientProfileView>());
 
         view.Dismiss();

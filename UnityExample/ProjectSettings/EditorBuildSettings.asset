@@ -15,9 +15,6 @@ EditorBuildSettings:
     path: Assets/SSOExample/SSOExample.unity
     guid: 75dd6c2226080e140b7365df0aa900ef
   - enabled: 1
-    path: Assets/OctopusAuthExample/OctopusAuthExample.unity
-    guid: b59c89dfcca3ccc44a953c914c320ca8
-  - enabled: 1
     path: Assets/ForcedLoginExample/ForcedLoginExample.unity
     guid: 37a46315eabf5ed479db3ae4d28a01af
   - enabled: 1
@@ -40,4 +37,3 @@ EditorBuildSettings:
     guid: 5096b86d247c64d27a825764f15d1a66
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
-  m_UseUCBPForAssetBundles: 0

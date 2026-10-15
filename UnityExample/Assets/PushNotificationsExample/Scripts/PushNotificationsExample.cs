@@ -29,8 +29,10 @@ public class PushNotificationsExample : MonoBehaviour
 
     void Start()
     {
-        OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.OctopusAuth());
-        OctopusSampleState.ReportInitialized("OctopusAuth");
+        MainMenu.RegisterSsoLoginRoute();
+        OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.SSO(),
+            OctopusExampleConfig.Instance.ApiServerHost);
+        OctopusSampleState.ReportInitialized("SSO");
         OctopusSDK.OnNotSeenNotificationsCount += OnNotSeenNotificationCount;
         RegisterForPushNotifications();
 #if UNITY_IOS && !UNITY_EDITOR
@@ -40,6 +42,7 @@ public class PushNotificationsExample : MonoBehaviour
 
     void OnDestroy()
     {
+        MainMenu.UnregisterSsoLoginRoute();
         OctopusSDK.OnNotSeenNotificationsCount -= OnNotSeenNotificationCount;
 #if UNITY_IOS && !UNITY_EDITOR
         iOSNotificationCenter.OnRemoteNotificationReceived -= OnIOSRemoteNotification;

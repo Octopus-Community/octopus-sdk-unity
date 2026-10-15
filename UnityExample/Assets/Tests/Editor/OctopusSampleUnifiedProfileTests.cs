@@ -147,7 +147,7 @@ public class OctopusSampleUnifiedProfileTests
     {
         Initialize();
         var list = OpenScenarios();
-        list.ToggleUnifiedProfile();
+        OpenUnifiedDetail();
         var reads = Count("DebugGetCommunityConfig");
         _sdk.DeferCompletions = true;
 
@@ -194,21 +194,17 @@ public class OctopusSampleUnifiedProfileTests
     public void TheRouteSwitchUnwiresAndRewiresTheHostProfileRoute()
     {
         Initialize();
+        var view = OpenUnifiedDetail();
         Assert.IsNotNull(_sdk.NavigateToProfileHandler);
-        var list = OpenScenarios();
-        Assert.IsNull(Find(list.transform, OctopusScenariosListView.UnifiedProfileRouteToggleId),
-            "The route switch sits inside the collapsed section.");
-        list.ToggleUnifiedProfile();
-        Assert.IsNotNull(Find(list.transform, OctopusScenariosListView.UnifiedProfileRouteToggleId));
-
-        Tap(list.transform, OctopusScenariosListView.UnifiedProfileRouteToggleId);
-        Assert.IsFalse(OctopusSampleUnifiedProfile.RouteWired);
-        Assert.IsNull(_sdk.NavigateToProfileHandler, "Unwired, avatar taps must keep the SDK profile.");
-        StringAssert.Contains("Not wired", AllText(list.transform));
-
-        Tap(list.transform, OctopusScenariosListView.UnifiedProfileRouteToggleId);
+        // Effective flag starts off. Turning the scenario on wires and forces the flag.
+        Tap(view.transform, "config-unified-profile");
         Assert.IsTrue(OctopusSampleUnifiedProfile.RouteWired);
-        Assert.IsNotNull(_sdk.NavigateToProfileHandler);
+        Assert.AreEqual(true, OctopusSampleUnifiedProfile.Override);
+        _sdk.ConfigResult(Config(true));
+        Tap(view.transform, "config-unified-profile");
+        Assert.IsFalse(OctopusSampleUnifiedProfile.RouteWired);
+        Assert.IsNull(_sdk.NavigateToProfileHandler);
+        Assert.IsNull(OctopusSampleUnifiedProfile.Override);
     }
 
     [Test]
@@ -238,70 +234,47 @@ public class OctopusSampleUnifiedProfileTests
     public void TheSectionSitsCollapsedAfterTheSignInCardsAndNoLongerInConfig()
     {
         var list = OpenScenarios();
-
-        var head = Find(list.transform, OctopusScenariosListView.UnifiedProfileId);
-        Assert.IsNotNull(head, "Scenarios › Sign-in & user must carry the Unified Profile section.");
-        StringAssert.Contains(OctopusSampleUnifiedProfile.Label, AllText(head));
-        Assert.IsFalse(list.IsUnifiedProfileOpen, "Collapsed by default, as on Android.");
-        Assert.IsNull(Find(list.transform, OctopusScenariosListView.UnifiedProfileForceOnId));
-        var panel = head.parent;
-        var section = panel.parent;
-        Assert.IsNotNull(section.Find(OctopusScenarioSections.HeaderIdOf(ScenarioSection.SignIn)),
-            "The section belongs to Sign-in & user.");
-        Assert.AreEqual(section.childCount - 1, panel.GetSiblingIndex(), "It comes after the scenario cards.");
-
-        var config = OctopusSampleConfigView.Open();
-        _spawned.Add(config.gameObject);
-        Assert.IsNull(Find(config.transform, OctopusScenariosListView.UnifiedProfileForceOnId));
-        StringAssert.DoesNotContain(OctopusSampleUnifiedProfile.Label, AllText(config.transform));
+        Assert.IsNull(Find(list.transform, "scenarios-unifiedProfile-card"));
+        list.ToggleSection(ScenarioSection.SignIn);
+        Tap(list.transform, "scenarios-unifiedProfile-card");
+        var view = UnityEngine.Object.FindAnyObjectByType<OctopusScenarioScreenView>();
+        _spawned.Add(view.gameObject);
+        Assert.AreEqual("unifiedProfile", view.ScenarioId);
+        Assert.IsNotNull(Find(view.transform, "scenario-title"));
+        Assert.IsNotNull(Find(view.transform, "config-unified-profile"));
     }
 
     [Test]
     public void ExpandingOffersTheAndroidChoicesAndAChoiceAppliesLive()
     {
-        var list = OpenScenarios();
-        list.ToggleUnifiedProfile();
-
-        StringAssert.Contains(OctopusSampleUnifiedProfile.Intro, AllText(list.transform));
-        Assert.AreEqual("Use backend value", Label(list, OctopusScenariosListView.UnifiedProfileBackendId));
-        Assert.AreEqual("Force active", Label(list, OctopusScenariosListView.UnifiedProfileForceOnId));
-        Assert.AreEqual("Force inactive", Label(list, OctopusScenariosListView.UnifiedProfileForceOffId));
-        StringAssert.Contains("— start the SDK", LiveValue(list));
-
+        var view = OpenUnifiedDetail();
+        Assert.IsFalse(Find(view.transform, OctopusScenariosListView.UnifiedProfileForceOnId).gameObject.activeInHierarchy);
+        Tap(view.transform, "unified-profile-backend-toggle");
+        StringAssert.Contains("Use backend value", AllText(view.transform));
+        StringAssert.Contains("Force active", AllText(view.transform));
         Initialize();
         _sdk.DeferCompletions = true;
-        Tap(list.transform, OctopusScenariosListView.UnifiedProfileForceOnId);
-
-        Assert.AreEqual(true, OctopusSampleUnifiedProfile.Override);
-        Assert.AreEqual(true, LastOverride(), "Applied to the running SDK, with no Apply.");
-        CollectionAssert.DoesNotContain(_sdk.Methods, "SwitchCommunity");
+        Tap(view.transform, OctopusScenariosListView.UnifiedProfileForceOnId);
+        Assert.AreEqual(true, LastOverride());
         _sdk.ConfigResult(Config(true));
-        StringAssert.Contains("✓ on", LiveValue(list));
-
-        Tap(list.transform, OctopusScenariosListView.UnifiedProfileForceOffId);
+        StringAssert.Contains("Client profile", AllText(view.transform));
+        Tap(view.transform, OctopusScenariosListView.UnifiedProfileForceOffId);
         _sdk.ConfigResult(Config(false));
-        Assert.AreEqual(false, LastOverride());
-        StringAssert.Contains("✗ off", LiveValue(list));
+        StringAssert.Contains("native profiles", AllText(view.transform));
     }
 
     [Test]
     public void ASearchHidesTheSectionAndATabSwitchKeepsItOpen()
     {
-        var shell = CreateShell();
-        shell.Select(OctopusSampleTab.Scenarios);
-        var list = shell.GetComponentInChildren<OctopusScenariosListView>();
-        list.ToggleUnifiedProfile();
-
-        list.SetQuery("connection");
-        Assert.IsNull(Find(list.transform, OctopusScenariosListView.UnifiedProfileId));
-        list.SetQuery("");
-        Assert.IsNotNull(Find(list.transform, OctopusScenariosListView.UnifiedProfileForceOnId));
-
-        shell.Select(OctopusSampleTab.Home);
-        shell.Select(OctopusSampleTab.Scenarios);
-        list = shell.GetComponentInChildren<OctopusScenariosListView>();
-        Assert.IsTrue(list.IsUnifiedProfileOpen);
-        Assert.IsNotNull(Find(list.transform, OctopusScenariosListView.UnifiedProfileForceOnId));
+        var list = OpenScenarios();
+        list.SetQuery("profile");
+        Assert.IsNotNull(Find(list.transform, "scenarios-unifiedProfile-card"));
+        Assert.IsNull(Find(list.transform, OctopusScenariosListView.UnifiedProfileForceOnId));
+        var view = OpenUnifiedDetail();
+        Assert.IsNotNull(Find(view.transform, "config-unified-profile"));
+        Tap(view.transform, "Back");
+        Assert.IsTrue(view == null);
+        Assert.IsNotNull(Find(list.transform, "scenarios-unifiedProfile-card"));
     }
 
     [Test]
@@ -330,6 +303,13 @@ public class OctopusSampleUnifiedProfileTests
         _spawned.Add(view.gameObject);
 
         Assert.IsNull(Find(view.transform, OctopusScenarioScreenView.UnifiedProfileHintId));
+    }
+
+    private OctopusScenarioScreenView OpenUnifiedDetail()
+    {
+        var view = OctopusScenarioScreenView.Open(new UnifiedProfileScenario());
+        _spawned.Add(view.gameObject);
+        return view;
     }
 
     private OctopusScenariosListView OpenScenarios()

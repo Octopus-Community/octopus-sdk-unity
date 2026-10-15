@@ -35,7 +35,11 @@ public static class SampleUiShapes
     // Geometry is quantised to canvas pixels. Only token radii/strokes should be requested.
     public static Sprite Rounded(float radiusDp, float strokeDp = 0f)
     {
-        int radius = Mathf.Clamp(Mathf.RoundToInt(OctopusSampleBranding.Dp(radiusDp)), 1, 144);
+        // A sliced Image reports its border sum as its preferred size, so a sprite whose radius
+        // exceeded half the touch target made every pill ask for 96dp: in a stack a 48dp button
+        // grew to that height. A 24dp radius still meets in the middle of a 48dp pill.
+        int radius = Mathf.Clamp(Mathf.RoundToInt(OctopusSampleBranding.Dp(radiusDp)), 1,
+            Mathf.RoundToInt(OctopusSampleBranding.MinTouchUnits / 2f));
         int stroke = Mathf.Clamp(Mathf.RoundToInt(OctopusSampleBranding.Dp(strokeDp)), 0, radius);
         int key = radius * 256 + stroke;
         Sprite sprite;

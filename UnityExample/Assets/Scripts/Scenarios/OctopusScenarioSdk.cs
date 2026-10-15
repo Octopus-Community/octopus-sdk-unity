@@ -12,8 +12,8 @@ using UnityEngine;
 /// rather than hidden, and it is why <see cref="EnsureInitialized"/> reports the mode it actually
 /// left the SDK in.
 ///
-/// First initialization requires a user tap. The shell can replay that validated configuration
-/// on later launches; mounting a scenario screen still never initializes anything.
+/// The shell starts the default demo configuration on first launch and restores choices later.
+/// Mounting a scenario screen still never initializes anything.
 /// </summary>
 public static partial class OctopusScenarioSdk
 {
@@ -21,66 +21,32 @@ public static partial class OctopusScenarioSdk
     /// The one connection mode every pilot initialises with. `connection` needs SSO, and neither
     /// `customEvents` nor `locale` cares about the mode — so all three ask for SSO, and visiting
     /// the screens in any order leaves the SDK in a mode the connection presets can legally use.
-    /// (Calling `ConnectUser` on an SDK initialised with Octopus auth is a native precondition
-    /// failure on iOS, not an error the sample could report.)
     /// </summary>
     public const string PilotModeLabel = "SSO";
 
-    public static ConnectionMode PilotMode() { return ConnectionMode.SSO(); }
+    public static ConnectionMode PilotMode() { return ConnectionMode.SSO(_liveConfiguration == null ? new ProfileField[0] : _liveConfiguration.ManagedFields); }
 
     private const string StartupPreferenceKey = "OctopusSample.ValidatedStartupConfig";
     private static string _startupPreferenceKey = StartupPreferenceKey;
     private static bool _startupFailed;
 
-    /// <summary>
-    /// Replays a previously successful initialization; a fresh install stays cold.
-    ///
-    /// A replay that fails forgets the saved selection (#342): the next launch is then a cold one
-    /// that asks for a profile, instead of failing on the same saved value on every launch until
-    /// the app is reinstalled. Android's sample self-clears a failed restore the same way.
-    /// </summary>
+    /// <summary>Starts the demo automatically, or restores saved nonsecret choices.</summary>
     public static void RestoreInitializedSdk()
     {
-        if (OctopusSampleState.IsInitialized || _startupPreferenceKey == null) return;
-        var wasForceLogin = OctopusSampleFeatureToggles.ForceLogin;
-        try
+        if (OctopusSampleState.IsInitialized) return;
+        if (_startupPreferenceKey != null)
         {
-            // Zero is a fresh install; 1 and 2 select the bundled default/forced-login profile.
-            // Store no API key or token in PlayerPrefs.
             var saved = PlayerPrefs.GetInt(_startupPreferenceKey, 0);
-            if (saved == 0) return;
-            if (saved != 1 && saved != 2)
+            if (saved < 0 || saved > 5)
             {
-                ReportStartupFailure("Saved configuration is invalid. Choose a configuration to try again.");
+                ReportStartupFailure("Saved configuration is invalid. Open Settings › Configuration to retry.");
                 return;
             }
-            // A replay of the choice the tester made on an earlier launch, not a flip: no
-            // "feature toggled" line in the Debug console (#342).
-            OctopusSampleFeatureToggles.Restore(saved == 2);
-            string reason;
-            if (EnsurePilotInitialized(out reason) == null)
-            {
-                OctopusSampleFeatureToggles.Restore(wasForceLogin);
-                ReportStartupFailure(reason);
-            }
         }
-        catch (Exception exception)
-        {
-            // Exception messages may contain native configuration values. Keep credentials out
-            // of the dashboard and logs while leaving the failure visible and retryable.
-            if (OctopusSampleState.IsInitialized)
-            {
-                // The SDK is up: only a setup step after Initialize threw (the native theme, the
-                // Unified Profile override). The saved profile did work, so forgetting it would
-                // turn a cosmetic failure into a cold start on the next launch (#387).
-                Debug.LogWarning("[Octopus SDK] Sample setup after initialization failed (" +
-                                 exception.GetType().Name + "); the SDK is running and the saved " +
-                                 "configuration is kept.");
-                return;
-            }
-            OctopusSampleFeatureToggles.Restore(wasForceLogin);
-            ReportStartupFailure(exception.GetType().Name + ". Check the configuration and try a scenario preset.");
-        }
+        var draft = LoadConfiguration();
+        // A fresh launch follows the system in the SDK. Legacy choices keep their appearance.
+        if (SavedConfiguration == 0) draft.Appearance = 0;
+        ApplyConfiguration(draft, (ok, message) => { if (!ok) ReportStartupFailure(message); });
     }
 
     /// <summary>
@@ -102,7 +68,7 @@ public static partial class OctopusScenarioSdk
     {
         try
         {
-            PlayerPrefs.DeleteKey(_startupPreferenceKey);
+            ClearSavedConfiguration();
             PlayerPrefs.Save();
         }
         catch (Exception)
@@ -156,7 +122,10 @@ public static partial class OctopusScenarioSdk
         get
         {
             if (_operationInFlight != null && UtcNow() - _operationStartedAt >= OperationTimeout)
-                _operationInFlight = null;
+            {
+                if (_operationInFlight == "Configuration.Apply") TimeoutConfigurationApply(_operationToken);
+                else _operationInFlight = null;
+            }
             return _operationInFlight;
         }
     }
@@ -170,6 +139,34 @@ public static partial class OctopusScenarioSdk
     private static OctopusExampleConfig.ExampleProfile _activeProfile;
     private static string _runningServerHost;
     private static int _liveSelection;
+
+    /// <summary>
+    /// Counts the community the running SDK points at: it moves on every initialise, switch and
+    /// stop made through this class, even onto the same profile. A panel that read something from
+    /// the previous community compares it to know its reading is stale.
+    /// </summary>
+    public static int CommunityGeneration { get; private set; }
+
+    /// <summary>
+    /// The running community's API key, masked as the Configuration screen masks it, or "—" while
+    /// the SDK is not running or has no key. The key itself never leaves this class.
+    /// </summary>
+    public static string LiveMaskedApiKey
+    {
+        get
+        {
+            var profile = OctopusSampleState.IsInitialized ? _activeProfile : null;
+            return profile == null || string.IsNullOrWhiteSpace(profile.apiKey)
+                ? "—"
+                : OctopusSampleConfigurationDraft.MaskApiKey(profile.apiKey);
+        }
+    }
+
+    private static void SetActiveProfile(OctopusExampleConfig.ExampleProfile profile)
+    {
+        _activeProfile = profile;
+        CommunityGeneration++;
+    }
 
     /// <summary>
     /// The configuration the running SDK was started or last switched onto through this class
@@ -215,6 +212,7 @@ public static partial class OctopusScenarioSdk
     /// </summary>
     public static void Use(IOctopusScenarioSdk sdk, string startupPreferenceKey = null)
     {
+        OctopusSampleHostIntegration.Detach();
         ResetCommunityScenarioState();
         ResetPilotObservations();
         _sdk = sdk ?? new OctopusLiveScenarioSdk();
@@ -223,9 +221,14 @@ public static partial class OctopusScenarioSdk
         StartupFailureReason = null;
         _operationInFlight = null;
         UtcNow = () => System.DateTime.UtcNow;
-        _activeProfile = null;
+        SetActiveProfile(null);
         _runningServerHost = null;
         _liveSelection = 0;
+        _liveConfiguration = null;
+        _configurationMayChangeSession = false;
+        _configurationNativePending = false;
+        _configurationRequiresSwitch = false;
+        OctopusSampleNativeTheme.ResetConfiguration();
         _bridgeTokenProvider = new OctopusSampleTokenProvider(null);
         OctopusSampleState.Reset();
         OctopusSampleUnifiedProfile.Reset();
@@ -255,6 +258,11 @@ public static partial class OctopusScenarioSdk
     public static bool TryBeginOperation(string name, out string busyMessage)
     {
         var running = OperationInFlight;
+        if (_configurationNativePending)
+        {
+            busyMessage = "Configuration's native operation is still pending. Wait for it to complete, or restart the sample.";
+            return false;
+        }
         if (running != null)
         {
             busyMessage = "'" + running + "' is still running — wait for its result " +
@@ -272,20 +280,31 @@ public static partial class OctopusScenarioSdk
     // Keep subsequent SSO presets on the profile selected by SwitchCommunity.
     internal static void CommunitySwitched(OctopusExampleConfig.ExampleProfile profile, int selection)
     {
-        _activeProfile = profile;
+        SetActiveProfile(profile);
         _runningServerHost = ServerHostFor(profile);
         _liveSelection = selection;
+        _liveConfiguration = new OctopusSampleConfigurationDraft
+        {
+            Community = selection, CustomServer = _runningServerHost != _sdk.DemoServerHost,
+            CustomHost = _runningServerHost, CustomApiKey = selection == 5 ? profile.apiKey : "",
+            UserId = profile.userId, NavyTheme = OctopusSampleNativeTheme.NavyTheme,
+            Appearance = OctopusSampleNativeTheme.CurrentAppearance
+        };
         _bridgeTokenProvider = new OctopusSampleTokenProvider(profile);
         OctopusSampleState.Reset();
         OctopusSampleState.ReportInitialized(PilotModeLabel);
         OctopusSampleNativeTheme.Apply(_sdk);
         // The debug override lives on the SDK instance the switch replaced.
         OctopusSampleUnifiedProfile.Reapply();
+        OctopusSampleHostIntegration.Apply();
+        OctopusSampleLanguage.ApplySaved();
     }
 
     internal static void LifecycleStopped()
     {
-        _activeProfile = null;
+        OctopusSampleHostIntegration.Detach();
+        _liveConfiguration = null;
+        SetActiveProfile(null);
         _runningServerHost = null;
         _liveSelection = 0;
         _bridgeTokenProvider = new OctopusSampleTokenProvider(null);
@@ -351,6 +370,13 @@ public static partial class OctopusScenarioSdk
         ConnectionMode mode, string modeLabel, out string reportedMode)
     {
         var running = OperationInFlight;
+        if (_configurationNativePending || _configurationRequiresSwitch)
+        {
+            reportedMode = _configurationNativePending
+                ? "Configuration's native operation is still pending. Wait for it to complete, or restart the sample."
+                : "Apply Configuration to restore the SDK session after the last error or timeout.";
+            return null;
+        }
         if (running != null && running.StartsWith("Lifecycle."))
         {
             reportedMode = running + " is still running — wait before another SDK call.";
@@ -398,13 +424,16 @@ public static partial class OctopusScenarioSdk
         _sdk.Initialize(profile.apiKey, mode, host);
         _runningServerHost = host;
         _liveSelection = OctopusSampleFeatureToggles.ForceLogin ? 2 : 1;
+        SetActiveProfile(profile);
         OctopusSampleState.ReportInitialized(modeLabel);
         // After Initialize: the bridge needs the channel the initialisation created, and the
         // native SDK keeps the theme for the life of the process (#134).
         OctopusSampleNativeTheme.Apply(_sdk);
         // After Initialize: a forced exposeClientUserId is an override of the running SDK.
         OctopusSampleUnifiedProfile.Reapply();
-        RememberInitializedConfig();
+        OctopusSampleHostIntegration.Apply();
+        OctopusSampleLanguage.ApplySaved();
+        if (_operationInFlight != "Configuration.Apply") RememberInitializedConfig();
         if (_startupFailed)
         {
             _startupFailed = false;
@@ -501,6 +530,7 @@ public static partial class OctopusScenarioSdk
 
     private static void BridgeNavigated(string objectId)
     {
+        OctopusSampleHostIntegration.ContentTapped(objectId);
         LastNavigateObjectId = objectId;
         NavigateFireCount++;
         BridgeStateChanged?.Invoke(true);

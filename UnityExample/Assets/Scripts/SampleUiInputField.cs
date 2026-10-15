@@ -41,6 +41,13 @@ public class SampleUiInputField : TMP_InputField
 
     public string Error { get { return _error; } }
 
+    /// <summary>
+    /// Material's outlined field: no fill, the stroke alone draws it (Android's search field).
+    /// The fill Image keeps raycasting, so the padding still takes the tap. Call
+    /// <see cref="RefreshVisuals()"/> after setting it.
+    /// </summary>
+    public bool Outlined;
+
     public override float preferredHeight
     {
         get
@@ -160,7 +167,8 @@ public class SampleUiInputField : TMP_InputField
         if (_border == null || _palette == null || textComponent == null) return;
         bool disabled = !IsInteractable();
         var fill = targetGraphic as Image;
-        if (fill != null) fill.color = disabled ? _palette.DisabledSurface : _palette.SurfaceHigh;
+        if (fill != null) fill.color = disabled ? _palette.DisabledSurface
+            : Outlined ? OctopusSampleBranding.Clear : _palette.SurfaceHigh;
         textComponent.color = disabled ? _palette.DisabledInk : _palette.Title;
         if (placeholder != null) placeholder.color = _palette.Placeholder;
         _border.color = disabled ? _palette.Border : _error.Length > 0 ? _palette.Negative

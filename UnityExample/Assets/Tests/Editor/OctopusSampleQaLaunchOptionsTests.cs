@@ -20,7 +20,6 @@ public class OctopusSampleQaLaunchOptionsTests
         Assert.IsNull(navigation.Tab);
     }
 
-    [TestCase("home")]
     [TestCase("scenarios")]
     [TestCase("community")]
     [TestCase("settings")]
@@ -46,6 +45,7 @@ public class OctopusSampleQaLaunchOptionsTests
         }
     }
 
+    [TestCase("qaTab", "home", "unknown tab")]
     [TestCase("qaTab", "unknown", "unknown tab")]
     [TestCase("qaTab", "HOME", "unknown tab")]
     [TestCase("qaScenario", "unknown", "unknown scenario")]
@@ -97,7 +97,7 @@ public class OctopusSampleQaLaunchOptionsTests
     [Test]
     public void ScenarioTakesPrecedenceAndWaitsForTheTabBeforeRunningOnce()
     {
-        var options = Parse("qaTab", "home", "qaScenario", "customEvents", "qaPreset", "1");
+        var options = Parse("qaTab", "settings", "qaScenario", "customEvents", "qaPreset", "1");
         Assert.AreEqual(1, options.Preset);
         var request = new OctopusSampleQaRequest(options);
         var navigation = new Navigation();
@@ -180,7 +180,7 @@ public class OctopusSampleQaLaunchOptionsTests
         var options = Parse("qaScenario", OctopusSampleQaDestinations.Arcade);
         var navigation = new Navigation { Ready = true };
         Assert.IsFalse(new OctopusSampleQaRequest(options).Apply(navigation).MoveNext());
-        Assert.AreEqual("home", navigation.Tab);
+        Assert.AreEqual("settings", navigation.Tab);
         Assert.AreEqual(OctopusSampleQaDestinations.Arcade, navigation.Destination);
         Assert.AreEqual(1, navigation.DestinationCount);
         Assert.AreEqual(0, navigation.OpenCount);

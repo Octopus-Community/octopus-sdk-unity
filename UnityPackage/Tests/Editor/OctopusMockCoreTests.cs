@@ -58,7 +58,7 @@ public class OctopusMockCoreTests
     {
         OctopusMockSettings.GetOrCreateSettings(); // ensure asset exists
         OctopusSDK.Mock.Reset();
-        OctopusSDK.Initialize("test-key", ConnectionMode.OctopusAuth());
+        OctopusSDK.Initialize("test-key", ConnectionMode.SSO());
         Assert.IsTrue(OctopusSDK.Mock.LastCall("Initialize").HasValue);
         Assert.AreEqual("test-key", OctopusSDK.Mock.LastCall("Initialize").Value.Args[0]);
     }
@@ -70,7 +70,7 @@ public class OctopusMockCoreTests
         // overriding a code-set value when a settings asset is present.
         OctopusMockSettings.GetOrCreateSettings();
         OctopusSDK.Mock.ShowOverlay = false;
-        OctopusSDK.Initialize("test-key", ConnectionMode.OctopusAuth());
+        OctopusSDK.Initialize("test-key", ConnectionMode.SSO());
         Assert.IsTrue(OctopusSDK.Mock.ShowOverlay);
     }
 }

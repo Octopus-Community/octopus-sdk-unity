@@ -11,7 +11,8 @@ public sealed class InitialScreenScenario : OctopusScenarioPilot
         new OctopusScenarioField("text", "Prefill text (10–5000 characters)"),
         new OctopusScenarioField("ctaLabel", "CTA label (optional; none skips)"),
         new OctopusScenarioField("ctaUrl", "CTA url (optional; none skips)"),
-        new OctopusScenarioField("clientUserId", "Member clientUserId (preset 10 only; current uses connected / configured user)"));
+        new OctopusScenarioField("profileId", "Member profileId (preset 9)"),
+        new OctopusScenarioField("clientUserId", "Member clientUserId (presets 8 & 10; current uses connected / configured user)"));
     private readonly List<OctopusScenarioPreset> _presets = new List<OctopusScenarioPreset>();
     private int _generation;
 
@@ -38,6 +39,7 @@ public sealed class InitialScreenScenario : OctopusScenarioPilot
                 fields.Set("ctaLabel", "none");
                 fields.Set("ctaUrl", "none");
                 fields.Set("clientUserId", "current");
+                fields.Set("profileId", OctopusSampleFixtures.OtherUserId ?? "");
             }, Run));
         }
     }
@@ -47,11 +49,11 @@ public sealed class InitialScreenScenario : OctopusScenarioPilot
     public override bool CanCustomize { get { return true; } }
     public override void RunCustom() { Run(Fields); }
     public override IReadOnlyList<string> ApiSymbols
-    { get { return new[] { "Open", "OpenPost", "OpenGroup", "OpenCreatePost", "OpenProfile", "FetchGroups", "CurrentProfile" }; } }
+    { get { return new[] { "Open", "OpenPost", "OpenGroup", "OpenCreatePost", "OpenProfile", "OpenActivity", "FetchGroups", "CurrentProfile" }; } }
     public override string ParameterNotice
     {
         get { return "Unity opens native screens. Presets 5 and 7 use OpenPost / Open equivalents; there are no Flutter widgets or inset parameters. " +
-            "Use Customize for ids and prefill values; group selection uses a text field. Presets 8 and 9 need member activity APIs Unity does not expose. " +
+            "Use Customize for ids and prefill values; group selection uses a text field. Presets 8 and 9 use the existing member activity API. " +
             "Preset 6 uses the bundled image. " + OctopusScenarioSdk.BridgeSigningNotice + " Only the member can publish."; }
     }
 
@@ -61,12 +63,6 @@ public sealed class InitialScreenScenario : OctopusScenarioPilot
         int preset;
         if (!int.TryParse(fields.Get("preset"), out preset) || preset < 1 || preset > 11)
         { Report("No call made: destination must be a preset number from 1 to 11."); return; }
-        if (preset == 8 || preset == 9)
-        {
-            Report("Unavailable: Unity OpenActivity only opens the connected user's activity and accepts no " +
-                (preset == 8 ? "clientUserId" : "profileId") + "; no SDK call made.");
-            return;
-        }
         try
         {
             string reason;
@@ -89,6 +85,22 @@ public sealed class InitialScreenScenario : OctopusScenarioPilot
                 Open("OpenPost", () => sdk.OpenPost(postId), preset == 5
                     ? "Opening post via OctopusSDK.OpenPost, the same entry point as preset 2 in Unity: " + postId + ". No standalone post-details screen is exercised. Close the SDK to return."
                     : "Opening post bridge mode via OctopusSDK.OpenPost: " + postId + ". Close the SDK to return.");
+                return;
+            }
+            if (preset == 8 || preset == 9)
+            {
+                var id = fields.Get(preset == 8 ? "clientUserId" : "profileId").Trim();
+                if (preset == 8 && (id == "current" || id.Length == 0))
+                {
+                    var current = sdk.CurrentProfile;
+                    id = current == null || string.IsNullOrWhiteSpace(current.ClientUserId)
+                        ? profile.userId : current.ClientUserId;
+                }
+                if (string.IsNullOrWhiteSpace(id)) { Report("No call made: Member ID is required."); return; }
+                var memberId = preset == 8 ? OctopusCommunityMemberId.FromClientUserId(id)
+                    : OctopusCommunityMemberId.FromProfileId(id);
+                Open("OpenActivity", () => sdk.OpenActivity(memberId),
+                    "Opening member activity via OctopusSDK.OpenActivity. Close the SDK to return.");
                 return;
             }
             if (preset == 10 || preset == 11)

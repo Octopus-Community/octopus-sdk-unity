@@ -2,7 +2,6 @@ using NUnit.Framework;
 
 public class OctopusSampleLocationTests
 {
-    [TestCase(OctopusSampleTab.Home, "Tab · Home")]
     [TestCase(OctopusSampleTab.Scenarios, "Tab · Scenarios")]
     [TestCase(OctopusSampleTab.Community, "Tab · Community")]
     public void SettingsPreservesTheLastContentTab(OctopusSampleTab tab, string expected)
@@ -48,7 +47,6 @@ public class OctopusSampleLocationTests
         Assert.AreEqual("Scenarios · locale", location.WhereText(OctopusSampleTab.Settings));
     }
 
-    [TestCase(OctopusSampleTab.Home, "Tab · Home")]
     [TestCase(OctopusSampleTab.Scenarios, "Tab · Scenarios")]
     [TestCase(OctopusSampleTab.Community, "Tab · Community")]
     public void OpeningContentReplacesTheClosedScenario(OctopusSampleTab tab, string expected)

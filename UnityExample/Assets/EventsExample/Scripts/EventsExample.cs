@@ -12,12 +12,15 @@ public class EventsExample : MonoBehaviour
 
     void Start()
     {
-        OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.OctopusAuth());
+        MainMenu.RegisterSsoLoginRoute();
+        OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.SSO(),
+            OctopusExampleConfig.Instance.ApiServerHost);
         OctopusSDK.OnOctopusEvent += OnOctopusEvent;
     }
 
     void OnDestroy()
     {
+        MainMenu.UnregisterSsoLoginRoute();
         OctopusSDK.OnOctopusEvent -= OnOctopusEvent;
     }
 

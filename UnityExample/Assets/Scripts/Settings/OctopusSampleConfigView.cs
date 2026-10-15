@@ -1,3 +1,5 @@
+using System;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -5,73 +7,65 @@ public class OctopusSampleConfigView : OctopusSampleSettingsDetailView
 {
     public const string ScreenId = "config-screen";
     public const string BackId = "config-back";
-    public const string ProfilesId = "config-profiles-card";
     public const string DefaultId = "config-default-profile";
     public const string ForcedLoginId = "config-forced-login-profile";
     public const string StartId = "config-start-button";
     public const string ResultId = "config-result";
     public const string AccountLinkId = "config-account-link";
+    public const string CancelId = "config-cancel-button";
+    public const string ServerId = "config-section-server";
+    public const string CommunityId = "config-section-community";
+    public const string AuthId = "config-section-auth";
+    public const string ThemeId = "config-section-theme";
+    public const string IntegrationId = "config-section-integration";
 
-    public int Selection { get; private set; }
+    public OctopusSampleConfigurationDraft Draft { get; private set; }
+    public int Selection { get { return Draft.Community; } }
     public string Result { get; private set; }
     public bool IsApplying { get; private set; }
-    private bool _revisit;
-    private System.DateTime _startedAt;
-    private System.Action _returnTo;
+    private readonly bool[] _expanded = new bool[4];
+    private DateTime _startedAt;
+    private int _applyToken;
+    private Action _returnTo;
+    private ScrollRect _scroll;
+    private RectTransform _dock;
+    private float _contentBottomInset;
+    private float _scrollPosition = 1f;
+    private bool _restoreScroll;
 
-    public static OctopusSampleConfigView Open()
-    {
-        return Open(null);
-    }
+    public static OctopusSampleConfigView Open() { return Open(null); }
 
-    /// <summary>
-    /// Opens the screen, or returns the one already open. <paramref name="returnTo"/> reopens the
-    /// screen this one was reached from once it closes — by Back or by a successful Apply — so a
-    /// reader who came from Account lands on Account again, where the next step (signing in again
-    /// after a community switch) is. Null closes onto whatever is underneath: the tab.
-    /// </summary>
-    public static OctopusSampleConfigView Open(System.Action returnTo)
+    // Back returns to the referring page; Apply keeps the result visible on this page.
+    public static OctopusSampleConfigView Open(Action returnTo)
     {
         var existing = FindAnyObjectByType<OctopusSampleConfigView>();
         if (existing != null) return existing;
         var view = new GameObject("OctopusSampleConfigView").AddComponent<OctopusSampleConfigView>();
         view._returnTo = returnTo;
-        view._revisit = !OctopusScenarioSdk.NeedsConfiguration;
-        view.Selection = InitialSelection();
-        // A failed startup replay opens this screen over Home: say why, instead of a bare picker.
-        if (!OctopusSampleState.IsInitialized) view.Result = OctopusScenarioSdk.StartupFailureReason;
+        view.Draft = OctopusScenarioSdk.ConfigurationDraft();
+        view.Result = OctopusScenarioSdk.StartupFailureReason;
+        if (string.IsNullOrWhiteSpace(OctopusScenarioSdk.ConfigurationKey(view.Draft))) view._expanded[1] = true;
         view.InitializeView();
         OctopusSampleQaLaunch.Log("screen=config");
         OctopusSampleQaLaunch.ConfigShown(view.Apply);
         return view;
     }
 
-    /// <summary>
-    /// The profile highlighted when the screen opens. While the SDK runs, it is the live profile —
-    /// not the saved one, which a reset has just cleared: highlighting Default over a forced-login
-    /// session would make Apply switch communities while claiming to keep the choice (#349). The
-    /// live profile is the one the SDK was started or switched onto
-    /// (<see cref="OctopusScenarioSdk.LiveSelection"/>), not the Force login switch, which the
-    /// Lifecycle community switch leaves alone (#387). Before that, the saved choice, else Default.
-    /// </summary>
-    public static int InitialSelection()
+    public static int InitialSelection() { return OctopusScenarioSdk.ConfigurationDraft().Community; }
+
+    public void ToggleSection(int section)
     {
-        if (OctopusSampleState.IsInitialized)
-        {
-            var live = OctopusScenarioSdk.LiveSelection;
-            if (live != 0) return live;
-            return OctopusSampleFeatureToggles.ForceLogin ? 2 : 1;
-        }
-        var saved = OctopusScenarioSdk.SavedConfiguration;
-        return saved == 0 ? 1 : saved;
+        if (section < 0 || section >= _expanded.Length || IsApplying) return;
+        _expanded[section] = !_expanded[section];
+        Redraw();
     }
 
     public void SelectProfile(int selection)
     {
-        if (IsApplying || (selection != 1 && selection != 2)) return;
-        Selection = selection;
+        if (IsApplying || selection < 1 || selection > 5) return;
+        Draft.Community = selection;
         Result = null;
-        Refresh();
+        Redraw();
     }
 
     public void Apply()
@@ -80,47 +74,62 @@ public class OctopusSampleConfigView : OctopusSampleSettingsDetailView
         IsApplying = true;
         _startedAt = OctopusScenarioSdk.UtcNow();
         Result = "Applying configuration…";
-        Refresh();
-        OctopusScenarioSdk.ApplyConfiguration(Selection, (success, message) =>
+        Redraw();
+        OctopusScenarioSdk.ApplyConfiguration(Draft, (success, message) =>
         {
             if (this == null) return;
             IsApplying = false;
             Result = message;
             if (success)
             {
+                Draft = OctopusScenarioSdk.ConfigurationDraft();
                 OctopusSampleQaLaunch.ConfigStarted();
-                Leave();
             }
-            else Refresh();
+            Redraw();
         });
+        if (IsApplying) _applyToken = OctopusScenarioSdk.OperationToken;
     }
 
     protected override void LateUpdate()
     {
+        CheckApplyTimeout();
+        base.LateUpdate();
+        if (_scroll != null && _dock != null)
+        {
+            var viewport = _scroll.viewport;
+            var bottom = _contentBottomInset + _dock.rect.height;
+            if (!Mathf.Approximately(viewport.offsetMin.y, bottom))
+                viewport.offsetMin = new Vector2(viewport.offsetMin.x, bottom);
+        }
+        if (_restoreScroll && _scroll != null)
+        {
+            _restoreScroll = false;
+            Canvas.ForceUpdateCanvases();
+            _scroll.verticalNormalizedPosition = _scrollPosition;
+        }
+    }
+
+    // Also callable by EditMode tests without dispatching a Unity player-loop message.
+    public void CheckApplyTimeout()
+    {
         if (IsApplying && OctopusScenarioSdk.UtcNow() - _startedAt >= OctopusScenarioSdk.OperationTimeout)
         {
+            OctopusScenarioSdk.TimeoutConfigurationApply(_applyToken);
             IsApplying = false;
             Result = "No response yet. You can retry applying the configuration.";
-            Refresh();
+            Redraw();
         }
-        base.LateUpdate();
     }
 
-    /// <summary>Whether Back may leave: never mid-apply, never before a profile is in place.</summary>
-    public bool CanLeave
+    private void Redraw()
     {
-        get { return !IsApplying && !OctopusScenarioSdk.NeedsConfiguration; }
+        if (_scroll != null) _scrollPosition = _scroll.verticalNormalizedPosition;
+        _restoreScroll = true;
+        Refresh();
     }
 
-    public override void Close()
-    {
-        if (CanLeave) Leave();
-    }
-
-    /// <summary>
-    /// A tab switch closes onto the tab, never back to the screen this one was reached from:
-    /// reopening Account there would cover the tab just picked. Refused on the same terms as Back.
-    /// </summary>
+    public bool CanLeave { get { return !IsApplying; } }
+    public override void Close() { if (CanLeave) Leave(); }
     protected override void Dismiss()
     {
         if (!CanLeave) return;
@@ -128,7 +137,6 @@ public class OctopusSampleConfigView : OctopusSampleSettingsDetailView
         base.Close();
     }
 
-    /// <summary>Closes onto Account, whatever this screen was opened from. Wired to <see cref="AccountLinkId"/>.</summary>
     public void OpenAccount()
     {
         if (!CanLeave) return;
@@ -141,40 +149,162 @@ public class OctopusSampleConfigView : OctopusSampleSettingsDetailView
     {
         var returnTo = _returnTo;
         _returnTo = null;
+        Draft.CustomApiKey = "";
         base.Close();
         if (returnTo != null) returnTo();
     }
 
     protected override void Build()
     {
-        var content = Content(ScreenId, "Configuration", BackId,
-            _revisit && !IsApplying && !OctopusScenarioSdk.NeedsConfiguration);
-        var card = SampleUi.Card(ProfilesId, content);
-        SampleUi.FlexibleLabel(card, "Choose a sample profile", SampleUi.TextTitle, SampleUi.TitleColor);
-        SampleUi.FlexibleLabel(card,
-            "Use one of this build's configured profiles. Authentication uses SSO; credentials stay in the local build configuration.",
-            SampleUi.TextBody, SampleUi.Muted);
-        Choice(card, DefaultId, 1, "Default", OctopusSampleFeatureToggles.ForceLoginEffectOff);
-        Choice(card, ForcedLoginId, 2, "Forced login", OctopusSampleFeatureToggles.ForceLoginEffectOn);
-        SampleUi.FlexibleLabel(card, "Changing communities disconnects the current session. Sign in again from Account.",
-            SampleUi.TextCaption, SampleUi.Muted);
-        // Only once the screen can be left: before the first profile is in place there is no
-        // session to sign back into, and Back is withheld for the same reason.
-        if (_revisit && CanLeave)
-            SampleUi.Button(AccountLinkId, card, "Open Account", SampleUiButtonVariant.Tertiary, OpenAccount);
+        var page = SampleUi.DetailPage(ScreenId, transform, Dismiss);
+        var header = SampleUi.AppBar("Header", page, "Configuration", Close, BackId, "Line");
+        header.GetComponent<SampleUiBackTarget>().Back.interactable = CanLeave;
+        SampleUiDebugEntryHost.Attach(header);
+        // Actions stay outside the scroll; the result sizes itself for wrapped text.
+        var dockHeight = OctopusSampleBranding.Dp(72f + (string.IsNullOrEmpty(Result) ? 0f : 72f) * OctopusSampleTextScale.Current);
+        var insets = SampleUi.OverlayPadding();
+        _contentBottomInset = insets.bottom;
+        insets.bottom += Mathf.CeilToInt(dockHeight);
+        var content = SampleUi.VerticalScroll(page, insets);
+        _scroll = content.parent.GetComponent<ScrollRect>();
+
+        var server = Section(content, 0, ServerId, "Server environment", null);
+        if (server != null)
+        {
+            Text(server, "Keep the demo server unless a ticket says otherwise. Prod and custom hosts are for internal testing — never publish test content on a client community.");
+            var choices = Group(server, "config-serverEnv-select");
+            Choice(choices, "config-server-demo", !Draft.CustomServer, "Demo server (default)", () => { Draft.CustomServer = false; Redraw(); });
+            Choice(choices, "config-server-custom", Draft.CustomServer, "Custom host", () => { Draft.CustomServer = true; Redraw(); });
+            if (Draft.CustomServer)
+                Field(server, "config-customHost-input", "Host", Draft.CustomHost, value => Draft.CustomHost = value);
+        }
+
+        var community = Section(content, 1, CommunityId, "Community", Draft.CommunityLabel);
+        if (community != null)
+        {
+            Text(community, "Pick the community to open. The preselected one fits most tests.");
+            var choices = Group(community, "config-apiKeySource-select");
+            for (var i = 1; i <= 5; i++)
+            {
+                var selection = i;
+                var id = i == 1 ? DefaultId : i == 2 ? ForcedLoginId : "config-community-" + i;
+                var probe = Draft.Copy(); probe.Community = i;
+                bool available = i == 5 || !string.IsNullOrWhiteSpace(OctopusScenarioSdk.ConfigurationKey(probe));
+                Choice(choices, id, Selection == i, OctopusSampleConfigurationDraft.CommunityLabels[i - 1] +
+                    (available ? "" : " · Demo key not configured"), () => SelectProfile(selection));
+                choices.Find(id).GetComponent<Button>().interactable = !IsApplying && available;
+            }
+            if (Selection == 5)
+            {
+                // Never construct a label with the raw key, including during its first frame.
+                var input = SampleUi.LabeledField("config-customApiKey-input", community, "API Key", "");
+                input.contentType = TMP_InputField.ContentType.Password;
+                input.SetTextWithoutNotify(Draft.CustomApiKey);
+                input.ForceLabelUpdate();
+                input.interactable = !IsApplying;
+                input.onValueChanged.AddListener(value => Draft.CustomApiKey = value);
+            }
+            Text(community, "Resolved key: " + OctopusSampleConfigurationDraft.MaskApiKey(OctopusScenarioSdk.ConfigurationKey(Draft)));
+        }
+
+        var auth = Section(content, 2, AuthId, "Connect your users (SSO)", null);
+        if (auth != null)
+        {
+            var users = Group(auth, "config-sso-user-select");
+            foreach (var id in OctopusSampleConfigurationDraft.DemoUsers) UserChoice(users, id);
+            if (!string.IsNullOrEmpty(Draft.UserId) && Array.IndexOf(OctopusSampleConfigurationDraft.DemoUsers, Draft.UserId) < 0)
+                UserChoice(users, Draft.UserId);
+            Text(auth, "These settings pick the matching demo community above.");
+            Text(auth, "Force login — " + (Draft.ForceLogin ? "on" : "off") + " · set in Scenarios");
+            Text(auth, OctopusSampleFeatureToggles.ForceLoginEffect(Draft.ForceLogin));
+            SampleUi.Button(AccountLinkId, auth, "Open Account", SampleUiButtonVariant.Tertiary, OpenAccount).GetComponent<Button>().interactable = CanLeave;
+        }
+
+        var theme = Section(content, 3, ThemeId, "Theme", null);
+        if (theme != null)
+        {
+            var appearances = Group(theme, "config-appearance-select");
+            for (var i = 0; i <= 2; i++)
+            {
+                var appearance = i;
+                Choice(appearances, "config-appearance-" + i, (Draft.Appearance ?? OctopusSampleNativeTheme.SchemeTypeFor(OctopusSampleBranding.Theme)) == i,
+                    i == 0 ? "System" : i == 1 ? "Light" : "Dark", () => { Draft.Appearance = appearance; Redraw(); });
+            }
+            var presets = Group(theme, "config-theme-preset-select");
+            Choice(presets, "config-theme-navy", Draft.NavyTheme, "Octopus navy", () => { Draft.NavyTheme = true; Redraw(); });
+            Choice(presets, "config-theme-default", !Draft.NavyTheme, "SDK default", () => { Draft.NavyTheme = false; Redraw(); });
+            Text(theme, "\"SDK default\" hands the SDK no theme — what a fresh integration looks like.");
+            if (Draft.Appearance == 0) Text(theme, "System follows the device appearance in the sample and native community.");
+        }
+
+        SampleUi.ListRow(IntegrationId, content, "Host app integration",
+            "Profile, sign-in, links: now in Settings › Developer tools", OpenHostIntegration);
+
+        var dock = SampleUi.Panel("config-actions", page, SampleUi.RowBackground);
+        _dock = dock;
+        SampleUi.Stretch(dock, Vector2.zero, new Vector2(1f, 0f));
+        dock.pivot = new Vector2(0.5f, 0f);
+        dock.sizeDelta = new Vector2(0f, dockHeight);
+        SampleUi.VerticalStack(dock, OctopusSampleBranding.Dp(4f), SampleUi.Padding(16f, 8f), true);
         if (!string.IsNullOrEmpty(Result))
-            SampleUi.FlexibleLabel(content, Result, SampleUi.TextBody, SampleUi.Attention).gameObject.name = ResultId;
-        var button = SampleUi.Button(StartId, content, IsApplying ? "Applying…" : OctopusSampleState.IsInitialized ? "Apply" : "Start SDK",
-            SampleUiButtonVariant.Primary, Apply);
-        button.GetComponent<Button>().interactable = !IsApplying;
+        {
+            var result = SampleUi.FlexibleLabel(dock, Result, SampleUi.TextBody, SampleUi.Attention);
+            result.gameObject.name = ResultId;
+            result.richText = false;
+        }
+        var actions = SampleUi.Panel("Actions", dock, OctopusSampleBranding.Clear);
+        var layout = actions.gameObject.AddComponent<HorizontalLayoutGroup>();
+        layout.childControlWidth = layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+        layout.spacing = OctopusSampleBranding.Dp(8f);
+        SampleUi.Button(CancelId, actions, "Cancel", SampleUiButtonVariant.Tertiary, Close).GetComponent<Button>().interactable = CanLeave;
+        SampleUi.Button(StartId, actions, IsApplying ? "Applying…" : "Apply", SampleUiButtonVariant.Primary, Apply).GetComponent<Button>().interactable = !IsApplying;
     }
 
-    private void Choice(RectTransform card, string id, int selection, string title, string description)
+    public void OpenHostIntegration()
     {
-        var button = SampleUi.Button(id, card, (Selection == selection ? "Selected · " : "") + title,
-            Selection == selection ? SampleUiButtonVariant.Secondary : SampleUiButtonVariant.Tertiary,
-            () => SelectProfile(selection));
-        button.GetComponent<Button>().interactable = !IsApplying;
-        SampleUi.FlexibleLabel(card, description, SampleUi.TextCaption, SampleUi.Muted);
+        if (IsApplying) return;
+        // Keep the unsaved draft and its scroll position underneath the child route.
+        OctopusSampleHostIntegrationView.Open();
+    }
+
+    private RectTransform Section(RectTransform content, int index, string id, string title, string summary)
+    {
+        var card = SampleUi.Card(id + "-card", content);
+        SampleUi.Button(id, card, title + (_expanded[index] ? "  −" : "  +"), SampleUiButtonVariant.Tertiary,
+            () => ToggleSection(index)).GetComponent<Button>().interactable = !IsApplying;
+        if (!string.IsNullOrEmpty(summary)) Text(card, summary);
+        return _expanded[index] ? card : null;
+    }
+
+    private static RectTransform Group(Transform parent, string id)
+    {
+        var group = SampleUi.Panel(id, parent, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(group, OctopusSampleBranding.Dp(4f), new RectOffset(), false);
+        return group;
+    }
+
+    private void UserChoice(Transform parent, string id)
+    {
+        Choice(parent, "config-sso-user-" + id, Draft.UserId == id, id, () => { Draft.UserId = id; Draft.UserSelected = true; Redraw(); });
+    }
+
+    private void Choice(Transform parent, string id, bool selected, string title, UnityEngine.Events.UnityAction action)
+    {
+        SampleUi.Button(id, parent, (selected ? "Selected · " : "") + title,
+            selected ? SampleUiButtonVariant.Secondary : SampleUiButtonVariant.Tertiary, action).GetComponent<Button>().interactable = !IsApplying;
+    }
+
+    private void Field(Transform parent, string id, string title, string value, Action<string> changed)
+    {
+        var field = SampleUi.LabeledField(id, parent, title, value);
+        field.interactable = !IsApplying;
+        field.onValueChanged.AddListener(text => changed(text));
+    }
+
+    private static void Text(Transform parent, string text)
+    {
+        SampleUi.FlexibleLabel(parent, text, SampleUi.TextCaption, SampleUi.Muted).richText = false;
     }
 }

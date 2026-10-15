@@ -70,10 +70,10 @@ public class OctopusDebugTests
         Assert.AreEqual("null", OctopusDebugParsing.ProfileLockToJson(null));
         Assert.AreEqual("null", OctopusDebugParsing.ContentOptionsToJson(null));
         var defaults = OctopusJson.ParseRawObject(OctopusDebugParsing.ContentOptionsToJson(new OctopusContentOptions()));
-        Assert.AreEqual(4, defaults.Count);
+        Assert.AreEqual(5, defaults.Count);
         foreach (var value in defaults.Values) Assert.AreEqual("true", value);
         var disabled = OctopusJson.ParseRawObject(OctopusDebugParsing.ContentOptionsToJson(new OctopusContentOptions(
-            new OctopusPostOptions(false, false), new OctopusCommentOptions(false), new OctopusReplyOptions(false))));
+            new OctopusPostOptions(false, false, false), new OctopusCommentOptions(false), new OctopusReplyOptions(false))));
         foreach (var value in disabled.Values) Assert.AreEqual("false", value);
         var mixed = OctopusJson.ParseRawObject(OctopusDebugParsing.ContentOptionsToJson(new OctopusContentOptions(
             new OctopusPostOptions(false, true), new OctopusCommentOptions(true), new OctopusReplyOptions(false))));
@@ -81,6 +81,144 @@ public class OctopusDebugTests
         Assert.AreEqual("true", mixed["postEnablePolls"]);
         Assert.AreEqual("true", mixed["commentEnablePictures"]);
         Assert.AreEqual("false", mixed["replyEnablePictures"]);
+    }
+
+    [Test]
+    public void TextRequirement_PreservesOldConstructorAndMockClear()
+    {
+        Assert.IsTrue(new OctopusPostOptions().TextRequired);
+        Assert.IsTrue(new OctopusPostOptions(false, false).TextRequired);
+        var options = new OctopusContentOptions(new OctopusPostOptions(true, true, false));
+        Assert.IsFalse(options.Post.TextRequired);
+        var row = OctopusJson.ParseRawObject(OctopusDebugParsing.ContentOptionsToJson(options));
+        Assert.AreEqual("false", row["postTextRequired"]);
+        OctopusSDK.DebugOverrideContentOptions(options);
+        Assert.AreSame(options, OctopusSDK.Mock.DebugOverrides.ContentOptions);
+        Assert.IsFalse(OctopusSDK.Mock.DebugOverrides.ContentOptions.Post.TextRequired);
+        OctopusSDK.DebugOverrideContentOptions(null);
+        Assert.IsNull(OctopusSDK.Mock.DebugOverrides.ContentOptions);
+    }
+
+    [Test]
+    public void NicknameOverride_DistinguishesTrueFalseAndBackendAndReset()
+    {
+        Assert.AreEqual("true", OctopusDebugParsing.NullableBoolToWire(true));
+        Assert.AreEqual("false", OctopusDebugParsing.NullableBoolToWire(false));
+        Assert.AreEqual("null", OctopusDebugParsing.NullableBoolToWire(null));
+        foreach (bool? enabled in new bool?[] { true, false, null })
+        {
+            OctopusSDK.DebugOverrideForceNicknameChoice(enabled);
+            Assert.AreEqual(enabled, OctopusSDK.Mock.DebugOverrides.ForceNicknameChoice);
+        }
+        OctopusSDK.Mock.Enabled = false;
+        OctopusSDK.DebugOverrideForceNicknameChoice(false);
+        Assert.AreEqual(false, OctopusSDK.Mock.DebugOverrides.ForceNicknameChoice);
+        OctopusSDK.Mock.Reset();
+        Assert.IsNull(OctopusSDK.Mock.DebugOverrides.ForceNicknameChoice);
+    }
+
+    [Test]
+    public void NicknameSnapshot_AbsentIsFalseAndMalformedIsRejected()
+    {
+        Assert.IsFalse(OctopusDebugParsing.ConfigFromJson(CONFIG).ForceNicknameChoice);
+        foreach (bool enabled in new[] { true, false })
+        {
+            var json = CONFIG.TrimEnd('}') + ",\"forceNicknameChoice\":" + (enabled ? "true" : "false") + "}";
+            Assert.AreEqual(enabled, OctopusDebugParsing.ConfigFromJson(json).ForceNicknameChoice);
+        }
+        Assert.Throws<FormatException>(() => OctopusDebugParsing.ConfigFromJson(
+            CONFIG.TrimEnd('}') + ",\"forceNicknameChoice\":null}"));
+    }
+
+    [Test]
+    public void ConsentFactoriesAreImmutableAndEnumOrdinalsAreStable()
+    {
+        Assert.AreEqual(0, (int)OctopusConsentTextsMode.Implicit);
+        Assert.AreEqual(1, (int)OctopusConsentTextsMode.MultiCheckbox);
+        Assert.AreEqual(2, (int)OctopusConsentTextsMode.SingleCheckbox);
+        Assert.AreEqual(3, Enum.GetValues(typeof(OctopusConsentTextsMode)).Length);
+        Assert.AreEqual(OctopusConsentTextsMode.Implicit, OctopusConsentTexts.Implicit().Mode);
+        Assert.AreEqual(OctopusConsentTextsMode.MultiCheckbox, OctopusConsentTexts.MultiCheckbox().Mode);
+        Assert.AreEqual(OctopusConsentTextsMode.SingleCheckbox, OctopusConsentTexts.SingleCheckbox().Mode);
+        foreach (var property in typeof(OctopusConsentTexts).GetProperties())
+            Assert.IsNull(property.GetSetMethod(), property.Name + " must not have a public setter");
+        Assert.IsEmpty(typeof(OctopusConsentTexts).GetConstructors());
+    }
+
+    [Test]
+    public void ConsentJsonRoundTripsAllVariantsNullBlankUnicodeAndControlCharacters()
+    {
+        string wording = "A \"quote\" and \\ slash\nDeuxième ligne ☃ 😀\r\t\b\f\u0001 [link](https://example.com)";
+        var variants = new[]
+        {
+            OctopusConsentTexts.Implicit(wording),
+            OctopusConsentTexts.MultiCheckbox(null, "", "   "),
+            OctopusConsentTexts.SingleCheckbox(wording, "null")
+        };
+        foreach (var value in variants)
+        {
+            string json = OctopusDebugParsing.ConsentTextsToJson(value);
+            var copy = OctopusDebugParsing.ConsentTextsFromJson(json);
+            Assert.AreEqual(value.Mode, copy.Mode);
+            var fields = OctopusJson.ParseRawObject(json);
+            Assert.AreEqual(value.Mode == OctopusConsentTextsMode.Implicit ? "\"implicit\"" :
+                value.Mode == OctopusConsentTextsMode.MultiCheckbox ? "\"multiCheckbox\"" : "\"singleCheckbox\"", fields["mode"]);
+            Assert.AreEqual(value.Notice, copy.Notice);
+            Assert.AreEqual(value.TermsLabel, copy.TermsLabel);
+            Assert.AreEqual(value.PrivacyLabel, copy.PrivacyLabel);
+            Assert.AreEqual(value.RulesLabel, copy.RulesLabel);
+            Assert.AreEqual(value.Label, copy.Label);
+            Assert.AreEqual(value.BelowText, copy.BelowText);
+            Assert.AreEqual(value.Mode == OctopusConsentTextsMode.Implicit ? 2 :
+                value.Mode == OctopusConsentTextsMode.MultiCheckbox ? 4 : 3, OctopusJson.ParseRawObject(json).Count);
+            foreach (char c in json) Assert.GreaterOrEqual((int)c, 0x20, "JSON must escape control characters");
+            var snapshot = OctopusDebugParsing.ConfigFromJson(CONFIG.TrimEnd('}') + ",\"consentTexts\":" + json + "}");
+            Assert.AreEqual(copy.Mode, snapshot.ConsentTexts.Mode);
+        }
+        var nullableFields = OctopusJson.ParseRawObject(OctopusDebugParsing.ConsentTextsToJson(variants[1]));
+        Assert.AreEqual("null", nullableFields["termsLabel"]);
+        Assert.AreEqual("\"\"", nullableFields["privacyLabel"]);
+        Assert.AreEqual("\"   \"", nullableFields["rulesLabel"]);
+        Assert.IsNull(OctopusDebugParsing.ConsentTextsFromJson(" null "));
+        Assert.AreEqual("null", OctopusDebugParsing.ConsentTextsToJson(null));
+        Assert.IsNull(OctopusDebugParsing.ConfigFromJson(CONFIG).ConsentTexts);
+        Assert.IsNull(OctopusDebugParsing.ConfigFromJson(CONFIG.TrimEnd('}') + ",\"consentTexts\":null}").ConsentTexts);
+        Assert.IsNull(OctopusDebugParsing.ConsentTextsFromJson("{\"mode\":\"implicit\"}").Notice);
+        Assert.AreEqual("", OctopusDebugParsing.ConsentTextsFromJson("{\"mode\":\"implicit\",\"notice\":\"\"}").Notice);
+    }
+
+    [TestCase("{}")]
+    [TestCase("[]")]
+    [TestCase("")]
+    [TestCase("{\"mode\":\"future\"}")]
+    [TestCase("{\"mode\":\"implicit\",\"notice\":false}")]
+    public void InvalidConsentPayloadsAreRejected(string json)
+    {
+        Assert.Throws<FormatException>(() => OctopusDebugParsing.ConsentTextsFromJson(json));
+    }
+
+    [Test]
+    public void ConsentMockKeepsModeIndependentAndClearsBothOverridesAndReset()
+    {
+        var texts = OctopusConsentTexts.Implicit("**notice**");
+        OctopusSDK.DebugOverrideTermsAcceptanceMode(OctopusTermsAcceptanceMode.ExplicitMultiCheckbox);
+        OctopusSDK.DebugOverrideConsentTexts(texts);
+        Assert.AreSame(texts, OctopusSDK.Mock.DebugOverrides.ConsentTexts);
+        Assert.AreEqual(OctopusTermsAcceptanceMode.ExplicitMultiCheckbox, OctopusSDK.Mock.DebugOverrides.TermsAcceptanceMode);
+        OctopusSDK.DebugOverrideConsentTexts(null);
+        Assert.IsNull(OctopusSDK.Mock.DebugOverrides.ConsentTexts);
+        Assert.AreEqual(OctopusTermsAcceptanceMode.ExplicitMultiCheckbox, OctopusSDK.Mock.DebugOverrides.TermsAcceptanceMode);
+        OctopusSDK.DebugOverrideConsentTexts(OctopusConsentTexts.SingleCheckbox("", "   "));
+        OctopusSDK.DebugOverrideTermsAcceptanceMode(null);
+        Assert.IsNotNull(OctopusSDK.Mock.DebugOverrides.ConsentTexts);
+        OctopusSDK.DebugOverrideConsentTexts(null);
+        Assert.IsNull(OctopusSDK.Mock.DebugOverrides.TermsAcceptanceMode);
+        Assert.IsNull(OctopusSDK.Mock.DebugOverrides.ConsentTexts);
+        OctopusSDK.Mock.Enabled = false;
+        OctopusSDK.DebugOverrideConsentTexts(texts);
+        Assert.AreSame(texts, OctopusSDK.Mock.DebugOverrides.ConsentTexts);
+        OctopusSDK.Mock.Reset();
+        Assert.IsNull(OctopusSDK.Mock.DebugOverrides.ConsentTexts);
     }
 
     [Test]

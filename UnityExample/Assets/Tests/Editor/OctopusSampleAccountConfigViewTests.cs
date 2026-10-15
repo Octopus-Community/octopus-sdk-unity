@@ -22,7 +22,9 @@ public class OctopusSampleAccountConfigViewTests
         _sdk = new OctopusRecordingScenarioSdk
         {
             Profile = new OctopusExampleConfig.ExampleProfile
-                { apiKey = "test-key", authToken = "not-a-real-token", userId = "test-user" }
+                { apiKey = "test-key", authToken = "not-a-real-token", userId = "test-user" },
+            AlternateProfile = new OctopusExampleConfig.ExampleProfile
+                { apiKey = "test-forced-key", authToken = "not-a-real-token", userId = "test-user" }
         };
         OctopusSampleLog.Current = OctopusSampleLog.None;
         OctopusSampleFeatureToggles.Reset();
@@ -47,21 +49,17 @@ public class OctopusSampleAccountConfigViewTests
     }
 
     [Test]
-    public void ConfigSelectionDoesNotPersistUntilStartAndCannotBeDismissedOnFirstLaunch()
+    public void ConfigDraftCanBeCancelledOnAKeylessFirstLaunch()
     {
         var view = OctopusSampleConfigView.Open();
-        Click(view, OctopusSampleConfigView.ForcedLoginId);
+        view.SelectProfile(2);
         Assert.AreEqual(2, view.Selection);
         Assert.IsFalse(PlayerPrefs.HasKey(_key));
         Assert.IsEmpty(_sdk.Methods);
-        Assert.IsNull(Find(view.transform, OctopusSampleConfigView.BackId));
-        Assert.IsNull(Find(view.transform, OctopusSampleConfigView.AccountLinkId),
-            "First launch offers a way out of Configuration before the SDK is configured.");
-        view.Close();
-        Assert.IsTrue(view != null);
-        Click(view, OctopusSampleConfigView.StartId);
-        Assert.AreEqual(2, OctopusScenarioSdk.SavedConfiguration);
+        Assert.IsNotNull(Find(view.transform, OctopusSampleConfigView.BackId));
+        Click(view, OctopusSampleConfigView.CancelId);
         Assert.IsTrue(view == null);
+        Assert.IsEmpty(_sdk.Methods);
     }
 
     [Test]
@@ -77,6 +75,7 @@ public class OctopusSampleAccountConfigViewTests
         var view = OctopusSampleConfigView.Open();
         Assert.AreEqual(2, view.Selection,
             "After a reset the screen highlighted Default over a forced-login session (#349).");
+        view.ToggleSection(1);
         StringAssert.StartsWith("Selected · ", Label(view, OctopusSampleConfigView.ForcedLoginId));
         _sdk.Clear();
         Click(view, OctopusSampleConfigView.StartId);
@@ -136,7 +135,7 @@ public class OctopusSampleAccountConfigViewTests
     }
 
     [Test]
-    public void ApplyingConfigurationOpenedFromAccountReturnsToAccount()
+    public void ApplyingConfigurationOpenedFromAccountStaysOnConfiguration()
     {
         Apply();
         var account = OctopusSampleAccountView.Open();
@@ -146,7 +145,10 @@ public class OctopusSampleAccountConfigViewTests
 
         Click(config, OctopusSampleConfigView.StartId);
 
-        Assert.IsTrue(config == null);
+        Assert.IsTrue(config != null);
+        StringAssert.Contains("unchanged", config.Result);
+        Assert.IsNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleAccountView>());
+        config.Close();
         Assert.IsNotNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleAccountView>());
     }
 
@@ -165,6 +167,7 @@ public class OctopusSampleAccountConfigViewTests
     {
         Apply();
         var config = OctopusSampleConfigView.Open();
+        config.ToggleSection(2);
         Click(config, OctopusSampleConfigView.AccountLinkId);
         Assert.IsTrue(config == null);
         Assert.IsNotNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleAccountView>());
@@ -184,10 +187,10 @@ public class OctopusSampleAccountConfigViewTests
         var config = UnityEngine.Object.FindAnyObjectByType<OctopusSampleConfigView>();
         Assert.IsNotNull(config);
 
-        shell.Select(OctopusSampleTab.Home);
+        shell.Select(OctopusSampleTab.Scenarios);
 
-        Assert.AreEqual(OctopusSampleTab.Home, shell.Selected);
-        Assert.IsTrue(config == null, "Configuration stayed open over the tab just picked.");
+        Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
+        Assert.IsTrue(config != null && !config.gameObject.activeSelf, "Configuration must be retained while its tab is hidden.");
         Assert.IsNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleAccountView>(),
             "Closing Configuration for a tab switch reopened Account over the tab.");
         Assert.IsEmpty(Changes());
@@ -224,30 +227,35 @@ public class OctopusSampleAccountConfigViewTests
     }
 
     [Test]
-    public void SettingsResetsAreSeparateAndConfigurationResetRequiresConfirmation()
+    public void SettingsResetRequiresConfirmationAndStopsBeforeReturningToConfiguration()
     {
         Apply();
-        var shell = OctopusSampleShell.Create();
-        shell.Select(OctopusSampleTab.Settings);
-        var resetCard = Find(shell.transform, OctopusSampleSettingsView.ResetCardId);
-        Assert.IsNotNull(resetCard);
-        Assert.IsNotNull(Find(resetCard, OctopusSampleSettingsView.ResetStateSectionId),
-            "The sample-state reset left the single Reset card.");
-        Assert.IsNotNull(Find(resetCard, OctopusSampleSettingsView.ResetConfigCardId),
-            "The configuration reset left the single Reset card.");
-        Click(shell, OctopusSampleSettingsView.ResetConfigButtonId);
-        Click(shell, OctopusSampleSettingsView.ResetConfigCancelId);
+        var shell = OctopusSampleShell.Create(); shell.Select(OctopusSampleTab.Settings);
+        var settings = shell.GetComponentInChildren<OctopusSampleSettingsView>();
+        settings.RequestReset(); settings.CancelReset();
         Assert.AreEqual(1, OctopusScenarioSdk.SavedConfiguration);
-        OctopusSampleState.ReportUnseenNotifications(12);
-        Click(shell, OctopusSampleSettingsView.ResetButtonId);
-        Click(shell, OctopusSampleSettingsView.ResetConfirmId);
-        Assert.AreEqual(-1, OctopusSampleState.UnseenNotifications);
-        Assert.AreEqual(1, OctopusScenarioSdk.SavedConfiguration);
-        OctopusSampleState.ReportUnseenNotifications(12);
-        Click(shell, OctopusSampleSettingsView.ResetConfigButtonId);
-        Click(shell, OctopusSampleSettingsView.ResetConfigConfirmId);
-        Assert.AreEqual(12, OctopusSampleState.UnseenNotifications);
+        settings.RequestReset(); settings.ConfirmReset();
         Assert.AreEqual(0, OctopusScenarioSdk.SavedConfiguration);
+        Assert.IsFalse(OctopusSampleState.IsInitialized);
+        Assert.IsNotNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleConfigView>());
+    }
+    [Test]
+    public void CompletedResetOpensConfigurationAfterItsSettingsViewWasDestroyed()
+    {
+        Apply();
+        var shell = OctopusSampleShell.Create(); shell.Select(OctopusSampleTab.Settings);
+        var settings = shell.GetComponentInChildren<OctopusSampleSettingsView>();
+        _sdk.DeferCompletions = true;
+        settings.RequestReset(); settings.ConfirmReset();
+        Assert.IsNotNull(_sdk.PendingCompleted);
+        Assert.IsTrue(OctopusSampleState.IsInitialized);
+        shell.Select(OctopusSampleTab.Scenarios);
+        // Destroy the callback owner without corrupting the shell's cached content container.
+        if (settings != null) UnityEngine.Object.DestroyImmediate(settings);
+        Assert.IsTrue(settings == null);
+        _sdk.PendingCompleted();
+        Assert.AreEqual(0, OctopusScenarioSdk.SavedConfiguration);
+        Assert.IsFalse(OctopusSampleState.IsInitialized);
         Assert.IsNotNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleConfigView>());
     }
 
@@ -290,6 +298,10 @@ public class OctopusSampleAccountConfigViewTests
         Apply();
         _sdk.Clear();
         _sdk.Profile.authToken = null;
+        // Credentials edited in the build profile cannot mutate a running snapshot.
+        OctopusScenarioSdk.Use(_sdk, _key);
+        Apply();
+        _sdk.Clear();
         account.Login();
         Assert.IsEmpty(_sdk.Methods);
         StringAssert.Contains("no SSO credentials", account.Result);

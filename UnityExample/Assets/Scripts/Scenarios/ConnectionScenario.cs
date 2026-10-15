@@ -116,8 +116,7 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
 
         if (!OctopusScenarioSdk.IsInPilotMode)
         {
-            // Never reach the native SDK here: on iOS, ConnectUser on an Octopus-auth
-            // initialisation is a preconditionFailure, not a reportable error.
+            // Validate the host configuration before calling ConnectUser.
             Report("ConnectUser NOT called: the SDK is initialised with " + mode +
                    ". Apply a profile in Configuration to switch to SSO — no restart needed.");
             return;

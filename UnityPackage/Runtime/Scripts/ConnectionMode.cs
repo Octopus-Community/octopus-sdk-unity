@@ -14,9 +14,7 @@ public sealed class ConnectionMode
         AppManagedFields = fields;
     }
 
-    public static ConnectionMode OctopusAuth()
-        => new ConnectionMode("octopus", Array.Empty<ProfileField>());
-
+    /// <summary>Uses your app's sign-in flow, with the profile fields your app manages.</summary>
     public static ConnectionMode SSO(params ProfileField[] fields)
         => new ConnectionMode("sso", fields ?? Array.Empty<ProfileField>());
 

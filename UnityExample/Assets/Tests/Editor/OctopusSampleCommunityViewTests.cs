@@ -43,6 +43,25 @@ public class OctopusSampleCommunityViewTests
     }
 
     [Test]
+    public void DockHugsOpenCommunityWithTokenGutters()
+    {
+        var view = View();
+        var open = (RectTransform)Find(view.transform, OctopusSampleCommunityView.OpenId);
+        var dock = (RectTransform)open.parent;
+        LayoutRebuilder.ForceRebuildLayoutImmediate(dock);
+        var gutter = Mathf.RoundToInt(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceMd));
+        var side = Mathf.RoundToInt(OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg));
+        var stack = dock.GetComponent<VerticalLayoutGroup>();
+        Assert.AreEqual(gutter, stack.padding.top);
+        Assert.AreEqual(gutter, stack.padding.bottom);
+        Assert.AreEqual(side, stack.padding.left);
+        Assert.AreEqual(TextAnchor.MiddleCenter, stack.childAlignment);
+        Assert.AreEqual(OctopusSampleBranding.MinTouchUnits, open.rect.height);
+        // No slack above or below the button: the dock is the button plus its two gutters.
+        Assert.AreEqual(OctopusSampleBranding.MinTouchUnits + 2 * gutter, dock.rect.height);
+    }
+
+    [Test]
     public void ReadOnlyBandUsesNeutralSurfaceAndUnbuiltDisclosuresAreSafe()
     {
         var view = View();
@@ -403,17 +422,19 @@ public class OctopusSampleCommunityViewTests
         Assert.Greater(whileOnScreen, 0,
             "The view never heard the state event at all, so this test proves nothing.");
 
-        // Edit mode delivers neither OnDisable nor OnDestroy to a plain MonoBehaviour, so the view
-        // is still subscribed the moment it is destroyed; the guarantee is that it drops itself on
-        // the first event that reaches it afterwards, which is the path a scene unload takes too.
-        shell.Select(OctopusSampleTab.Home);
+        // The shell explicitly suspends retained tabs, including in EditMode where Unity does not
+        // send OnDisable. Neither hidden event may reach the retained view.
+        shell.Select(OctopusSampleTab.Scenarios);
         OctopusSampleState.ReportUnseenNotifications(9);
         var afterUnhooking = view.StateEventCount;
 
         OctopusSampleState.ReportUnseenNotifications(10);
 
+        Assert.AreEqual(whileOnScreen, afterUnhooking);
         Assert.AreEqual(afterUnhooking, view.StateEventCount,
-            "The destroyed Community view is still on OctopusSampleState.Changed.");
+            "The hidden Community view is still on OctopusSampleState.Changed.");
+        shell.Select(OctopusSampleTab.Community);
+        Assert.That(view.StateSummary, Does.EndWith(" | 10"));
     }
 
     [TestCase(OctopusSampleTheme.Light)]
@@ -489,6 +510,8 @@ public class OctopusSampleCommunityViewTests
         public ThrowingOpenSdk(OctopusRecordingScenarioSdk recording) { _recording = recording; }
         public OctopusExampleConfig.ExampleProfile Profile { get { return _recording.Profile; } }
         public OctopusExampleConfig.ExampleProfile AlternateProfile { get { return _recording.AlternateProfile; } }
+        public OctopusExampleConfig.ExampleProfile ConfigurationProfile(int selection) { return _recording.ConfigurationProfile(selection); }
+        public string DemoServerHost { get { return _recording.DemoServerHost; } }
         public bool HasAccessToCommunity { get { return _recording.HasAccessToCommunity; } }
         public event System.Action<OctopusEvent> OnOctopusEvent
         { add { _recording.OnOctopusEvent += value; } remove { _recording.OnOctopusEvent -= value; } }
@@ -511,6 +534,7 @@ public class OctopusSampleCommunityViewTests
         public void ApplyTheme(OctopusColorScheme light, OctopusColorScheme dark) { _recording.ApplyTheme(light, dark); }
         public void SetColorSchemeType(int type) { _recording.SetColorSchemeType(type); }
         public void SetLogo(OctopusLogo logo) { _recording.SetLogo(logo); }
+        public void SetIcons(OctopusIcons icons) { _recording.SetIcons(icons); }
         public void SetFonts(OctopusFonts fonts) { _recording.SetFonts(fonts); }
         public OctopusProfile CurrentProfile { get { return _recording.CurrentProfile; } }
         public event System.Action<OctopusProfile> ProfileChanged
@@ -524,6 +548,10 @@ public class OctopusSampleCommunityViewTests
         { _recording.DebugOverrideTermsAcceptanceMode(mode); }
         public void DebugGetCommunityConfig(System.Action<OctopusCommunityConfig> result, System.Action<string> error)
         { _recording.DebugGetCommunityConfig(result, error); }
+        public void DebugOverrideConsentTexts(OctopusConsentTexts texts)
+        { _recording.DebugOverrideConsentTexts(texts); }
+        public void DebugOverrideForceNicknameChoice(bool? enabled)
+        { _recording.DebugOverrideForceNicknameChoice(enabled); }
         public void DebugOverrideExposeClientUserId(bool? enabled)
         { _recording.DebugOverrideExposeClientUserId(enabled); }
         public void SetNavigateToProfileHandler(System.Action<string> handler)
@@ -545,6 +573,7 @@ public class OctopusSampleCommunityViewTests
         public void OpenGroup(string id) { Open(); }
         public void OpenPost(string id) { Open(); }
         public void OpenProfile(string id) { Open(); }
+        public void OpenActivity(OctopusCommunityMemberId memberId) { Open(); }
         public void OpenCreatePost(OctopusPrefilledPost post) { Open(); }
         public System.Threading.Tasks.Task ConnectUser(string id, string nickname, string bio, string picture,
             System.Func<System.Threading.Tasks.Task<string>> token) { throw new System.NotSupportedException(); }

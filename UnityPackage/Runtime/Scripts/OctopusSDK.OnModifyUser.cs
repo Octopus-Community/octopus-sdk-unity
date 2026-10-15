@@ -9,7 +9,7 @@ public partial class OctopusSDK
     private static Action<ProfileField?> _onModifyUser;
 
     /// <summary>Raised on the Unity main thread when the user asks to edit a profile field the
-    /// host owns. Two triggers: app-managed fields in SSO mode, and — when Unified Profile is
+    /// host owns. Two triggers: app-managed fields, and — when Unified Profile is
     /// active — the "Edit my profile" item of another member's Activity screen, which passes
     /// null (no specific field). Octopus is dismissed before delivery in both cases.
     /// On iOS that menu item is offered only while this event has a subscriber; on Android the

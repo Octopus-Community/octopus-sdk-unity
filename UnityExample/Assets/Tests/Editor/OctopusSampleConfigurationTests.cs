@@ -36,14 +36,15 @@ public class OctopusSampleConfigurationTests
     }
 
     [Test]
-    public void FreshLaunchShowsConfigurationWithoutInitializing()
+    public void FreshLaunchStartsDemoAndKeepsScenariosVisible()
     {
         var shell = OctopusSampleShell.Create();
         shell.RestoreConfiguration();
-        Assert.IsTrue(OctopusScenarioSdk.NeedsConfiguration);
-        Assert.AreEqual(0, OctopusScenarioSdk.SavedConfiguration);
-        Assert.IsNotNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleConfigView>());
-        Assert.IsEmpty(_sdk.Methods);
+        Assert.IsFalse(OctopusScenarioSdk.NeedsConfiguration);
+        Assert.AreEqual(1, OctopusScenarioSdk.SavedConfiguration);
+        Assert.IsNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleConfigView>());
+        Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
+        CollectionAssert.Contains(_sdk.Methods, "Initialize");
     }
 
     [TestCase(1)]
@@ -69,13 +70,14 @@ public class OctopusSampleConfigurationTests
     }
 
     [TestCase(-1)]
-    [TestCase(3)]
-    public void InvalidStoredSelectionReturnsToConfiguration(int value)
+    [TestCase(99)]
+    public void InvalidStoredSelectionKeepsShellVisibleWithFailure(int value)
     {
         PlayerPrefs.SetInt(_key, value);
         OctopusSampleShell.Create().RestoreConfiguration();
         Assert.IsTrue(OctopusScenarioSdk.NeedsConfiguration);
-        Assert.IsNotNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleConfigView>());
+        Assert.IsNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleConfigView>());
+        Assert.IsNotNull(GameObject.Find("config-startup-state"));
         Assert.IsEmpty(_sdk.Methods);
     }
 
@@ -191,6 +193,8 @@ public class OctopusSampleConfigurationTests
     public void LifecycleSwitchLeavesConfigurationOnTheLiveProfile(int started)
     {
         Apply(started);
+        // The live adapter's AlternateProfile resolves Default while Forced login is active.
+        if (started == 2) _sdk.AlternateProfile = _sdk.Profile;
         var lifecycle = new LifecycleScenario();
         lifecycle.Presets[0].Fill(lifecycle.Fields);
         lifecycle.Execute(() => lifecycle.Presets[0].Run(lifecycle.Fields));

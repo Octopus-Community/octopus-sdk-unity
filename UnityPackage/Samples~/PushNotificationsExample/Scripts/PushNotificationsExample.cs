@@ -30,7 +30,8 @@ public class PushNotificationsExample : MonoBehaviour
 
     void Start()
     {
-        OctopusSDK.Initialize(API_KEY, ConnectionMode.OctopusAuth());
+        // Connect your host user with a backend token provider to receive their notifications.
+        OctopusSDK.Initialize(API_KEY, ConnectionMode.SSO());
         OctopusSDK.OnNotSeenNotificationsCount += OnNotSeenNotificationCount;
         RegisterForPushNotifications();
 #if UNITY_IOS && !UNITY_EDITOR

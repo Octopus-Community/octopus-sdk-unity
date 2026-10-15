@@ -8,7 +8,7 @@ using Object = UnityEngine.Object;
 /// <summary>
 /// The hardware back, driven through <see cref="OctopusSampleBackHandler.HandleBack"/> so no Input
 /// System device is needed: one level per press, topmost screen first, a confirmation cancelled
-/// before its screen is left, a root tab back to Home, and Home asking for the background.
+/// before its screen is left, a root tab back to Scenarios, and Scenarios asking for the background.
 /// </summary>
 public class OctopusSampleBackHandlerTests
 {
@@ -56,7 +56,7 @@ public class OctopusSampleBackHandlerTests
         Assert.AreEqual(OctopusSampleBackOutcome.Popped, _handler.HandleBack());
 
         Assert.IsTrue(about == null, "About stayed open.");
-        Assert.AreEqual(OctopusSampleTab.Home, _shell.Selected);
+        Assert.AreEqual(OctopusSampleTab.Scenarios, _shell.Selected);
         Assert.AreEqual(0, _backgroundRequests);
     }
 
@@ -112,30 +112,29 @@ public class OctopusSampleBackHandlerTests
         Assert.IsFalse(settings.IsConfirmingReset, "Back left the reset armed.");
         Assert.AreEqual(OctopusSampleTab.Settings, _shell.Selected);
 
-        Assert.AreEqual(OctopusSampleBackOutcome.Home, _handler.HandleBack());
-        Assert.AreEqual(OctopusSampleTab.Home, _shell.Selected);
+        Assert.AreEqual(OctopusSampleBackOutcome.Scenarios, _handler.HandleBack());
+        Assert.AreEqual(OctopusSampleTab.Scenarios, _shell.Selected);
     }
 
-    [TestCase(OctopusSampleTab.Scenarios)]
     [TestCase(OctopusSampleTab.Community)]
     [TestCase(OctopusSampleTab.Settings)]
-    public void ARootTabOtherThanHomeGoesHome(OctopusSampleTab tab)
+    public void ARootTabOtherThanScenariosGoesScenarios(OctopusSampleTab tab)
     {
         _shell.Select(tab);
 
-        Assert.AreEqual(OctopusSampleBackOutcome.Home, _handler.HandleBack());
+        Assert.AreEqual(OctopusSampleBackOutcome.Scenarios, _handler.HandleBack());
 
-        Assert.AreEqual(OctopusSampleTab.Home, _shell.Selected);
+        Assert.AreEqual(OctopusSampleTab.Scenarios, _shell.Selected);
         Assert.AreEqual(0, _backgroundRequests);
     }
 
     [Test]
-    public void HomeRootAsksForTheBackgroundAndLeavesTheShellAsItIs()
+    public void ScenariosRootAsksForTheBackgroundAndLeavesTheShellAsItIs()
     {
         Assert.AreEqual(OctopusSampleBackOutcome.Background, _handler.HandleBack());
 
         Assert.AreEqual(1, _backgroundRequests);
-        Assert.AreEqual(OctopusSampleTab.Home, _shell.Selected);
+        Assert.AreEqual(OctopusSampleTab.Scenarios, _shell.Selected);
         Assert.IsTrue(_shell != null);
     }
 

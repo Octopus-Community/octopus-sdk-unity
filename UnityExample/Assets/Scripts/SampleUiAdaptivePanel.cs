@@ -24,6 +24,9 @@ public class SampleUiAdaptivePanel : UIBehaviour, ILayoutElement, ILayoutSelfCon
     public float flexibleWidth { get { return -1f; } }
     public float minHeight { get { return -1f; } }
     public float flexibleHeight { get { return -1f; } }
+    // Unity 6.6 added these to ILayoutElement; -1 = no constraint, same as the members above.
+    public float maxWidth { get { return -1f; } }
+    public float maxHeight { get { return -1f; } }
     public int layoutPriority { get { return 1; } }
 
     public float preferredHeight

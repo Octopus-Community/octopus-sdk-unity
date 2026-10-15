@@ -11,9 +11,21 @@ public class MainMenu : MonoBehaviour
         OctopusSampleShell.InstallLegacyMenuEntry();
     }
 
-    public void OpenOctopusAuthExample()
+    // Generic legacy scenes browse as guests and use the sample's SSO scene for sign-in.
+    public static void RegisterSsoLoginRoute()
     {
-        SceneManager.LoadScene("OctopusAuthExample");
+        OctopusSDK.OnLoginRequired -= OpenSsoLogin;
+        OctopusSDK.OnLoginRequired += OpenSsoLogin;
+    }
+
+    public static void UnregisterSsoLoginRoute()
+    {
+        OctopusSDK.OnLoginRequired -= OpenSsoLogin;
+    }
+
+    private static void OpenSsoLogin()
+    {
+        SceneManager.LoadScene("SSOExample");
     }
 
     public void OpenSSOAuthExample()

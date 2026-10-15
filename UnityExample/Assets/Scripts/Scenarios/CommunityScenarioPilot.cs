@@ -75,9 +75,13 @@ public abstract class CommunityScenarioPilot : OctopusScenarioPilot, IDisposable
         return cancel;
     }
 
-    public void Dispose()
+    // Overrides rather than hides (CS0114): the base disposes itself through a pilot-typed
+    // reference when its last ResultChanged renderer leaves, and a hiding member made that call
+    // skip these cancellations.
+    public override void Dispose()
     {
         foreach (var cancel in _cancel) cancel();
         _cancel.Clear();
+        base.Dispose();
     }
 }

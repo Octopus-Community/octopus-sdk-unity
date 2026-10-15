@@ -1,5 +1,5 @@
 import Foundation
-@_spi(OctopusInternalTesting) import Octopus
+@_spi(OctopusWrapper) @_spi(OctopusInternalTesting) import Octopus
 import OctopusCore
 import OctopusUI
 import SwiftUI
@@ -12,8 +12,52 @@ private let PROFILE_FIELD_NICKNAME: Int32 = 0
 private let PROFILE_FIELD_BIO: Int32 = 1
 private let PROFILE_FIELD_PICTURE: Int32 = 2
 
+private func redactedNativeErrorMessage(_ firstSentence: String, _ failure: Error) -> String {
+    // Only fixed enum-case labels may cross the bridge. Never inspect associated values,
+    // descriptions, NSError userInfo, or custom type names.
+    let category: String?
+    switch failure {
+    case let error as OctopusConnectUserError:
+        switch error {
+        case .userBanned: category = "userBanned"
+        case .profileError: category = "profileError"
+        case .jwtError: category = "jwtError"
+        case .communityAccessDenied: category = "communityAccessDenied"
+        default: category = nil
+        }
+    case let error as OctopusSetReactionError:
+        switch error {
+        case .unknownReaction: category = "unknownReaction"
+        case .postNotFound: category = "postNotFound"
+        case .notConnected: category = "notConnected"
+        case .noNetwork: category = "noNetwork"
+        case .serverError: category = "serverError"
+        case .other: category = "other"
+        @unknown default: category = nil
+        }
+    case let error as OctopusRefreshEntitlementsError:
+        switch error {
+        case .noClientTokenProvider: category = "noClientTokenProvider"
+        case .userNotConnected: category = "userNotConnected"
+        case .noNetwork: category = "noNetwork"
+        case .userBanned: category = "userBanned"
+        case .serverError: category = "serverError"
+        }
+    case let error as ClientPostError:
+        switch error {
+        case .validation: category = "validation"
+        case .noNetwork: category = "noNetwork"
+        case .serverError: category = "serverError"
+        case .other: category = "other"
+        }
+    default: category = nil
+    }
+    return category.map { "\(firstSentence) Details: \($0)" } ?? firstSentence
+}
+
 private var octopus: OctopusSDK?
-private var lifecycleUsesSSO = false
+// Snapshot of the last successful initialization; community switches keep the host's audio policy.
+private var initializedAppManagedAudioSession = false
 private weak var presentedViewController: UIViewController?
 private var tokenCheckedContinuation: CheckedContinuation<String, Never>?
 private var lightColorScheme: OctopusTheme.Colors?
@@ -195,22 +239,42 @@ private var pendingNotificationUserInfo: [AnyHashable: Any]?
 public func OctopusSdkInitialize(
     apiKey: UnsafePointer<Int8>, connectionMode: UnsafePointer<Int8>,
     appManagedFields: UnsafePointer<Int32>, appManagedFieldsCount: Int32,
-    apiServerHost: UnsafePointer<Int8>, apiServerPort: Int32
+    apiServerHost: UnsafePointer<Int8>, apiServerPort: Int32,
+    initializationOptionsJson: UnsafePointer<Int8>, wrapperVersion: UnsafePointer<Int8>
 ) {
     let key = String(cString: apiKey)
-    let connMode = parseConnectionMode(connectionMode, appManagedFields, appManagedFieldsCount)
+    guard let connMode = parseConnectionMode(connectionMode, appManagedFields, appManagedFieldsCount) else {
+        print("[Octopus SDK] Initialization requires SSO connection mode.")
+        return
+    }
     let hostStr = String(cString: apiServerHost)
     do {
+        let optionsJson = String(cString: initializationOptionsJson)
+        let optionsData = Data(optionsJson.utf8)
+        // Invalid or empty options keep the native default instead of aborting initialization.
+        let options = (try? JSONSerialization.jsonObject(with: optionsData)) as? [String: Any]
+        let appManagedAudioSession = options?["appManagedAudioSession"] as? Bool ?? false
+        let invalidAudioSessionOption = options?["appManagedAudioSession"].map { value in
+            guard let number = value as? NSNumber else { return true }
+            // NSNumber also bridges JSON numbers to Bool; only JSON booleans are valid options.
+            return CFGetTypeID(number) != CFBooleanGetTypeID()
+        } ?? false
+        if !optionsJson.isEmpty && (options == nil || invalidAudioSessionOption) {
+            print("[Octopus SDK] Invalid initialization options; check the C#/Swift bridge.")
+        }
         // Custom server host (e.g. a staging endpoint) when provided; otherwise the SDK default (prod).
         let configuration: OctopusSDK.Configuration =
-            hostStr.isEmpty ? .init()
-                            : .init(apiServer: try .init(host: hostStr, port: Int(apiServerPort)))
+            hostStr.isEmpty ? .init(appManagedAudioSession: appManagedAudioSession)
+                            : .init(apiServer: try .init(host: hostStr, port: Int(apiServerPort)),
+                                    appManagedAudioSession: appManagedAudioSession)
         communityDataCancellable = nil
+        OctopusSDK.setSdkFamily(.unity, version: String(cString: wrapperVersion))
         octopus = try OctopusSDK(apiKey: key, connectionMode: connMode, configuration: configuration)
-        lifecycleUsesSSO = String(cString: connectionMode) == "sso"
+        initializedAppManagedAudioSession = appManagedAudioSession
         configureLifecycleBridge()
     } catch {
-        print("Octopus Init Error: \(error)")
+        // Do not echo exception text that may contain a supplied credential.
+        print("[Octopus SDK] Initialization failed.")
     }
 }
 
@@ -279,9 +343,8 @@ private func configureLifecycleBridge() {
 
 private func parseConnectionMode(
     _ connectionMode: UnsafePointer<Int8>, _ fieldsPtr: UnsafePointer<Int32>, _ fieldsCount: Int32
-) -> Octopus.ConnectionMode {
-    let deepLink: String? = nil
-    let mode = String(cString: connectionMode)
+) -> Octopus.ConnectionMode? {
+    guard String(cString: connectionMode) == "sso" else { return nil }
     let fieldsBuf = UnsafeBufferPointer(
         start: fieldsPtr,
         count: Int(fieldsCount)
@@ -300,23 +363,20 @@ private func parseConnectionMode(
                     return nil
                 }
             })
-    if mode == "sso" {
-        return .sso(
-            .init(
-                appManagedFields: fields,
-                loginRequired: {
-                    OctopusSdkClose(keepState: true)
-                    sendUnityMessage("OctopusChannel", "OnLoginRequired", "")
-                },
-                modifyUser: { fieldToEdit in
-                    let field = fieldToString(fieldToEdit) ?? ""
-                    OctopusSdkClose(keepState: true)
-                    sendUnityMessage("OctopusChannel", "OnModifyUser", field)
-                },
-            )
+    return .sso(
+        .init(
+            appManagedFields: fields,
+            loginRequired: {
+                OctopusSdkClose(keepState: true)
+                sendUnityMessage("OctopusChannel", "OnLoginRequired", "")
+            },
+            modifyUser: { fieldToEdit in
+                let field = fieldToString(fieldToEdit) ?? ""
+                OctopusSdkClose(keepState: true)
+                sendUnityMessage("OctopusChannel", "OnModifyUser", field)
+            },
         )
-    }
-    return .octopus(deepLink: deepLink)
+    )
 }
 
 private func fieldToString(_ profileField: Octopus.ConnectionMode.SSOConfiguration.ProfileField?) -> String?
@@ -701,15 +761,8 @@ public func OctopusSdkFetchCommunityData(requestId: Int32, profileId: UnsafePoin
             } else { return }
             sendUnityMessage("OctopusChannel", "OnFetchCommunityDataResult", "\(requestId)\n\(communityDataToJson(data))")
         } catch {
-            // The native description is the only clue a host gets about what went wrong once the
-            // payload crosses the bridge (#276), so forward it. The generic sentence is kept
-            // verbatim, period included, because it is the exact string hosts already match on and
-            // it is what the Android bridge sends; the detail is appended as a second sentence, and
-            // some errors carry no useful text at all.
-            let detail = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-            let message = detail.isEmpty
-                ? "Could not fetch community data."
-                : "Could not fetch community data. Details: \(detail)"
+            // Keep exception descriptions and underlying errors out of host callbacks.
+            let message = "Could not fetch community data."
             sendUnityMessage("OctopusChannel", "OnFetchCommunityDataError", "\(requestId)\n\(message)")
         }
     }
@@ -734,14 +787,17 @@ private func discardLifecycleUI() async {
 public func OctopusSdkSwitchCommunity(
     requestId: Int32, apiKey: UnsafePointer<Int8>, connectionMode: UnsafePointer<Int8>,
     appManagedFields: UnsafePointer<Int32>, appManagedFieldsCount: Int32,
-    apiServerHost: UnsafePointer<Int8>, apiServerPort: Int32
+    apiServerHost: UnsafePointer<Int8>, apiServerPort: Int32, wrapperVersion: UnsafePointer<Int8>
 ) {
     // Copy borrowed C strings/arrays before crossing the asynchronous boundary.
     let key = String(cString: apiKey)
-    let mode = parseConnectionMode(connectionMode, appManagedFields, appManagedFieldsCount)
-    let usesSSO = String(cString: connectionMode) == "sso"
+    guard let mode = parseConnectionMode(connectionMode, appManagedFields, appManagedFieldsCount) else {
+        sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\nCommunity switch requires SSO connection mode.")
+        return
+    }
     let hostStr = String(cString: apiServerHost)
     let port = Int(apiServerPort)
+    let version = String(cString: wrapperVersion)
     Task { @MainActor in
         clearClientPostSession()
         await discardLifecycleUI()
@@ -750,15 +806,16 @@ public func OctopusSdkSwitchCommunity(
             // Same rule as OctopusSdkInitialize: empty host = the SDK default (prod). Without it
             // a switch from a custom host silently lands on production (issue #391).
             let configuration: OctopusSDK.Configuration =
-                hostStr.isEmpty ? .init()
-                                : .init(apiServer: try .init(host: hostStr, port: port))
+                hostStr.isEmpty ? .init(appManagedAudioSession: initializedAppManagedAudioSession)
+                                : .init(apiServer: try .init(host: hostStr, port: port),
+                                        appManagedAudioSession: initializedAppManagedAudioSession)
+            OctopusSDK.setSdkFamily(.unity, version: version)
             if let current = octopus {
                 try await current.switchCommunity(apiKey: key, connectionMode: mode,
                                                   configuration: configuration)
             } else {
                 octopus = try OctopusSDK(apiKey: key, connectionMode: mode, configuration: configuration)
             }
-            lifecycleUsesSSO = usesSSO
             configureLifecycleBridge()
             sendUnityMessage("OctopusChannel", "OnLifecycleResult", "\(requestId)\n")
         } catch {
@@ -775,19 +832,10 @@ public func OctopusSdkReset(requestId: Int32) {
         stopCommunityDataObservation()
         await discardLifecycleUI()
         do {
-            // MagicLinkConnectionRepository.disconnectUser traps (not throws) in 1.14.0.
-            // Do not reproduce the Flutter/RN wrapper crash for Octopus Auth.
-            if octopus != nil && !lifecycleUsesSSO {
-                sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\nReset requires SSO on iOS 1.14.0.")
-                return
-            }
             try await octopus?.disconnectUser()
             sendUnityMessage("OctopusChannel", "OnLifecycleResult", "\(requestId)\n")
         } catch {
-            let detail = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-            let message = detail.isEmpty
-                ? "Reset failed."
-                : "Reset failed. Details: \(detail)"
+            let message = "Reset failed."
             sendUnityMessage("OctopusChannel", "OnLifecycleError", "\(requestId)\n\(message)")
         }
     }
@@ -800,7 +848,7 @@ public func OctopusSdkStop(requestId: Int32) {
         stopCommunityDataObservation()
         await discardLifecycleUI()
         // iOS has no public stop primitive. Best-effort disconnect, then release bridge ownership.
-        do { if lifecycleUsesSSO { try await octopus?.disconnectUser() } }
+        do { try await octopus?.disconnectUser() }
         catch { print("[Octopus SDK] Stop: disconnection failed; releasing SDK instance.") }
         notSeenNotifCancellable = nil
         groupsCancellable = nil
@@ -808,7 +856,6 @@ public func OctopusSdkStop(requestId: Int32) {
         eventsCancellable = nil
         communityAccessCancellable = nil
         octopus = nil
-        lifecycleUsesSSO = false
         sendUnityMessage("OctopusChannel", "OnLifecycleResult", "\(requestId)\n")
     }
 }
@@ -880,10 +927,6 @@ public func OctopusSdkConnectUserWithResult(
             sendConnectUserFailure(requestId, code: "other", message: "Call initialize() first")
             return
         }
-        guard lifecycleUsesSSO else {
-            sendConnectUserFailure(requestId, code: "other", message: "ConnectUser requires SSO mode")
-            return
-        }
         let pictureData = await fetchImageData(fromPathOrUrl: pictureStr)
         do {
             try await sdk.connectUser(
@@ -913,17 +956,17 @@ public func OctopusSdkConnectUserWithResult(
                 }.joined(separator: "\n")
             case .jwtError:
                 code = "invalidToken"
-                message = String(describing: error)
+                message = redactedNativeErrorMessage("ConnectUser failed.", error)
             case .communityAccessDenied:
                 code = "communityAccessDenied"
-                message = String(describing: error)
+                message = redactedNativeErrorMessage("ConnectUser failed.", error)
             default:
                 code = "other"
-                message = String(describing: error)
+                message = redactedNativeErrorMessage("ConnectUser failed.", error)
             }
             sendConnectUserFailure(requestId, code: code, message: message)
         } catch {
-            sendConnectUserFailure(requestId, code: "other", message: String(describing: error))
+            sendConnectUserFailure(requestId, code: "other", message: redactedNativeErrorMessage("ConnectUser failed.", error))
         }
     }
 }
@@ -973,8 +1016,10 @@ public func OctopusSdkOverrideDefaultLocale(languageCode: UnsafePointer<Int8>) {
 }
 
 @_cdecl("OctopusSdkSetAppName")
-public func OctopusSdkSetAppName(name: UnsafePointer<Int8>) {
-    let nameStr = String(cString: name)
+public func OctopusSdkSetAppName(name: UnsafePointer<Int8>?) {
+    let nameStr = name.map { String(cString: $0) } ?? ""
+    guard (appName ?? "") != nameStr else { return }
+    OctopusSdkClose(keepState: false)
     appName = nameStr
 }
 
@@ -1329,7 +1374,7 @@ private func setGroupFollowing(requestId: Int32, groupId: String, followed: Bool
                 groupFollowUnfollowError(requestId, "unknown", "Unhandled group follow status")
             }
         } catch {
-            groupFollowUnfollowError(requestId, "unknown", String(describing: error))
+            groupFollowUnfollowError(requestId, "unknown", redactedNativeErrorMessage("Group following failed.", error))
         }
     }
 }
@@ -1371,9 +1416,9 @@ public func OctopusSdkSetReaction(requestId: Int32, contentId: UnsafePointer<Int
             case .notConnected, .noNetwork, .serverError, .other: type = "reactionError"
             @unknown default: type = "reactionError"
             }
-            sendSetReactionError(requestId, type, String(reflecting: error))
+            sendSetReactionError(requestId, type, redactedNativeErrorMessage("SetReaction failed.", error))
         } catch {
-            sendSetReactionError(requestId, "reactionError", String(describing: error))
+            sendSetReactionError(requestId, "reactionError", redactedNativeErrorMessage("SetReaction failed.", error))
         }
     }
 }
@@ -1381,7 +1426,7 @@ public func OctopusSdkSetReaction(requestId: Int32, contentId: UnsafePointer<Int
 private func sendSetReactionError(_ requestId: Int32, _ type: String, _ message: String) {
     let data = try? JSONSerialization.data(withJSONObject: ["type": type, "message": message])
     let json = data.flatMap { String(data: $0, encoding: .utf8) }
-        ?? "{\"type\":\"reactionError\",\"message\":\"SetReaction failed\"}"
+        ?? "{\"type\":\"reactionError\",\"message\":\"SetReaction failed.\"}"
     sendUnityMessage("OctopusChannel", "OnSetReactionError", "\(requestId)\n\(json)")
 }
 
@@ -1394,7 +1439,7 @@ public func OctopusSdkSyncFollowGroups(requestId: Int32, actionsJson: UnsafePoin
             let results = try await octopus?.syncFollowGroups(actions: actions) ?? []
             sendUnityMessage("OctopusChannel", "OnSyncFollowGroupsResult", "\(requestId)\n\(syncResultsToJson(results))")
         } catch {
-            sendUnityMessage("OctopusChannel", "OnSyncFollowGroupsError", "\(requestId)\n\(String(describing: error))")
+            sendUnityMessage("OctopusChannel", "OnSyncFollowGroupsError", "\(requestId)\n\(redactedNativeErrorMessage("syncFollowGroups failed.", error))")
         }
     }
 }
@@ -1407,7 +1452,7 @@ public func OctopusSdkFetchGroups(requestId: Int32) {
             let groups = octopus?.groups ?? []
             sendUnityMessage("OctopusChannel", "OnFetchGroupsResult", "\(requestId)\n\(groupsToJson(groups))")
         } catch {
-            sendUnityMessage("OctopusChannel", "OnFetchGroupsError", "\(requestId)\n\(String(describing: error))")
+            sendUnityMessage("OctopusChannel", "OnFetchGroupsError", "\(requestId)\n\(redactedNativeErrorMessage("fetchGroups failed.", error))")
         }
     }
 }
@@ -1471,7 +1516,7 @@ public func OctopusSdkOverrideCommunityAccess(requestId: Int32, hasAccess: Bool)
             // $hasAccessToCommunity subscription (OnHasAccessToCommunity).
             sendUnityMessage("OctopusChannel", "OnOverrideCommunityAccessResult", "\(requestId)\n")
         } catch {
-            sendUnityMessage("OctopusChannel", "OnOverrideCommunityAccessError", "\(requestId)\n\(String(describing: error))")
+            sendUnityMessage("OctopusChannel", "OnOverrideCommunityAccessError", "\(requestId)\n\(redactedNativeErrorMessage("overrideCommunityAccess failed.", error))")
         }
     }
 }
@@ -1878,11 +1923,11 @@ public func OctopusSdkRefreshEntitlements(requestId: Int32) {
                 sendRefreshEntitlementsError(requestId, "noNetwork", "No network")
             case .userBanned(let message):
                 sendRefreshEntitlementsError(requestId, "userBanned", message)
-            case .serverError(let underlying):
-                sendRefreshEntitlementsError(requestId, "serverError", String(describing: underlying))
+            case .serverError:
+                sendRefreshEntitlementsError(requestId, "serverError", redactedNativeErrorMessage("Entitlements refresh failed.", error))
             }
         } catch {
-            sendRefreshEntitlementsError(requestId, "serverError", String(describing: error))
+            sendRefreshEntitlementsError(requestId, "serverError", redactedNativeErrorMessage("Entitlements refresh failed.", error))
         }
     }
 }
@@ -1941,7 +1986,8 @@ public func OctopusSdkDebugOverrideContentOptions(json: UnsafePointer<CChar>) {
         ContentOptions(
             post: ContentOptions.PostOptions(
                 enablePictures: $0["postEnablePictures"] as? Bool ?? true,
-                enablePolls: $0["postEnablePolls"] as? Bool ?? true),
+                enablePolls: $0["postEnablePolls"] as? Bool ?? true,
+                textRequired: $0["postTextRequired"] as? Bool ?? true),
             comment: ContentOptions.CommentOptions(enablePictures: $0["commentEnablePictures"] as? Bool ?? true),
             reply: ContentOptions.ReplyOptions(enablePictures: $0["replyEnablePictures"] as? Bool ?? true))
     }
@@ -1973,6 +2019,59 @@ public func OctopusSdkDebugOverrideExposeClientUserId(enabled: UnsafePointer<CCh
     applyDebugConfigOverride { octopus?.debugOverrideExposeClientUserId(mapped) }
 }
 
+@_cdecl("OctopusSdkDebugOverrideForceNicknameChoice")
+public func OctopusSdkDebugOverrideForceNicknameChoice(enabled: UnsafePointer<CChar>) {
+    let mapped: Bool?
+    switch String(cString: enabled) {
+    case "null": mapped = nil
+    case "true": mapped = true
+    case "false": mapped = false
+    default: return
+    }
+    applyDebugConfigOverride { octopus?.debugOverrideForceNicknameChoice(mapped) }
+}
+
+private func debugConsentTexts(_ object: [String: Any]) -> ConsentTexts? {
+    // Forward null, empty and whitespace fields unchanged; native code owns fallback.
+    for key in ["notice", "termsLabel", "privacyLabel", "rulesLabel", "label", "belowText"] {
+        if let value = object[key], !(value is NSNull), !(value is String) { return nil }
+    }
+    switch object["mode"] as? String {
+    case "implicit": return .implicit(notice: object["notice"] as? String)
+    case "multiCheckbox": return .multiCheckbox(termsLabel: object["termsLabel"] as? String,
+        privacyLabel: object["privacyLabel"] as? String, rulesLabel: object["rulesLabel"] as? String)
+    case "singleCheckbox": return .singleCheckbox(label: object["label"] as? String,
+        belowText: object["belowText"] as? String)
+    default: return nil
+    }
+}
+
+private func consentTextsObject(_ texts: ConsentTexts?) -> Any {
+    switch texts {
+    case nil: return NSNull()
+    case let .implicit(notice)?:
+        return ["mode": "implicit", "notice": notice as Any? ?? NSNull()] as [String: Any]
+    case let .multiCheckbox(termsLabel, privacyLabel, rulesLabel)?:
+        return ["mode": "multiCheckbox", "termsLabel": termsLabel as Any? ?? NSNull(),
+            "privacyLabel": privacyLabel as Any? ?? NSNull(), "rulesLabel": rulesLabel as Any? ?? NSNull()] as [String: Any]
+    case let .singleCheckbox(label, belowText)?:
+        return ["mode": "singleCheckbox", "label": label as Any? ?? NSNull(),
+            "belowText": belowText as Any? ?? NSNull()] as [String: Any]
+    }
+}
+
+@_cdecl("OctopusSdkDebugOverrideConsentTexts")
+public func OctopusSdkDebugOverrideConsentTexts(json: UnsafePointer<CChar>) {
+    let mapped: ConsentTexts?
+    if String(cString: json).trimmingCharacters(in: .whitespacesAndNewlines) == "null" {
+        mapped = nil
+    } else {
+        guard let object = debugConfigObject(json), let texts = debugConsentTexts(object) else { return }
+        mapped = texts
+    }
+    applyDebugConfigOverride { octopus?.debugOverrideConsentTexts(mapped) }
+}
+
 @_cdecl("OctopusSdkDebugGetCommunityConfig")
 public func OctopusSdkDebugGetCommunityConfig(requestId: Int32) {
     Task { @MainActor in
@@ -1995,13 +2094,15 @@ public func OctopusSdkDebugGetCommunityConfig(requestId: Int32) {
                 "exposeClientUserId": config.exposeClientUserId,
                 "forceLoginOnStrongActions": config.forceLoginOnStrongActions,
                 "displayAccountAge": config.displayAccountAge,
-                "termsAcceptanceMode": String(describing: config.termsAcceptanceMode)
+                "termsAcceptanceMode": String(describing: config.termsAcceptanceMode),
+                "forceNicknameChoice": config.forceNicknameChoice,
+                "consentTexts": consentTextsObject(config.consentTexts)
             ]
             let data = try JSONSerialization.data(withJSONObject: row)
             let json = String(decoding: data, as: UTF8.self)
             sendUnityMessage("OctopusChannel", "OnDebugGetCommunityConfigResult", "\(requestId)\n\(json)")
         } catch {
-            sendUnityMessage("OctopusChannel", "OnDebugGetCommunityConfigError", "\(requestId)\n\(error)")
+            sendUnityMessage("OctopusChannel", "OnDebugGetCommunityConfigError", "\(requestId)\n\(redactedNativeErrorMessage("Failed to read community config.", error))")
         }
     }
 }
@@ -2100,11 +2201,11 @@ public func OctopusSdkFetchOrCreateClientObjectRelatedPost(
                 // ValidationError's fields are internal in 1.14.0. Do not infer kinds from descriptions.
                 switch error {
                 case .validation, .noNetwork, .serverError, .other:
-                    sendClientPostError(requestId, "other", error.debugDescription)
+                    sendClientPostError(requestId, "other", redactedNativeErrorMessage("Client post request failed.", error))
                 }
             }
         } catch {
-            if !Task.isCancelled { sendClientPostError(requestId, "other", error.localizedDescription) }
+            if !Task.isCancelled { sendClientPostError(requestId, "other", redactedNativeErrorMessage("Client post request failed.", error)) }
         }
     }
 }
@@ -2219,7 +2320,9 @@ private let iosIconKeys: Set<String> = [
     "settings.deleteAccountWarning",
     "common.radio.on", "common.radio.off", "common.checkbox.on", "common.checkbox.off",
     "common.toggle.on", "common.toggle.off",
-    "common.close", "common.moreActions", "common.activityButton", "common.listCellNavIndicator",
+    "common.close", "common.moreActions", "common.activityButton", "common.listCellNavIndicator", "common.clearText",
+    "screenStates.emptyContent", "screenStates.emptyNotifications",
+    "screenStates.networkError", "screenStates.error",
 ]
 
 /// Builds the native icon tree from slot key -> image; every missing slot keeps its native default.
@@ -2312,7 +2415,13 @@ private func bridgeIcons(_ images: [String: UIImage]) -> OctopusTheme.Assets.Ico
             close: images["common.close"],
             moreActions: images["common.moreActions"],
             activityButton: images["common.activityButton"],
-            listCellNavIndicator: images["common.listCellNavIndicator"]))
+            listCellNavIndicator: images["common.listCellNavIndicator"],
+            clearText: images["common.clearText"]),
+        screenStates: Icons.ScreenStates(
+            emptyContent: images["screenStates.emptyContent"],
+            emptyNotifications: images["screenStates.emptyNotifications"],
+            networkError: images["screenStates.networkError"],
+            error: images["screenStates.error"]))
 }
 
 /// Replaces every icon override; an empty array restores the native defaults. Payload:

@@ -17,7 +17,7 @@ public class SSOExample : MonoBehaviour
 
     void StartAsync()
     {
-        OctopusSDK.Initialize(config.apiKey, ConnectionMode.SSO());
+        OctopusSDK.Initialize(config.apiKey, ConnectionMode.SSO(), OctopusExampleConfig.Instance.ApiServerHost);
         isLoggedIn = false;
         UpdateButton();
     }

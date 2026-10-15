@@ -8,7 +8,8 @@ public sealed class ThemeScenario : OctopusScenarioPilot
         new OctopusScenarioField("background", "Background", true),
         new OctopusScenarioField("link", "Link", true),
         new OctopusScenarioField("navBarItem", "Nav-bar item size", true),
-        new OctopusScenarioField("logo", "Bundled native logo", true));
+        new OctopusScenarioField("logo", "Bundled native logo", true),
+        new OctopusScenarioField("icons", "Screen-state and clear-text icons", true));
     private readonly List<OctopusScenarioPreset> _presets;
 
     public ThemeScenario() : base("theme")
@@ -27,13 +28,14 @@ public sealed class ThemeScenario : OctopusScenarioPilot
     public override IReadOnlyList<OctopusScenarioPreset> Presets { get { return _presets; } }
     public override IReadOnlyList<string> ApiSymbols
     {
-        get { return new[] { "SetLightColorScheme", "SetDarkColorScheme", "SetLogo", "SetFonts" }; }
+        get { return new[] { "SetLightColorScheme", "SetDarkColorScheme", "SetLogo", "SetIcons", "SetFonts" }; }
     }
     public override string ParameterNotice
     {
         get { return "Custom presets reuse the bundled blueberry logo: Unity takes native resource names, " +
                      "not Flutter's base64 logo. Nav-bar item size is iOS only. Unset colors and fonts " +
-                     "use SDK defaults. Open Community to verify."; }
+                     "use SDK defaults. Icons: screenStates reuses the bundled blueberry logo for all four " +
+                     "empty/error illustrations and common.clearText; unset restores native defaults. Open Community and the nickname field to verify."; }
     }
 
     private OctopusScenarioPreset Preset(int index, string label, bool brand, bool surface, bool logo)
@@ -45,6 +47,7 @@ public sealed class ThemeScenario : OctopusScenarioPilot
             fields.Set("link", surface ? "#FFC857" : "unset");
             fields.Set("navBarItem", brand && surface ? "22" : "unset");
             fields.Set("logo", logo ? "theme_blueberry_logo" : "unset");
+            fields.Set("icons", logo ? "screenStates" : "unset");
         }, Apply);
     }
 
@@ -57,6 +60,14 @@ public sealed class ThemeScenario : OctopusScenarioPilot
         var dark = Scheme(brand ? OctopusSampleNativeTheme.DarkScheme : null, fields);
         var logoName = fields.Get("logo");
         var logo = logoName == "unset" ? null : new OctopusLogo(logoName, "Data/Raw/" + logoName + ".png");
+        var iconsName = fields.Get("icons");
+        var icon = new OctopusIcon("theme_blueberry_logo", "Data/Raw/theme_blueberry_logo.png");
+        var icons = iconsName == "screenStates" ? new OctopusIcons()
+            .Set(OctopusIconSlot.ScreenStatesEmptyContent, icon)
+            .Set(OctopusIconSlot.ScreenStatesEmptyNotifications, icon)
+            .Set(OctopusIconSlot.ScreenStatesNetworkError, icon)
+            .Set(OctopusIconSlot.ScreenStatesError, icon)
+            .Set(OctopusIconSlot.CommonClearText, icon) : null;
         var fonts = fields.Get("navBarItem") == "22"
             ? new OctopusFonts(navBarItem: new OctopusFont("", "", 22)) : null;
         var sdk = OctopusScenarioSdk.Current;
@@ -66,11 +77,13 @@ public sealed class ThemeScenario : OctopusScenarioPilot
         sdk.ApplyTheme(light, dark);
         OctopusSampleLog.Current.LogApiCall("OctopusSDK.SetLogo", logoName);
         sdk.SetLogo(logo);
+        OctopusSampleLog.Current.LogApiCall("OctopusSDK.SetIcons", iconsName);
+        sdk.SetIcons(icons);
         OctopusSampleLog.Current.LogApiCall("OctopusSDK.SetFonts", "navBarItem=" + fields.Get("navBarItem"));
         sdk.SetFonts(fonts);
         Report("Applied: " + (brand ? "brand theme" : "SDK default primary") +
                "; background=" + fields.Get("background") + "; link=" + fields.Get("link") +
-               "; navBarItem=" + fields.Get("navBarItem") + "; logo=" + logoName +
+               "; navBarItem=" + fields.Get("navBarItem") + "; logo=" + logoName + "; icons=" + iconsName +
                ". Open the Community tab to see it. Nav-bar item size is iOS only.");
     }
 

@@ -1,0 +1,5 @@
+# Sample-only Play In-App Update bridge (OctopusSampleAppUpdate.java). C# reaches it through JNI
+# alone, so R8 sees no caller: keep the class, its static entry points and the Listener interface
+# that an AndroidJavaProxy implements by name.
+-keep class com.octopuscommunity.sdk.unity.sample.OctopusSampleAppUpdate { public static *; }
+-keep interface com.octopuscommunity.sdk.unity.sample.OctopusSampleAppUpdate$Listener { *; }

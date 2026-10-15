@@ -88,6 +88,11 @@ public class OctopusIconsTests
     [TestCase(OctopusIconSlot.CommonActivityButton, 72, "common.activityButton")]
     [TestCase(OctopusIconSlot.CommonListCellNavIndicator, 73, "common.listCellNavIndicator")]
     [TestCase(OctopusIconSlot.CommonClose, 74, "common.close")]
+    [TestCase(OctopusIconSlot.ScreenStatesEmptyContent, 75, "screenStates.emptyContent")]
+    [TestCase(OctopusIconSlot.ScreenStatesEmptyNotifications, 76, "screenStates.emptyNotifications")]
+    [TestCase(OctopusIconSlot.ScreenStatesNetworkError, 77, "screenStates.networkError")]
+    [TestCase(OctopusIconSlot.ScreenStatesError, 78, "screenStates.error")]
+    [TestCase(OctopusIconSlot.CommonClearText, 79, "common.clearText")]
     public void SlotValueAndBridgeKeyArePinned(OctopusIconSlot slot, int value, string key)
     {
         Assert.AreEqual(value, (int)slot);
@@ -98,7 +103,7 @@ public class OctopusIconsTests
     public void EverySlotHasAUniqueKeyAndIsPinned()
     {
         var slots = (OctopusIconSlot[])Enum.GetValues(typeof(OctopusIconSlot));
-        Assert.AreEqual(75, slots.Length, "a new slot needs a pinned TestCase above");
+        Assert.AreEqual(80, slots.Length, "a new slot needs a pinned TestCase above");
         var keys = slots.Select(OctopusSDK.IconSlotKey).ToList();
         CollectionAssert.AllItemsAreNotNull(keys);
         CollectionAssert.AllItemsAreUnique(keys);
@@ -134,6 +139,33 @@ public class OctopusIconsTests
         Assert.AreEqual("settings.logout", ios[1]["slot"]);
         Assert.AreEqual("Data/Raw/logout.png", ios[1]["resource"]);
         Assert.AreEqual("common.close", ios[2]["slot"]);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void ScreenStatesSerializeForBothPlatforms(bool ios)
+    {
+        var icons = new OctopusIcons()
+            .Set(OctopusIconSlot.ScreenStatesError, new OctopusIcon("ic_error", "Error"))
+            .Set(OctopusIconSlot.ScreenStatesEmptyContent, new OctopusIcon("ic_empty", "Empty"))
+            .Set(OctopusIconSlot.ScreenStatesNetworkError, new OctopusIcon("ic_offline", "Offline"))
+            .Set(OctopusIconSlot.ScreenStatesEmptyNotifications, new OctopusIcon("ic_notifications", "Notifications"));
+        var rows = OctopusJson.ParseArray(OctopusSDK.IconsToJson(icons, ios));
+        CollectionAssert.AreEqual(new[] { "screenStates.emptyContent", "screenStates.emptyNotifications",
+            "screenStates.networkError", "screenStates.error" }, rows.Select(row => row["slot"]));
+        CollectionAssert.AreEqual(ios ? new[] { "Empty", "Notifications", "Offline", "Error" }
+            : new[] { "ic_empty", "ic_notifications", "ic_offline", "ic_error" }, rows.Select(row => row["resource"]));
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void ClearTextRoundTripsForBothPlatforms(bool ios)
+    {
+        var icons = new OctopusIcons().Set(OctopusIconSlot.CommonClearText, new OctopusIcon("ic_clear", "Clear"));
+        var rows = OctopusJson.ParseArray(OctopusSDK.IconsToJson(icons, ios));
+        Assert.AreEqual(1, rows.Count);
+        Assert.AreEqual("common.clearText", rows[0]["slot"]);
+        Assert.AreEqual(ios ? "Clear" : "ic_clear", rows[0]["resource"]);
     }
 
     [Test]

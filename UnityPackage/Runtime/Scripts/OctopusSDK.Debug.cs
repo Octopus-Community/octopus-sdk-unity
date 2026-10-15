@@ -68,6 +68,34 @@ public partial class OctopusSDK
 #endif
     }
 
+    /// <summary>Debug/QA only — do not ship in production builds. Override whether an unconfirmed member must type a nickname before their first contribution. Null restores the backend value; false keeps the generated nickname prefilled. Call after Initialize on the Unity main thread.</summary>
+    public static void DebugOverrideForceNicknameChoice(bool? enabled)
+    {
+        string wire = OctopusDebugParsing.NullableBoolToWire(enabled);
+#if UNITY_EDITOR
+        Mock.RecordDebugOverride("OverrideForceNicknameChoice", enabled);
+#elif UNITY_ANDROID
+        using (var plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
+            plugin.CallStatic("debugOverrideForceNicknameChoice", wire);
+#elif UNITY_IOS
+        OctopusSdkDebugOverrideForceNicknameChoice(wire);
+#endif
+    }
+
+    /// <summary>Debug/QA only — do not ship in production builds. Override consent wordings; null restores backend texts without changing TermsAcceptanceMode. Native fallback, markdown, links and layout are unchanged. Call after Initialize on the Unity main thread.</summary>
+    public static void DebugOverrideConsentTexts(OctopusConsentTexts texts)
+    {
+        string json = OctopusDebugParsing.ConsentTextsToJson(texts);
+#if UNITY_EDITOR
+        Mock.RecordDebugOverride("OverrideConsentTexts", texts);
+#elif UNITY_ANDROID
+        using (var plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
+            plugin.CallStatic("debugOverrideConsentTexts", json);
+#elif UNITY_IOS
+        OctopusSdkDebugOverrideConsentTexts(json);
+#endif
+    }
+
     /// <summary>Debug/QA only — do not ship in production builds. Read the last effective config (including local overrides); onResult receives null before any config is available. Does not fetch from the network. Callbacks run on the Unity main thread when its loop resumes.</summary>
     public static void DebugGetCommunityConfig(Action<OctopusCommunityConfig> onResult, Action<string> onError)
     {
@@ -150,6 +178,8 @@ public partial class OctopusSDK
     [DllImport("__Internal")] private static extern void OctopusSdkDebugOverrideContentOptions(string json);
     [DllImport("__Internal")] private static extern void OctopusSdkDebugOverrideTermsAcceptanceMode(string mode);
     [DllImport("__Internal")] private static extern void OctopusSdkDebugOverrideExposeClientUserId(string enabled);
+    [DllImport("__Internal")] private static extern void OctopusSdkDebugOverrideForceNicknameChoice(string enabled);
+    [DllImport("__Internal")] private static extern void OctopusSdkDebugOverrideConsentTexts(string json);
     [DllImport("__Internal")] private static extern void OctopusSdkDebugGetCommunityConfig(int requestId);
 #endif
 }

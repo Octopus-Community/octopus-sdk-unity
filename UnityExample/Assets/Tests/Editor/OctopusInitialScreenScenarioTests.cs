@@ -50,7 +50,7 @@ public class OctopusInitialScreenScenarioTests
         Assert.AreEqual("OpenScreenExample", row.DemoScene);
         Assert.IsTrue(OctopusScenarioSections.IsListed(row));
         Assert.IsInstanceOf<InitialScreenScenario>(OctopusScenarioPilots.Create("initialScreen"));
-        Assert.AreEqual(23, OctopusScenarioSections.Filter("").Sum(s => s.Scenarios.Count));
+        Assert.AreEqual(26, OctopusScenarioSections.Filter("").Sum(s => s.Scenarios.Count));
         Assert.IsEmpty(_sdk.Calls);
     }
 
@@ -59,7 +59,7 @@ public class OctopusInitialScreenScenarioTests
     {
         CollectionAssert.AreEqual(new[]
         {
-            "preset", "postId", "groupId", "text", "ctaLabel", "ctaUrl", "clientUserId"
+            "preset", "postId", "groupId", "text", "ctaLabel", "ctaUrl", "profileId", "clientUserId"
         }, _pilot.Fields.All.Select(field => field.Key));
         foreach (var preset in _pilot.Presets)
         {
@@ -74,7 +74,7 @@ public class OctopusInitialScreenScenarioTests
     public void CustomizeLabelsIdentifyThePresetsThatReadTheirInputs()
     {
         StringAssert.Contains("presets 3, 4 & 6", _pilot.Fields.All.Single(f => f.Key == "groupId").Label);
-        StringAssert.Contains("preset 10 only", _pilot.Fields.All.Single(f => f.Key == "clientUserId").Label);
+        StringAssert.Contains("presets 8 & 10", _pilot.Fields.All.Single(f => f.Key == "clientUserId").Label);
     }
 
     [TestCase(5, 2, "OpenPost")]
@@ -266,14 +266,15 @@ public class OctopusInitialScreenScenarioTests
 
     [TestCase(8, "clientUserId")]
     [TestCase(9, "profileId")]
-    public void MissingMemberActivityApiReportsItsLimitWithoutInitialization(int number, string kind)
+    public void MemberActivityUsesTheExistingOverloadWithTheTypedId(int number, string kind)
     {
-        _sdk.Profile = null;
         Fill(number);
+        _pilot.Fields.Set(kind, "typed-member");
         Run();
-        Assert.IsEmpty(_sdk.Calls);
-        StringAssert.StartsWith("Unavailable:", _pilot.Result);
-        StringAssert.Contains(kind, _pilot.Result);
+        Assert.AreEqual("OpenActivity", _sdk.Last.Method);
+        var member = (OctopusCommunityMemberId)_sdk.Last.Args[0];
+        Assert.AreEqual(number == 8 ? "typed-member" : null, member.ClientUserId);
+        Assert.AreEqual(number == 9 ? "typed-member" : null, member.ProfileId);
         Assert.IsFalse(_pilot.IsRunning);
     }
 
@@ -302,6 +303,8 @@ public class OctopusInitialScreenScenarioTests
         StringAssert.Contains("No member clientUserId", _pilot.Result);
         Assert.IsFalse(_sdk.Methods.Contains("OpenProfile"));
         _sdk.Profile = null;
+        // Removing a build profile does not erase an already running configuration.
+        OctopusScenarioSdk.Use(_sdk);
         _sdk.Clear();
         Fill(1);
         Run();

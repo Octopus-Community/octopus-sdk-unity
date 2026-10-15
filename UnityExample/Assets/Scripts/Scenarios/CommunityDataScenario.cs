@@ -5,7 +5,8 @@ public sealed class CommunityDataScenario : OctopusScenarioPilot
 {
     private readonly OctopusScenarioFields _fields = new OctopusScenarioFields(
         new OctopusScenarioField("action", "Action", true),
-        new OctopusScenarioField("member", "Member source", true));
+        new OctopusScenarioField("member", "Member source", true),
+        new OctopusScenarioField("userId", "User ID"));
     private readonly List<OctopusScenarioPreset> _presets;
     // The SDK has a single native observer, so ownership must also be single across visits.
     private static CommunityDataScenario _observer;
@@ -39,12 +40,31 @@ public sealed class CommunityDataScenario : OctopusScenarioPilot
             "subscribed to HostProfileRequested; the pilot supplies its data, unknown-member and error states."; }
     }
 
+    public override bool CanCustomize { get { return true; } }
+    public override void RunCustom()
+    {
+        var userId = (Fields.Get("userId") ?? "").Trim();
+        if (userId.Length == 0) { Report("No call made: User ID is required."); return; }
+        string reason;
+        if (OctopusScenarioSdk.EnsurePilotInitialized(out reason) == null) { Report(reason); return; }
+        var generation = ++_generation;
+        ReportRunning("Fetching community data…");
+        OctopusSampleLog.Current.LogApiCall("OctopusSDK.FetchCommunityData", "profileId");
+        OctopusScenarioSdk.Current.FetchCommunityData(OctopusCommunityMemberId.FromProfileId(userId), data =>
+        {
+            if (generation != _generation) return;
+            Remember(data);
+            Report("Fetched: " + Describe(data));
+        }, error => { if (generation == _generation) Report("FetchCommunityData failed: " + error); });
+    }
+
     private OctopusScenarioPreset Preset(int index, string label, string action, string member)
     {
         return new OctopusScenarioPreset(PresetTestId(index), PresetLabel(index, label), fields =>
         {
             fields.Set("action", action);
             fields.Set("member", member);
+            fields.Set("userId", _lastProfileId ?? OctopusSampleFixtures.OtherUserId ?? "");
         }, Run);
     }
 

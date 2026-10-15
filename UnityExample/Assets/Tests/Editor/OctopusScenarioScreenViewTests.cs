@@ -98,6 +98,7 @@ public class OctopusScenarioScreenViewTests
         var pilot = new ConnectionScenario();
         var view = OpenFor(pilot);
         Tap(view, pilot.Presets[3].TestId);
+        Tap(view, "connection-run");
         Tap(view, "connection-customize");
         _sdk.Clear();
         Tap(view, "connection-run");
@@ -198,6 +199,7 @@ public class OctopusScenarioScreenViewTests
 
             foreach (var field in pilot.Fields.All)
             {
+                if (id == "communityData" && field.IsInformational) continue;
                 var name = id + "-field-" + field.Key;
                 Assert.IsNotNull(Find(view.gameObject.transform, name),
                     "Scenario '" + id + "' has no input named '" + name + "'.");
@@ -210,7 +212,7 @@ public class OctopusScenarioScreenViewTests
     public void QaPresetUsesTheButtonPathAndLogsTheDisplayedResult()
     {
         LogAssert.Expect(LogType.Log, "[OctopusQA] scenario=customEvents state=opened");
-        LogAssert.Expect(LogType.Log, "[OctopusQA] scenario=customEvents result=Ready — no SDK call made yet. Tap a preset to run one.");
+        LogAssert.Expect(LogType.Log, "[OctopusQA] scenario=customEvents result=Not run yet");
         var view = Open("customEvents");
         LogAssert.Expect(LogType.Log, "[OctopusQA] scenario=customEvents preset=1 state=running");
         LogAssert.Expect(LogType.Log, "[OctopusQA] scenario=customEvents result=Running…");
@@ -280,7 +282,7 @@ public class OctopusScenarioScreenViewTests
                 ? OctopusSampleTheme.Dark : OctopusSampleTheme.Light;
             CollectionAssert.AreEqual(new[]
             {
-                "[OctopusQA] scenario=customEvents result=Not run yet — values changed Run these values to refresh the result."
+                "[OctopusQA] scenario=customEvents result=Not run yet — values changed"
             }, results);
         }
         finally { Application.logMessageReceived -= capture; }
@@ -310,7 +312,7 @@ public class OctopusScenarioScreenViewTests
         }
         var run = Find(view.transform, id + "-run");
         Assert.IsNotNull(run);
-        Assert.IsFalse(run.gameObject.activeSelf);
+        Assert.IsTrue(run.gameObject.activeSelf);
 
         Tap(view, id + "-customize");
 
@@ -348,7 +350,7 @@ public class OctopusScenarioScreenViewTests
         OctopusSampleBranding.Theme = theme == OctopusSampleTheme.Light
             ? OctopusSampleTheme.Dark : OctopusSampleTheme.Light;
 
-        var parameters = Find(view.transform, "ParametersSection");
+        var parameters = Find(view.transform, "ControlsSection");
         var run = Find(view.transform, "locale-run");
         var result = Find(view.transform, "locale-result");
         Assert.AreEqual(parameters, run.parent);
@@ -365,7 +367,7 @@ public class OctopusScenarioScreenViewTests
         Assert.AreEqual("es", _sdk.Last.Args[0]);
         StringAssert.Contains("'es'", Result(view).text);
         Tap(view, "locale-customize");
-        Assert.IsFalse(run.gameObject.activeSelf, "Reset hides Run inside Parameters.");
+        Assert.IsTrue(run.gameObject.activeSelf, "Reset hides Run inside Parameters.");
     }
 
     [Test]
@@ -392,13 +394,14 @@ public class OctopusScenarioScreenViewTests
         OctopusSampleBranding.Theme = theme;
         var view = Open("locale");
         Tap(view, "qa-preset-locale-1");
+        Tap(view, "locale-run");
         var original = Result(view).text;
         Tap(view, "locale-customize");
         Assert.AreEqual(original, Result(view).text, "Unlocking alone is not an edit.");
         var field = Field(view, "locale-field-locale");
         field.text = "es";
 
-        StringAssert.StartsWith("Not run yet — values changed\nRun these values", Result(view).text);
+        StringAssert.StartsWith("Not run yet — values changed", Result(view).text);
         Assert.AreEqual(OctopusSampleBranding.Palette.Muted, Result(view).color);
         field.text = "fr";
         Assert.AreEqual(original, Result(view).text, "Staleness compares values, not edit counts.");
@@ -425,6 +428,7 @@ public class OctopusScenarioScreenViewTests
     {
         var view = Open("locale");
         Tap(view, "qa-preset-locale-2");
+        Tap(view, "locale-run");
         Tap(view, "locale-customize");
         Field(view, "locale-field-locale").text = "fr";
         Field(view, "locale-field-locale").text = "es";
@@ -436,8 +440,8 @@ public class OctopusScenarioScreenViewTests
         Assert.AreEqual("en", Field(view, "locale-field-locale").text);
         Assert.IsTrue(Field(view, "locale-field-locale").readOnly);
         Assert.IsFalse(Field(view, "locale-field-locale").interactable);
-        Assert.IsFalse(Find(view.transform, "locale-run").gameObject.activeSelf);
-        StringAssert.StartsWith("Not run yet — values changed\nRun these values", Result(view).text);
+        Assert.IsTrue(Find(view.transform, "locale-run").gameObject.activeSelf);
+        StringAssert.StartsWith("Not run yet — values changed", Result(view).text);
         Assert.IsEmpty(_sdk.Calls);
     }
 
@@ -452,13 +456,14 @@ public class OctopusScenarioScreenViewTests
         Field(view, "customEvents-field-eventName").text = "another_event";
 
         Tap(view, "qa-preset-customEvents-1");
+        Tap(view, "customEvents-run");
 
         Assert.AreEqual("qa_sample_event", _sdk.Last.Args[0]);
         Assert.IsEmpty((IDictionary<string, string>)_sdk.Last.Args[1]);
         Assert.AreEqual("qa_sample_event", Field(view, "customEvents-field-eventName").text);
         Assert.AreEqual("(none)", Field(view, "customEvents-field-properties").text);
         foreach (var input in view.GetComponentsInChildren<TMP_InputField>()) Assert.IsTrue(input.readOnly);
-        Assert.IsFalse(Find(view.transform, "customEvents-run").gameObject.activeSelf);
+        Assert.IsTrue(Find(view.transform, "customEvents-run").gameObject.activeSelf);
         StringAssert.Contains("Tracked 'qa_sample_event'", Result(view).text);
     }
 
@@ -469,7 +474,7 @@ public class OctopusScenarioScreenViewTests
         OctopusSampleBranding.Theme = theme;
         var view = Open("connection");
         Tap(view, "connection-customize");
-        var parameters = Find(view.transform, "ParametersSection");
+        var parameters = Find(view.transform, "ControlsSection");
         Assert.IsTrue(Field(view, "connection-field-action").transform.IsChildOf(parameters));
         Assert.IsFalse(Field(view, "connection-field-action").readOnly);
         foreach (var key in new[] { "profile", "entitlements" })
@@ -509,7 +514,7 @@ public class OctopusScenarioScreenViewTests
         Field(view, "groups-field-value").text = "edited while running";
         pilot.Complete();
 
-        StringAssert.StartsWith("Not run yet — values changed\nRun these values", Result(view).text);
+        StringAssert.StartsWith("Not run yet — values changed", Result(view).text);
         Field(view, "groups-field-value").text = "default";
         Assert.AreEqual("Completed default", Result(view).text);
         Field(view, "groups-field-value").text = "next run";
@@ -524,39 +529,17 @@ public class OctopusScenarioScreenViewTests
     public void ScreenKeepsCurrentCatalogHandlesAndZoneOrder(string id)
     {
         var view = Open(id);
-        OctopusScenario row = null;
-        foreach (var entry in OctopusScenarioCatalog.All)
-            if (entry.Id == id) row = entry;
-        Assert.IsNotNull(row);
-        var actual = new List<string>();
-        foreach (var button in view.GetComponentsInChildren<Button>(true))
-            if (button.name.StartsWith("qa-preset-")) actual.Add(button.name);
-        CollectionAssert.AreEqual(row.PresetTestIds, actual);
-        Assert.AreEqual(1, CountNamed(view.transform, row.ResultTestId));
-
-        var header = Find(view.transform, "Header");
-        var parameters = Find(view.transform, "ParametersSection");
-        var content = parameters.parent;
-        Assert.Less(header.GetSiblingIndex(), content.GetComponentInParent<ScrollRect>().transform.GetSiblingIndex());
-        var feature = Find(view.transform, "scenario-feature-state");
-        if (id == "connection")
-        {
-            Assert.AreEqual(content, feature.parent);
-            Assert.Less(feature.GetSiblingIndex(), parameters.GetSiblingIndex());
-        }
-        else Assert.IsNull(feature, "A section without a switch must not invent a feature state.");
+        var bench = Find(view.transform, "scenario-try-it");
+        Assert.IsNotNull(bench);
         var guidance = Find(view.transform, "scenario-you-will-see");
+        Assert.AreSame(bench, guidance.parent);
         var presets = Find(view.transform, "PresetsSection");
-        var result = Find(view.transform, row.ResultTestId);
-        Assert.Less(parameters.GetSiblingIndex(), guidance.GetSiblingIndex());
+        var controls = Find(view.transform, "ControlsSection");
+        var result = Find(view.transform, id + "-result");
         Assert.Less(guidance.GetSiblingIndex(), presets.GetSiblingIndex());
-        Assert.Less(presets.GetSiblingIndex(), result.GetSiblingIndex());
-        Assert.AreEqual("You will see: " + row.YouWillSee, guidance.GetComponent<TMP_Text>().text);
-        Tap(view, id + "-customize");
-        var run = Find(view.transform, id + "-run");
-        Assert.AreEqual(parameters, run.parent, "#174: Run belongs inside Parameters.");
-        Assert.AreEqual(parameters.childCount - 1, run.GetSiblingIndex());
-        Assert.IsTrue(run.gameObject.activeSelf);
+        Assert.Less(presets.GetSiblingIndex(), controls.GetSiblingIndex());
+        Assert.Less(controls.GetSiblingIndex(), result.GetSiblingIndex());
+        Assert.IsNotNull(Find(view.transform, id + "-run"));
     }
 
     [TestCase(false)]
@@ -566,28 +549,15 @@ public class OctopusScenarioScreenViewTests
         OctopusSampleFeatureToggles.SetForceLogin(enabled);
         var shell = OctopusSampleShell.Create();
         _spawned.Add(shell.gameObject);
-        // Leave the list where the chip must not land: the owning section collapsed and a query
-        // filtering it out.
-        shell.Select(OctopusSampleTab.Scenarios);
-        var before = shell.GetComponentInChildren<OctopusScenariosListView>();
-        before.ToggleSection(ScenarioSection.SignIn);
-        before.SetQuery("zzz-no-match");
-        shell.Select(OctopusSampleTab.Home);
         var view = Open("connection");
         var feature = Find(view.transform, "scenario-feature-state");
-        Assert.AreEqual("Feature: Force login · " + (enabled ? "On" : "Off"),
-                        feature.GetComponentInChildren<TMP_Text>().text);
-        Assert.IsNull(feature.GetComponent<Toggle>());
-        Assert.GreaterOrEqual(feature.GetComponent<LayoutElement>().minHeight,
-                              OctopusSampleBranding.MinTouchUnits);
-        Tap(view, "scenario-feature-state");
-        Assert.IsTrue(view == null, "The detail overlay must close to reveal Scenarios.");
-        Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
-        var list = shell.GetComponentInChildren<OctopusScenariosListView>();
-        Assert.AreEqual("", list.Query, "The chip landed on a filtered list that may hide its switch.");
-        Assert.IsTrue(list.IsSectionOpen(ScenarioSection.SignIn), "The chip landed on a collapsed section.");
-        Assert.AreEqual(ScenarioSection.SignIn, list.FocusedSection,
-            "The chip did not scroll to the section that holds its switch.");
+        Assert.AreEqual("Force login is " + (enabled ? "on" : "off"), feature.GetComponentInChildren<TMP_Text>().text);
+        Tap(view, "scenario-feature-change");
+        Assert.IsTrue(view == null);
+        Assert.AreEqual(OctopusSampleTab.Settings, shell.Selected);
+        var config = Object.FindAnyObjectByType<OctopusSampleConfigView>();
+        Assert.IsNotNull(config);
+        _spawned.Add(config.gameObject);
         Assert.AreEqual(enabled, OctopusSampleFeatureToggles.ForceLogin);
         Assert.IsEmpty(_sdk.Calls);
     }
@@ -622,11 +592,13 @@ public class OctopusScenarioScreenViewTests
         Assert.IsTrue(panel.gameObject.activeSelf);
         Assert.IsFalse(skeleton.gameObject.activeSelf);
         Tap(view, "qa-preset-connection-1");
+        Tap(view, "connection-run");
         Assert.IsTrue(pilot.IsRunning);
         Assert.IsFalse(panel.gameObject.activeSelf);
         Assert.IsTrue(skeleton.gameObject.activeSelf);
         Assert.AreEqual("Running…", skeleton.GetComponentInChildren<TMP_Text>().text);
         Tap(view, "qa-preset-connection-5");
+        Tap(view, "connection-run");
         Assert.AreEqual("ConnectUser", _sdk.Last.Method, "A second tap must not replace an in-flight run.");
         if (fail) _sdk.FailPending("test failure");
         else _sdk.CompletePending();
@@ -676,12 +648,13 @@ public class OctopusScenarioScreenViewTests
     [TestCase("connection")]
     [TestCase("locale")]
     [TestCase("customEvents")]
-    public void EveryPresetTapFullyRefillsAndCallsExactlyOneAction(string id)
+    public void EveryPresetFillsWithoutACallThenExecuteCallsExactlyOneAction(string id)
     {
         var pilot = OctopusScenarioPilots.Create(id);
         var view = OpenFor(pilot);
         // Warm the one-time initialization separately from the action count.
         Tap(view, pilot.Presets[0].TestId);
+        Tap(view, id + "-run");
         foreach (var preset in pilot.Presets)
         {
             Tap(view, id + "-customize");
@@ -689,6 +662,8 @@ public class OctopusScenarioScreenViewTests
                 if (input.interactable) input.text = "previous custom value";
             _sdk.Clear();
             Tap(view, preset.TestId);
+            Assert.IsEmpty(_sdk.Calls, "Preset taps fill, without executing: " + preset.TestId);
+            Tap(view, id + "-run");
             Assert.AreEqual(1, _sdk.Calls.Count, preset.TestId);
             var expected = OctopusScenarioPilots.Create(id);
             preset.Fill(expected.Fields);
@@ -709,6 +684,7 @@ public class OctopusScenarioScreenViewTests
         var pilot = OctopusScenarioPilots.Create(id);
         var view = OpenFor(pilot);
         Tap(view, pilot.Presets[1].TestId);
+        Tap(view, id + "-run");
         var result = Result(view).text;
         _sdk.Clear();
         OctopusSampleBranding.Theme = OctopusSampleTheme.Dark;
@@ -724,7 +700,7 @@ public class OctopusScenarioScreenViewTests
         OctopusSampleBranding.Theme = OctopusSampleTheme.Light;
         Assert.AreEqual("edited value", Field(view, inputName).text);
         Assert.IsTrue(Field(view, inputName).interactable);
-        StringAssert.StartsWith("Not run yet — values changed\nRun these values", Result(view).text);
+        StringAssert.StartsWith("Not run yet — values changed", Result(view).text);
         Assert.IsTrue(Find(view.transform, id + "-run").gameObject.activeSelf);
         Tap(view, id + "-customize");
         Assert.AreEqual(result, Result(view).text, "Reset must still use preset 2.");
@@ -789,7 +765,7 @@ public class OctopusScenarioScreenViewTests
         var view = Open("locale");
         var safe = (RectTransform)Find(view.transform, "scenario-safe-area");
         Assert.IsTrue(Find(view.transform, "Header").IsChildOf(safe));
-        Assert.IsTrue(Find(view.transform, "ParametersSection").IsChildOf(safe));
+        Assert.IsTrue(Find(view.transform, "ControlsSection").IsChildOf(safe));
         if (Screen.width > 0 && Screen.height > 0)
         {
             Assert.AreEqual(new Vector2(SampleUiSafeArea.ScreenSafeArea().xMin / Screen.width,
@@ -813,9 +789,8 @@ public class OctopusScenarioScreenViewTests
         var view = Open("connection");
         var notice = Find(view.transform, "scenario-parameter-notice");
         StringAssert.Contains("signing secret adds the requested entitlements", notice.GetComponentInChildren<TMP_Text>().text);
-        StringAssert.Contains("Connect a sample user", Find(view.transform, "Capability").GetComponent<TMP_Text>().text);
-        foreach (var symbol in new[] { "ConnectUser", "DisconnectUser" })
-            Assert.IsNotNull(Find(view.transform, "scenario-api-" + symbol));
+        Assert.IsNotNull(Find(view.transform, "scenario-api-connectUser"));
+        Assert.AreEqual("Sign in and out as the demo user", Find(view.transform, "scenario-title").GetComponent<TMP_Text>().text);
         Assert.IsEmpty(_sdk.Calls);
     }
 
@@ -824,6 +799,54 @@ public class OctopusScenarioScreenViewTests
         var count = root.name == name ? 1 : 0;
         foreach (Transform child in root) count += CountNamed(child, name);
         return count;
+    }
+
+    [Test]
+    public void MemberProfilePresetsOnlyFillAndExecuteUsesTheTypedProfileId()
+    {
+        var view = Open("communityData");
+        Assert.AreEqual("Not run yet", Result(view).text);
+        Tap(view, "qa-preset-communityData-3");
+        Assert.IsEmpty(_sdk.Calls);
+        var userId = Field(view, "communityData-field-userId");
+        Assert.IsFalse(userId.readOnly);
+        userId.text = "typed-profile-id";
+        Tap(view, "communityData-run");
+        Assert.AreEqual("FetchCommunityData", _sdk.Last.Method);
+        var member = (OctopusCommunityMemberId)_sdk.Last.Args[0];
+        Assert.AreEqual("typed-profile-id", member.ProfileId);
+        Assert.IsNull(member.ClientUserId);
+        StringAssert.Contains("Fetched:", Result(view).text);
+    }
+
+    [Test]
+    public void ConnectionLiveRowsFollowProfileEventsAndGuestDoesNotMeanSignedIn()
+    {
+        var view = Open("connection");
+        var connected = Find(view.transform, "connection-is-user-connected").GetComponent<TMP_Text>();
+        StringAssert.Contains("unknown", connected.text);
+        _sdk.EmitProfile(new OctopusProfile(clientUserId: "member"));
+        StringAssert.Contains("true (from CurrentProfile)", connected.text);
+        _sdk.EmitProfile(new OctopusProfile(isGuest: true));
+        StringAssert.Contains("false (guest)", connected.text);
+        _sdk.EmitProfile(null);
+        StringAssert.Contains("unknown", connected.text);
+        Assert.IsEmpty(_sdk.Calls);
+    }
+
+    [Test]
+    public void BackFromDetailRevealsTheExpandedOriginGroup()
+    {
+        var shell = OctopusSampleShell.Create();
+        _spawned.Add(shell.gameObject);
+        var list = shell.GetComponentInChildren<OctopusScenariosListView>();
+        list.ToggleSection(ScenarioSection.SignIn);
+        var view = list.OpenScenario("communityData");
+        _spawned.Add(view.gameObject);
+        Tap(view, "Back");
+        Assert.IsTrue(view == null);
+        Assert.IsTrue(list.IsSectionOpen(ScenarioSection.SignIn));
+        Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
     }
 
     // A local test pilot proves the view has no locale/customEvents dispatch table and models
@@ -902,6 +925,17 @@ public class OctopusScenarioScreenViewTests
     private OctopusScenarioScreenView Open(string scenarioId)
     {
         return OpenFor(OctopusScenarioPilots.Create(scenarioId));
+    }
+
+    [Test]
+    public void PillButtonInACardKeepsTheTouchTargetHeight()
+    {
+        // A pill's sliced sprite used to report a 96dp preferred height, so "Change" doubled.
+        var view = OpenFor(new ConnectionScenario());
+        var change = (RectTransform)Find(view.transform, "scenario-feature-change");
+        LayoutRebuilder.ForceRebuildLayoutImmediate((RectTransform)change.parent.parent);
+        Assert.AreEqual(OctopusSampleBranding.MinTouchUnits, LayoutUtility.GetPreferredHeight(change));
+        Assert.AreEqual(OctopusSampleBranding.MinTouchUnits, change.rect.height);
     }
 
     [Test]

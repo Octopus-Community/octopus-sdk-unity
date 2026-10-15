@@ -80,9 +80,15 @@ public enum OctopusScreen
     ReportContent,
     ReportProfile,
     ValidateNickname,
+    /// <summary>Legacy screen retained for event compatibility.</summary>
+    [System.Obsolete("Legacy screen; settings moved to the profile menu. Native SDKs no longer emit it.", false)]
     SettingsList,
+    /// <summary>Legacy screen retained for event compatibility.</summary>
+    [System.Obsolete("Legacy screen; use your app's account flow. Native SDKs without Magic Link no longer emit it.", false)]
     SettingsAccount,
     ReportExplanation,
+    /// <summary>Legacy screen retained for event compatibility.</summary>
+    [System.Obsolete("Legacy screen; use your app's account flow. Native SDKs without Magic Link no longer emit it.", false)]
     DeleteAccount,
     /// <summary>Another user's posts list (native SDK 1.13+). Emitted by both Android and iOS.</summary>
     OtherUserPosts,

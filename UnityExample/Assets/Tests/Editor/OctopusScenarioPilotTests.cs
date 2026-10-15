@@ -46,7 +46,7 @@ public class OctopusScenarioPilotTests
     [Test]
     public void PilotsCoverExactlyTheScenariosTheSampleDrives()
     {
-        CollectionAssert.AreEqual(new[] { "connection", "customEvents", "locale", "theme", "refreshEntitlements", "termsAcceptance", "profileFieldsLock", "communityData", "groups", "syncFollowGroups", "groupAccessDenied", "communityAccess", "contentOptions", "reactions", "bridge", "createPost", "events", "trackABTests", "forceOctopusABTests", "lifecycle", "notSeenNotifications", "pushNotifications", "initialScreen" },
+        CollectionAssert.AreEqual(new[] { "unifiedProfile", "connection", "customEvents", "locale", "theme", "refreshEntitlements", "termsAcceptance", "consentTexts", "forceNicknameChoice", "profileFieldsLock", "communityData", "groups", "syncFollowGroups", "groupAccessDenied", "communityAccess", "contentOptions", "reactions", "bridge", "createPost", "events", "trackABTests", "forceOctopusABTests", "lifecycle", "notSeenNotifications", "pushNotifications", "initialScreen" },
                                   OctopusScenarioPilots.Ids);
     }
 
@@ -101,17 +101,21 @@ public class OctopusScenarioPilotTests
         {
             for (var i = 0; i < pilot.Presets.Count; i++)
             {
+                // Nickname labels and consent clear wording follow the shared catalogue verbatim.
+                if (pilot.Id == "forceNicknameChoice")
+                {
+                    Assert.AreEqual(new[] { "On — the member types a nickname",
+                        "Off — the generated nickname is prefilled", "Clear override (backend default)" }[i],
+                        pilot.Presets[i].Label);
+                    continue;
+                }
                 if (pilot.Presets[i].TestId.EndsWith("-clear"))
                 {
-                    Assert.AreEqual("Clear override (backend default)", pilot.Presets[i].Label);
+                    Assert.AreEqual(pilot.Id == "consentTexts" ? "Clear overrides (backend texts and mode)" :
+                        "Clear override (backend default)", pilot.Presets[i].Label);
                     continue;
                 }
                 // "Preset N · ", with U+00B7 MIDDLE DOT — the QA Tester matches on visible text.
-                if (pilot.Presets[i].TestId.EndsWith("-clear"))
-                {
-                    Assert.AreEqual("Clear override (backend default)", pilot.Presets[i].Label);
-                    continue;
-                }
                 var expectedPrefix = "Preset " + (i + 1) + " · ";
                 Assert.IsTrue(pilot.Presets[i].Label.StartsWith(expectedPrefix),
                     "Scenario '" + pilot.Id + "' preset #" + (i + 1) + " is labelled '" +
@@ -179,7 +183,7 @@ public class OctopusScenarioPilotTests
         foreach (var pilot in AllPilots())
         {
             Assert.IsNotEmpty(pilot.Result);
-            Assert.IsTrue(pilot.Result.StartsWith("Ready"),
+            Assert.IsTrue(pilot.Result.StartsWith("Not run yet"),
                 "Scenario '" + pilot.Id + "' opens on '" + pilot.Result + "'.");
         }
     }
@@ -195,9 +199,8 @@ public class OctopusScenarioPilotTests
     [Test]
     public void EveryPilotInitialisesWithTheSharedSsoMode()
     {
-        // `connection` needs SSO and the other two do not care: a common mode is what makes the
-        // screens safe to visit in any order (ConnectUser on an Octopus-auth SDK is a native
-        // precondition failure on iOS).
+        // Every pilot uses the shared SSO connection contract, so screens can be visited
+        // in any order and register the host's token provider before authenticated actions.
         Assert.AreEqual("SSO", OctopusScenarioSdk.PilotModeLabel);
         Assert.IsFalse(OctopusScenarioSdk.IsInPilotMode,
             "No pilot may initialise the SDK before a preset is tapped.");

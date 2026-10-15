@@ -49,6 +49,7 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
     private RectTransform _page;
     private RectTransform _events;
     private int _renderedVersion = -1;
+    private bool _rebuildRequested;
     private string _copyText = string.Empty;
 
     /// <summary>Feature-toggles card link to the Configuration screen, whose profile sets Force login.</summary>
@@ -58,6 +59,12 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
     public const string PushRegistrationScenariosLinkId = "devtools-push-registration-scenarios-link";
 
     public string CurrentScreen { get; private set; }
+
+    public static OctopusSampleDeveloperToolsView Open()
+    {
+        return Open(() => -1, () => new List<LogLine>(), OctopusSampleDiagnostics.Facts,
+            () => OctopusSampleHostCallbackView.Open("Debug Console", "The local log recorder is available in internal builds."));
+    }
 
     public static OctopusSampleDeveloperToolsView Open(Func<int> logVersion,
         Func<IList<LogLine>> snapshot, Func<IList<InfoFact>> info,
@@ -73,6 +80,7 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
         view._openConsole = openConsole;
         SampleUi.OverlayCanvas(view.gameObject, SampleUi.DetailSortingOrder);
         view.ShowIndex();
+        OctopusSampleBranding.ThemeChanged += view.OnThemeChanged;
         return view;
     }
 
@@ -86,7 +94,8 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
     public void Close()
     {
         // The entry rides in this header: hand it back before the hierarchy goes away.
-        SampleUiDebugEntryHost.ReleaseAll();
+        OctopusSampleBranding.ThemeChanged -= OnThemeChanged;
+        SampleUiDebugEntryHost.ReleaseFor(gameObject);
         // Inactive at once: a tab switch in the same frame (a link below) runs
         // SampleUiDetailPage.CloseAll, which skips an inactive page instead of closing it twice.
         gameObject.SetActive(false);
@@ -116,11 +125,13 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
     {
         var content = BuildPage("developer-tools-screen", "Developer tools");
         var card = SampleUi.Card("devtools-tools-card", content);
-        ToolRow(card, "devtools-events-row", "Events log", "SDK and host events, recorded live", ShowEvents);
+        ToolRow(card, "devtools-host-integration-row", "Host app integration", "Profile, sign-in, links: what the app handles",
+            () => OctopusSampleHostIntegrationView.Open());
+        ToolRow(card, "devtools-events-row", "Events log", _snapshot().Count + " events · live", ShowEvents);
         ToolRow(card, "devtools-debug-info-row", "Debug info", "SDK, configuration and build facts", ShowInfo);
         ToolRow(card, "devtools-debug-console-row", "Debug console", "SDK logs, as a sheet over this screen",
             () => _openConsole());
-        BuildToggles(content);
+        SampleUi.FlexibleLabel(content, "Host app integration sets what the app handles; the other three read what the SDK did.", SampleUi.TextCaption, SampleUi.Muted);
     }
 
     public void ShowEvents()
@@ -136,15 +147,24 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
         var content = BuildPage("debug-info-screen", "Debug info");
         var scope = SampleUi.FlexibleLabel(content,
             "This summary covers build facts, sample configuration and recorded calls. " +
-            "Native SDK metadata and callback coverage are outside this summary.",
+            "Native initialization and connection state are not exposed by the Unity SDK.",
             SampleUi.TextCaption, SampleUi.Muted);
         scope.name = "debug-info-scope";
         SampleUi.ChromeButton("debug-info-copy", content, "Copy", Copy);
         var card = SampleUi.Card("debug-info-facts", content);
         var lines = new List<string>();
+        RectTransform section = null;
+        string group = null;
         foreach (var fact in _info())
         {
-            ValueRow(card, fact.Id, fact.Label, fact.Value);
+            var next = OctopusSampleDiagnostics.Group(fact.Id);
+            if (group != next)
+            {
+                group = next;
+                section = SampleUi.Card("debug-info-" + group.ToLowerInvariant().Replace(" ", "-") + "-card", card);
+                SampleUi.FlexibleLabel(section, group, SampleUi.TextTitle, SampleUi.TitleColor);
+            }
+            ValueRow(section, fact.Id, fact.Label, fact.Value);
             lines.Add(fact.Label + ": " + fact.Value);
         }
         _copyText = string.Join("\n", lines);
@@ -155,7 +175,29 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
 
     private void Update()
     {
+        if (_rebuildRequested) { _rebuildRequested = false; Rebuild(); }
         if (CurrentScreen == "events-log-screen") RefreshEvents(false);
+    }
+
+    private void OnDestroy() { OctopusSampleBranding.ThemeChanged -= OnThemeChanged; }
+
+    private void OnThemeChanged()
+    {
+        if (this == null) { OctopusSampleBranding.ThemeChanged -= OnThemeChanged; return; }
+        if (Application.isPlaying) _rebuildRequested = true;
+        else Rebuild();
+    }
+
+    private void Rebuild()
+    {
+        var scroll = _page.GetComponentInChildren<ScrollRect>(true);
+        float position = scroll == null ? 1f : scroll.verticalNormalizedPosition;
+        if (CurrentScreen == "events-log-screen") ShowEvents();
+        else if (CurrentScreen == "debug-info-screen") ShowInfo();
+        else ShowIndex();
+        Canvas.ForceUpdateCanvases();
+        scroll = _page.GetComponentInChildren<ScrollRect>(true);
+        if (scroll != null) scroll.verticalNormalizedPosition = position;
     }
 
     public void RefreshEvents(bool force)
@@ -223,46 +265,13 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
     private static void ToolRow(RectTransform card, string id, string title, string subtitle,
         UnityEngine.Events.UnityAction action)
     {
-        var row = SampleUi.Panel(id, card, SampleUi.FieldBackground);
-        SampleUi.VerticalStack(row, 4f, new RectOffset(24, 24, 20, 20), true);
-        row.gameObject.AddComponent<LayoutElement>().minHeight = OctopusSampleBranding.MinTouchUnits;
-        SampleUi.FlexibleLabel(row, title, SampleUi.TextBody, SampleUi.TitleColor);
-        SampleUi.FlexibleLabel(row, subtitle, SampleUi.TextCaption, SampleUi.Muted);
-        var button = row.gameObject.AddComponent<Button>();
-        button.targetGraphic = row.GetComponent<Image>();
-        button.onClick.AddListener(action);
-    }
-
-    private void BuildToggles(RectTransform content)
-    {
-        var card = SampleUi.Card("devtools-feature-toggles-card", content);
-        SampleUi.FlexibleLabel(card, "Feature toggles", SampleUi.TextTitle, SampleUi.TitleColor);
-        SampleUi.FlexibleLabel(card,
-            "Read-only here. Force login follows the Configuration profile, applied live; Push registration is switched in Scenarios › Notifications.",
-            SampleUi.TextCaption, SampleUi.Muted);
-        ValueRow(card, OctopusSampleFeatureToggles.ForceLoginId,
-            OctopusSampleFeatureToggles.ForceLoginLabel,
-            ToggleValue(OctopusSampleFeatureToggles.ForceLogin,
-                OctopusSampleFeatureToggles.ForceLoginEffect(OctopusSampleFeatureToggles.ForceLogin)));
-        ValueRow(card, OctopusSampleFeatureToggles.PushRegistrationId,
-            OctopusSampleFeatureToggles.PushRegistrationLabel,
-            ToggleValue(OctopusSampleFeatureToggles.PushRegistration,
-                OctopusSampleFeatureToggles.PushRegistrationEffect(OctopusSampleFeatureToggles.PushRegistration)));
-        SampleUi.Button(ForceLoginConfigLinkId, card, "Open Configuration",
-            SampleUiButtonVariant.Tertiary, OpenForceLoginSource);
-        SampleUi.Button(PushRegistrationScenariosLinkId, card, "Open Scenarios › Notifications",
-            SampleUiButtonVariant.Tertiary, OpenPushRegistrationSource);
-    }
-
-    private static string ToggleValue(bool enabled, string effect)
-    {
-        return (enabled ? "On" : "Off") + " — " + effect;
+        SampleUi.ListRow(id, card, title, subtitle, action);
     }
 
     private RectTransform BuildPage(string id, string titleText)
     {
         // The header being thrown away hosts the entry: hand it back before it goes.
-        SampleUiDebugEntryHost.ReleaseAll();
+        SampleUiDebugEntryHost.ReleaseFor(gameObject);
         _events = null;
         _eventRows.Clear();
         _emptyEvents = null;
@@ -274,7 +283,7 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
             else DestroyImmediate(_page.gameObject);
         }
         CurrentScreen = id;
-        _page = SampleUi.DetailPage(id, transform, Close);
+        _page = SampleUi.DetailPage(id, transform, Back);
         var root = _page;
         var header = SampleUi.AppBar("Header", root, titleText, Back, "devtools-back");
         SampleUiDebugEntryHost.Attach(header);

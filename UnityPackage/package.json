@@ -1,6 +1,6 @@
 {
     "name": "com.octopuscommunity.octopus_sdk_for_unity",
-    "version": "1.14.3",
+    "version": "1.15.0",
     "displayName": "Octopus SDK for Unity",
     "description": "Unity wrapper for the Octopus SDK Android and iOS libraries.",
     "unity": "2019.4",
@@ -9,18 +9,18 @@
         "type": "git",
         "url": "https://github.com/Octopus-Community/octopus-sdk-unity.git"
     },
-    "keywords": ["octopus", "community", "social", "sdk"],
+    "keywords": [
+        "octopus",
+        "community",
+        "social",
+        "sdk"
+    ],
     "documentationUrl": "https://doc.octopuscommunity.com",
     "author": {
         "name": "Octopus Community",
         "url": "https://octopuscommunity.com"
     },
     "samples": [
-        {
-            "displayName": "Octopus Auth Example",
-            "description": "Example of minimal integration by using Octopus Authentication.",
-            "path": "Samples~/OctopusAuthExample"
-        },
         {
             "displayName": "Push Notifications Example",
             "description": "Data-driven push notification handling, symmetric on iOS and Android. iOS uses Unity Mobile Notifications for APNs token and tap detection (no native file required). Android ships a native FirebaseMessagingService (Java + .androidlib manifest) that displays Octopus data-only messages in the background and routes the tap.",

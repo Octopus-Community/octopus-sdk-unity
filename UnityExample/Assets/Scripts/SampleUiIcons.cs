@@ -77,9 +77,17 @@ public static class SampleUiIcons
         }
     }
 
+    // Android's Settings icons, row for row: Person, DarkMode, Language, Cloud, Terminal,
+    // Feedback, Info, DeleteForever. Demo game is Unity-only and takes SportsEsports.
     public static string ForRow(string id)
     {
-        if (id == OctopusSampleSettingsView.AppearanceRowId) return "palette";
+        if (id == OctopusSampleSettingsView.AccountRowId) return "person";
+        if (id == OctopusSampleSettingsView.AppearanceRowId) return "dark_mode";
+        if (id == OctopusSampleSettingsView.LanguageRowId) return "language";
+        if (id == OctopusSampleSettingsView.ConfigRowId) return "cloud";
+        if (id == OctopusSampleSettingsView.DevToolsRowId) return "terminal";
+        if (id == OctopusSampleSettingsView.ResetButtonId) return "delete_forever";
+        if (id == OctopusSampleSettingsView.DemoGameRowId) return "sports_esports";
         if (id == OctopusSampleSettingsView.AboutRowId) return "info";
         if (id == OctopusSampleAboutView.RepositoryRowId) return "code";
         if (id == OctopusSampleAboutView.DesignReferenceRowId) return "design_services";

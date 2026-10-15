@@ -39,7 +39,7 @@ Full architecture, module boundaries and API-stability rules: [CLAUDE.md](CLAUDE
 
 | Need | For | Version |
 |---|---|---|
-| Unity Editor | `UnityExample/`, EditMode tests, the legacy `.unitypackage` build | Read from [`UnityExample/ProjectSettings/ProjectVersion.txt`](UnityExample/ProjectSettings/ProjectVersion.txt) (currently `6000.3.3f1`) — do not hardcode a version, that file is the source of truth |
+| Unity Editor | `UnityExample/`, EditMode tests, the legacy `.unitypackage` build | Read from [`UnityExample/ProjectSettings/ProjectVersion.txt`](UnityExample/ProjectSettings/ProjectVersion.txt) (currently `6000.6.3f1`) — do not hardcode a version, that file is the source of truth |
 | .NET 8 SDK | `ci/compile-check/compile-check.sh` | `dotnet --version` should report an 8.x SDK; override the binary with `DOTNET=/path/to/dotnet` |
 | JDK 11 | `AndroidBridge/build.sh` | `AndroidBridge/bridge/build.gradle.kts` pins `sourceCompatibility`/`targetCompatibility`/`jvmTarget` to `11` |
 | Ruby | `UnityPackage/Editor/ruby/patch_xcode_proj.rb` (the iOS Xcode post-process) | Any recent system Ruby — the `xcodeproj` gem is vendored and committed under `UnityPackage/Editor/ruby/vendor/bundle`, so no `bundle install` is needed. This script runs automatically during an Xcode export (`iOSBuildPostProcessor.cs`); you only invoke it by hand if you are changing the script itself |
@@ -47,9 +47,10 @@ Full architecture, module boundaries and API-stability rules: [CLAUDE.md](CLAUDE
 
 No Unity licence is required for the compile gate, the native-pin check, the bridge-contract
 check or the mirror-export guard — only for actually opening `UnityExample/`, running the
-EditMode tests, or building a player. The Editor never runs in CI by decision of 2026-09-16;
-no licensed Unity Editor is provisioned for CI. Contributors run the Editor locally and
-paste the local-gates attestation in the PR body; CI validates that report.
+EditMode tests, or building a player. The Editor does not run automatically in CI: contributors
+run it locally and paste the local-gates attestation in the PR body; CI validates that report.
+A contributor without a licensed Editor can dispatch `unity-editor-gates.yml` on the self-hosted
+Mac mini instead (below).
 
 ## Local gates, in the order `pr.yml` runs them
 
@@ -113,8 +114,11 @@ Editor runs, it requires a clean `UnityPackage/` and `UnityExample/` (ignored lo
 are excluded); commit or discard existing changes and rerun. After EditMode and the optional
 Android build, including failed invocations, it restores and lists tracked files changed by
 Unity serialization, saving their diffs before restoration to the gitignored
-`UnityExample/Logs/local-gates-restored.diff` (reset at the start of each run). Untracked files
-and staged changes created by the run are listed and left for inspection, and prevent an
+`UnityExample/Logs/local-gates-restored.diff`. That file is opened lazily, on the first restore
+of a run: the previous run's content is first rotated to `local-gates-restored.diff.1`, so a run
+that restores nothing (a red compile check, a dirty tree, an Editor that left no serialization
+changes) leaves the existing file untouched. Untracked files and index states (any staged or
+unmerged entry) created by the run are listed and left for inspection, and prevent an
 attestation. Failed steps report their log path before these diagnostics. A final clean-tree
 check guards any remaining changes.
 
@@ -123,7 +127,18 @@ It invokes `BuildScript.BuildAndroidDebug` with `OCTOPUS_INTERNAL=true`, uses de
 and reports `UnityExample/build/android/UnityExample.apk`. The build log is retained at
 `UnityExample/Logs/local-gates-android.log`; no store signing credentials are required.
 
-Paste the single emitted attestation line under **`### Unity local gates`** in the PR body.
+Without a local Editor, dispatch the same script on the self-hosted Mac mini:
+`gh workflow run unity-editor-gates.yml --ref <your branch>` (job
+`Unity editor gates (EditMode + Android)`). It uses the Editor `ProjectVersion.txt` names, fails
+with the list of installed Editors if the runner lacks it, keeps the APK and the gate logs 3 days
+and prints the attestation line in its run summary. It is **manual-only** until a more powerful
+runner lands (Thomas, 2026-09-28: the mini is capped) — dispatch it sparingly.
+For an APK that runs on an Android emulator (a Development build fails graphics init or crashes in
+the emulator's Vulkan driver), build with `BuildOptions.None` instead:
+`gh workflow run unity-editor-gates.yml --ref <your branch> -f development_build=false`.
+
+Paste the single emitted attestation line — from your local run or from that run's summary —
+under **`### Unity local gates`** in the PR body.
 For PRs touching neither `UnityPackage/` nor `UnityExample/`, write `not needed: <reason>`.
 The `Unity local gates` workflow (`unity-gates-guard.yml`), job `Unity local gates (attestation)`,
 checks changed paths, counts, Editor version and commit ancestry. It fails if Unity files
@@ -131,8 +146,9 @@ changed without valid evidence; `not needed:` cannot bypass this. Body edits re-
 this validation, not `pr.yml`. An earlier PR commit is accepted with a notice only if no
 Unity files changed since that commit; otherwise rerun the local gates.
 
-This is a contributor attestation, not an independently executed test result. The check is
-initially non-required in branch protection; promotion follows observed green and red runs.
+A locally pasted line is a contributor attestation; a line from a dispatched run is backed by
+that run. The attestation check is initially non-required in branch protection; promotion
+follows observed green and red runs.
 
 ### If you touched `AndroidBridge/`
 

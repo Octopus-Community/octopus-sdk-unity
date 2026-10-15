@@ -3,40 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// The generic scenario screen: one <see cref="OctopusScenarioPilot"/>, rendered as the contract in
-/// SDK_STANDARDS §5.2 describes it.
-///
-/// What that contract asks for, and where each half lives here:
-///
-/// - **Single-tap presets, labelled `Preset N · &lt;description&gt;`, that pre-fill every field.**
-///   One button per catalogue preset, each carrying the catalogue's `test_id` as its
-///   <c>GameObject.name</c> so the QA pipeline can address it. A tap fills the fields and then
-///   runs — no second confirm button, nothing left to type into.
-/// - **A live result panel**, named with the catalogue's `result_test_id`, updated from the
-///   pilot's own result line.
-/// - **Locked parameters with opt-in Customize.** Custom Run uses the edited values. Reset
-///   restores the last preset without a call; tapping a preset restores, locks and runs it.
-///   Controls use §5.4's `<section>-<element>[-<action>]` shape: `<id>-customize` (also Reset
-///   while editing) and `<id>-run` inside Parameters. Informational fields stay read-only in
-///   a separate context card. Existing preset and result ids are unchanged.
-/// - **Stale results**, as on Android: when fields differ from the last run's snapshot, replace
-///   the result with the muted line "Not run yet — values changed" until Run or a value restore.
-/// - **A usable state on entry**: the first preset's values are filled in as the screen is built,
-///   so no field is ever blank and the result panel says what state the scenario is in.
-/// - **No automatic mutation**: building this screen makes no SDK call at all. Filling fields is
-///   pure; the SDK is reached from preset Run or custom Run only, i.e. behind a
-///   tap or an explicit QA launch request. `OctopusScenarioScreenViewTests` counts API calls on the sample log seam
-///   while the screen is built.
-/// - **Theme and safe-area changes** rebuild only the presentation, preserving the pilot, the
-///   selected preset, custom values, run snapshot and scroll position without another SDK call.
-///
-/// Built in code with no prefab and no scene YAML, like <see cref="OctopusScenariosListView"/>, and
-/// through the same <see cref="SampleUi"/> builders so the two screens cannot drift apart.
-///
-/// Presets stack vertically so their full labels can wrap on narrow screens.
-/// </summary>
-public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
+/// <summary>One scenario screen: reference identity, parameters, fill-only presets and Execute/Result.</summary>
+public partial class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
 {
     /// <summary>Detail layer above the sample shell; Debug console and feedback can open above it.</summary>
     private const int SortingOrder = SampleUi.DetailSortingOrder;
@@ -102,7 +70,7 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         var profilePage = FindAnyObjectByType<OctopusSampleClientProfileView>();
         if (profilePage != null) profilePage.Dismiss();
         // The entry rides in this header: hand it back before the hierarchy goes away.
-        SampleUiDebugEntryHost.ReleaseAll();
+        SampleUiDebugEntryHost.ReleaseFor(gameObject);
         gameObject.SetActive(false);
         if (Application.isPlaying) Destroy(gameObject);
         else DestroyImmediate(gameObject);
@@ -126,13 +94,18 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
     {
         _pilot = pilot;
         SampleUi.OverlayCanvas(gameObject, SortingOrder);
-        _selectedPreset = _pilot.Presets[0];
-        _selectedPreset.Fill(_pilot.Fields);
+        if (_pilot.Presets.Count > 0)
+        {
+            _selectedPreset = _pilot.Presets[0];
+            _selectedPreset.Fill(_pilot.Fields);
+        }
+        _customizing = _pilot.Id == "communityData";
         Build();
         OctopusSampleBranding.ThemeChanged += OnThemeChanged;
         _pilot.ResultChanged += OnResultChanged;
+        OctopusScenarioSdk.Current.ProfileChanged += OnConnectionProfileChanged;
         _pilot.HostProfileRequested += OnHostProfileRequested;
-        if (ShowsUnifiedProfileHint)
+        if (ShowsUnifiedProfileHint || _pilot.Id == "unifiedProfile")
         {
             _observingUnifiedProfile = true;
             OctopusSampleUnifiedProfile.Changed += OnUnifiedProfileChanged;
@@ -151,6 +124,7 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         {
             _pilot.ResultChanged -= OnResultChanged;
             _pilot.HostProfileRequested -= OnHostProfileRequested;
+            OctopusScenarioSdk.Current.ProfileChanged -= OnConnectionProfileChanged;
         }
         if (_observingUnifiedProfile) OctopusSampleUnifiedProfile.Changed -= OnUnifiedProfileChanged;
         _observingUnifiedProfile = false;
@@ -188,10 +162,10 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         var position = _scroll == null ? 1f : _scroll.verticalNormalizedPosition;
         if (_root != null)
         {
+            // Release before detaching; other tabs may also have a suspended detail.
+            SampleUiDebugEntryHost.ReleaseFor(gameObject);
             _root.gameObject.SetActive(false);
             _root.SetParent(null, false);
-            // The entry rides in this header: hand it back before the hierarchy goes away.
-            SampleUiDebugEntryHost.ReleaseAll();
             if (Application.isPlaying) Destroy(_root.gameObject);
             else DestroyImmediate(_root.gameObject);
         }
@@ -219,6 +193,7 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
             return;
         }
         if (_unifiedProfileHint != null) _unifiedProfileHint.text = OctopusSampleUnifiedProfile.ScenarioHint;
+        RefreshUnifiedControls();
     }
 
     private void OnResultChanged(string result)
@@ -227,7 +202,7 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
     }
 
     /// <summary>
-    /// The catalogue's one preset that leaves the scenario screen (`communityData` preset 6): the
+    /// The catalogue's action that leaves the scenario screen (`communityData` preset 6): the
     /// pilot asks for a host-owned profile page and this renderer presents the sample's, over
     /// this screen, bound to the destination the pilot keeps updating.
     /// </summary>
@@ -250,7 +225,7 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
                 if (!_lastRunValues.TryGetValue(field.Key, out previous) || previous != field.Value) stale = true;
             }
         }
-        _resultLabel.text = stale ? "Not run yet — values changed\nRun these values to refresh the result." : _pilot.Result;
+        _resultLabel.text = stale ? "Not run yet — values changed" : _pilot.Result;
         _resultLabel.color = stale ? SampleUi.Muted : SampleUi.TitleColor;
         foreach (var button in _runButtons) button.interactable = !_pilot.IsRunning;
         var displayed = _pilot.IsRunning ? "Running…" : _resultLabel.text;
@@ -284,17 +259,36 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         BuildHeader(root);
 
         var content = SampleUi.VerticalScroll(root, SampleUi.OverlayPadding());
-        content.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(16f);
-        _scroll = content.GetComponentInParent<ScrollRect>();
+        content.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg);
+        _scroll = content.GetComponentInParent<ScrollRect>(true);
+        var title = SampleUi.FlexibleLabel(content, _pilot.Title, SampleUi.TextTitleXl, SampleUi.TitleColor);
+        title.name = "scenario-title";
+        title.fontStyle = FontStyles.Bold;
         BuildDescription(content);
         BuildFeatureState(content);
         BuildUnifiedProfileHint(content);
-        BuildFields(content);
-        var guidance = SampleUi.FlexibleLabel(content, "You will see: " + _pilot.YouWillSee,
+        var bench = Section(content, "Try it");
+        bench.name = "scenario-try-it";
+        var parameters = OctopusScenarioPresentation.ParametersFor(_pilot.Id);
+        if (parameters.Length > 0)
+        {
+            var signature = Section(bench, "Parameters");
+            foreach (var parameter in parameters)
+                SampleUi.FlexibleLabel(signature, parameter, SampleUi.TextCaption, SampleUi.Muted).richText = false;
+        }
+        var guidance = SampleUi.FlexibleLabel(bench, "You will see: " + _pilot.YouWillSee,
                                               SampleUi.TextBody, SampleUi.TitleColor);
         guidance.name = "scenario-you-will-see";
-        BuildPresets(content);
-        BuildResult(content);
+        if (_pilot.Id == "unifiedProfile") BuildUnifiedControls(bench);
+        else
+        {
+            BuildPresets(bench);
+            BuildFields(bench);
+            if (_pilot.Id == "connection") BuildConnectionControls(bench);
+            BuildResult(bench);
+        }
+        if (OctopusScenarioPresentation.CanVerify(_pilot.Id))
+            SampleUi.Button("scenario-verify-community", content, "Verify in Community", VerifyInCommunity);
         SetCustomizing(_customizing);
         RefreshResult();
     }
@@ -312,23 +306,16 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
 
     private void BuildDescription(RectTransform content)
     {
-        var card = SampleUi.Card("scenario-description", content);
-        var capability = SampleUi.FlexibleLabel(card, _pilot.Capability,
-            SampleUi.TextBody, SampleUi.TitleColor);
-        capability.name = "Capability";
-        foreach (var symbol in _pilot.ApiSymbols)
-        {
-            var chip = SampleUi.Panel("scenario-api-" + symbol, card, SampleUi.FieldBackground,
-                OctopusSampleBranding.FieldRadius, OctopusSampleBranding.Palette.Border);
-            SampleUi.VerticalStack(chip, 0f, new RectOffset(Units(10f), Units(10f), Units(4f), Units(4f)), false);
-            var label = SampleUi.FlexibleLabel(chip, symbol, SampleUi.TextCaption, SampleUi.Muted);
-            label.fontStyle = FontStyles.Bold;
-        }
+        var card = SampleUi.Panel("scenario-description", content, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(card, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm), new RectOffset(), false);
+        var chip = SampleUi.Card("scenario-api-" + _pilot.Row.ReferenceApi, card);
+        SampleUi.FlexibleLabel(chip, _pilot.Row.ReferenceApi, SampleUi.TextCaption, SampleUi.Muted);
+        SampleUi.FlexibleLabel(card, _pilot.Row.Subtitle, SampleUi.TextBody, SampleUi.Muted);
     }
 
     private void BuildFields(RectTransform content)
     {
-        var section = Section(content, "Parameters");
+        var section = Section(content, "Controls");
         if (_pilot.CanCustomize)
         {
             var customize = SampleUi.Button(_pilot.Id + "-customize", section, "Customize", SampleUiButtonVariant.Tertiary, () =>
@@ -336,11 +323,12 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
                 if (_customizing) ApplyPreset(_selectedPreset, false);
                 else SetCustomizing(true);
             });
-            _customizeLabel = customize.GetComponentInChildren<TMP_Text>();
+            _customizeLabel = customize.GetComponentInChildren<TMP_Text>(true);
         }
         RectTransform information = null;
         foreach (var field in _pilot.Fields.All)
         {
+            if (_pilot.Id == "communityData" && field.IsInformational) continue;
             // Informative context stays visible with its existing QA ids, outside Customize.
             if (field.IsInformational && information == null)
                 information = Section(content, "Preset context");
@@ -354,7 +342,8 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
             var key = field.Key;
             input.onValueChanged.AddListener(value =>
             {
-                if (!_customizing || field.IsInformational) return;
+                if (field.IsInformational || (!_customizing && _pilot.Id != "communityData")) return;
+                if (_pilot.Id == "communityData") _customizing = true;
                 _pilot.Fields.Set(key, value);
                 RefreshResult();
             });
@@ -370,15 +359,9 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
 
     private void BuildCustomRun(RectTransform content)
     {
-        if (!_pilot.CanCustomize) return;
-        _customRun = SampleUi.Button(_pilot.Id + "-run", content, "Run", () =>
-        {
-            if (!_customizing || _pilot.IsRunning) return;
-            RememberRunValues();
-            _pilot.Execute(_pilot.RunCustom);
-        }).gameObject;
+        _customRun = SampleUi.Button(_pilot.Id + "-run", content, "Execute", ExecuteCurrent).gameObject;
         _runButtons.Add(_customRun.GetComponent<Button>());
-        _customRun.SetActive(false);
+
     }
 
     /// <summary>
@@ -412,17 +395,19 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         }
         else return;
 
-        SampleUi.Button("scenario-feature-state", content,
-            "Feature: " + label + " · " + (enabled ? "On" : "Off"), SampleUiButtonVariant.Tertiary, () =>
+        var banner = SampleUi.Card("scenario-feature-state", content);
+        SampleUi.FlexibleLabel(banner, label + " is " + (enabled ? "on" : "off"), SampleUi.TextBody, SampleUi.TitleColor);
+        SampleUi.Button("scenario-feature-change", banner, "Change", SampleUiButtonVariant.Tertiary, () =>
+        {
+            var shell = FindAnyObjectByType<OctopusSampleShell>();
+            Dismiss();
+            if (section == ScenarioSection.SignIn)
             {
-                // Back to the section whose switch owns this feature — expanded, filter cleared and
-                // scrolled to — rather than the list's top, where the switch may be collapsed away.
-                var shell = FindAnyObjectByType<OctopusSampleShell>();
-                // ShowScenarioSection selects the tab, which closes every detail page, this screen
-                // included; Dismiss is only the fallback when no shell hosts the screen.
-                if (shell != null) shell.ShowScenarioSection(section);
-                else Dismiss();
-            });
+                if (shell != null) shell.Select(OctopusSampleTab.Settings);
+                OctopusSampleConfigView.Open();
+            }
+            else if (shell != null) shell.ShowScenarioSection(section);
+        });
     }
 
     private void SetCustomizing(bool customizing)
@@ -432,27 +417,27 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         {
             var editable = false;
             foreach (var field in _pilot.Fields.All)
-                if (field.Key == input.Key) editable = customizing && !field.IsInformational;
+                if (field.Key == input.Key) editable = (customizing || _pilot.Id == "communityData") && !field.IsInformational;
             input.Value.readOnly = !editable;
             input.Value.interactable = editable;
             ((SampleUiInputField)input.Value).RefreshVisuals();
         }
         if (_customizeLabel != null)
             _customizeLabel.text = customizing ? "Reset to preset" : "Customize";
-        if (_customRun != null) _customRun.SetActive(customizing);
+        if (_customRun != null) _customRun.SetActive(true);
     }
 
     private void BuildPresets(RectTransform content)
     {
         var section = Section(content, "Presets");
-        SampleUi.FlexibleLabel(section, "Tap once to fill parameters and run.", SampleUi.TextCaption, SampleUi.Muted);
+        SampleUi.FlexibleLabel(section, "Choose a preset to fill parameters, then Execute.", SampleUi.TextCaption, SampleUi.Muted);
         foreach (var preset in _pilot.Presets)
         {
             var current = preset;
             // GameObject.name IS the catalogue's test_id, verbatim — this is the handle the QA
             // pipeline taps.
             var button = SampleUi.Button(current.TestId, section, current.Label,
-                SampleUiButtonVariant.Secondary, () => ApplyPreset(current, true),
+                SampleUiButtonVariant.Secondary, () => ApplyPreset(current, false),
                 OctopusSampleBranding.FieldRadius);
             _runButtons.Add(button.GetComponent<Button>());
         }
@@ -491,13 +476,21 @@ public class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQaScenario
         return true;
     }
 
+    private void ExecuteCurrent()
+    {
+        if (_pilot.IsRunning) return;
+        RememberRunValues();
+        _pilot.Execute(_customizing && _pilot.CanCustomize ? (System.Action)_pilot.RunCustom :
+            () => _selectedPreset.Run(_pilot.Fields));
+    }
+
     /// <summary>
     /// Fills every field and mirrors it into the inputs. Taps and explicit QA requests share this
     /// path; restoring values without running makes no SDK call.
     /// </summary>
     private void ApplyPreset(OctopusScenarioPreset preset, bool run)
     {
-        if (run && _pilot.IsRunning) return;
+        if (_pilot.IsRunning) return;
         _selectedPreset = preset;
         preset.Fill(_pilot.Fields);
         foreach (var input in _inputs)

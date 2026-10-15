@@ -40,6 +40,16 @@ public class OctopusMockPassthroughTests
         Assert.AreEqual("MyApp", OctopusSDK.Mock.LastCall("SetAppName").Value.Args[0]);
     }
 
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("\t\n")]
+    public void SetAppName_NullEmptyOrWhitespace_ReachesBackendAsEmptyString(string appName)
+    {
+        OctopusSDK.SetAppName(appName);
+        Assert.AreEqual("", OctopusSDK.Mock.LastCall("SetAppName").Value.Args[0]);
+    }
+
     [Test]
     public void NavigateToUrlHandler_Set_EnablesInterceptionRecorded()
     {

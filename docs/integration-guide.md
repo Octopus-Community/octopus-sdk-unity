@@ -39,6 +39,20 @@ OctopusSDK.Initialize("YOUR_API_KEY",
 OctopusSDK.Initialize("YOUR_API_KEY", ConnectionMode.SSO());
 ```
 
+**App-managed audio session (iOS only):** if your game manages `AVAudioSession`, initialize with:
+
+```csharp
+OctopusSDK.Initialize("YOUR_API_KEY", ConnectionMode.SSO(), apiServerHost: null, apiServerPort: 443,
+    options: new OctopusInitializationOptions { AppManagedAudioSession = true });
+```
+
+The option defaults to `false`. On iOS, `true` leaves audio-session configuration and activation
+to your app during video playback and pauses. It has no effect on Android or in the Editor mock.
+Options are read during initialization; changing the object afterwards has no effect. Community
+switches keep the initialized value until the next successful `Initialize` (including after `Stop`).
+Null options and the existing initialization overload use `false`; custom server parameters remain
+supported.
+
 ### Connect a User
 
 When using SSO, inform the SDK that your user is signed in:
@@ -64,6 +78,10 @@ When the user signs out:
 ```csharp
 await OctopusSDK.DisconnectUser();
 ```
+
+Your app owns sign-in: `ConnectionMode.SSO(...)` is the only supported connection mode.
+Handle `OnLoginRequired` with your app's login UI, then call `ConnectUser` with a fresh token
+provider. `RefreshEntitlements` requires that provider to be registered in the current SDK session.
 
 ## Profile Management
 

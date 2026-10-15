@@ -7,7 +7,9 @@ public class LanguageOverrideExample : MonoBehaviour
 
     void Start()
     {
-        OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.OctopusAuth());
+        MainMenu.RegisterSsoLoginRoute();
+        OctopusSDK.Initialize(OctopusExampleConfig.Instance.Default.apiKey, ConnectionMode.SSO(),
+            OctopusExampleConfig.Instance.ApiServerHost);
 
         var canvas = new GameObject("Canvas");
         var canvasComp = canvas.AddComponent<Canvas>();
@@ -28,6 +30,11 @@ public class LanguageOverrideExample : MonoBehaviour
 
         // Open Octopus button
         CreateButton(canvas.transform, "Open Octopus", 0, -210, OnOpenOctopus);
+    }
+
+    void OnDestroy()
+    {
+        MainMenu.UnregisterSsoLoginRoute();
     }
 
     void SetLanguage(string languageCode)

@@ -37,12 +37,12 @@ public class OctopusSampleStartupTests
     }
 
     [Test]
-    public void FirstLaunchDoesNotInitializeOrPersistAnything()
+    public void FirstLaunchStartsDefaultDemoWithoutATap()
     {
         Restore();
-        Assert.AreEqual(0, _sdk.Methods.Count);
-        Assert.IsFalse(OctopusSampleState.IsInitialized);
-        Assert.AreEqual(0, Saved);
+        CollectionAssert.Contains(_sdk.Methods, "Initialize");
+        Assert.IsTrue(OctopusSampleState.IsInitialized);
+        Assert.AreEqual(1, Saved);
     }
 
     [TestCase(false, 1)]
@@ -113,7 +113,7 @@ public class OctopusSampleStartupTests
 
     [TestCase(99)]
     [TestCase(-1)]
-    public void InvalidSavedSelectionIsForgottenSoTheNextLaunchIsCold(int value)
+    public void InvalidSavedSelectionIsForgottenSoTheNextLaunchStartsDefault(int value)
     {
         PlayerPrefs.SetInt(PreferenceKey, value);
         Restore();
@@ -121,7 +121,7 @@ public class OctopusSampleStartupTests
 
         NewLaunch();
         Restore();
-        Assert.AreEqual(0, _sdk.Methods.Count);
+        CollectionAssert.Contains(_sdk.Methods, "Initialize");
         Assert.AreEqual(OctopusSampleState.Session.None, OctopusSampleState.ConnectionSession,
             "The second launch failed again on the same saved value.");
     }
@@ -132,6 +132,7 @@ public class OctopusSampleStartupTests
     {
         PlayerPrefs.SetInt(PreferenceKey, saved);
         _sdk.Profile = null;
+        _sdk.AlternateProfile = null;
         Restore();
         Assert.IsFalse(OctopusSampleState.IsInitialized);
         Assert.AreEqual(0, Saved);
@@ -152,16 +153,16 @@ public class OctopusSampleStartupTests
     }
 
     [Test]
-    public void AThrowAfterASuccessfulInitKeepsTheSavedProfile()
+    public void AThrowInThemeSetupIsReportedAsARetryableConfigurationError()
     {
         PlayerPrefs.SetInt(PreferenceKey, 2);
         _sdk.ApplyThemeThrows = true;
         Assert.DoesNotThrow(Restore);
-        Assert.IsTrue(OctopusSampleState.IsInitialized);
-        Assert.AreEqual(2, Saved, "A setup step after a successful init forgot the saved profile (#387).");
-        Assert.IsTrue(OctopusSampleFeatureToggles.ForceLogin);
-        Assert.AreNotEqual(OctopusSampleState.Session.StartupFailed, OctopusSampleState.ConnectionSession);
-        Assert.IsNull(OctopusScenarioSdk.StartupFailureReason);
+        Assert.IsFalse(OctopusSampleState.IsInitialized);
+        Assert.AreEqual(0, Saved);
+        Assert.IsFalse(OctopusSampleFeatureToggles.ForceLogin);
+        Assert.AreEqual(OctopusSampleState.Session.StartupFailed, OctopusSampleState.ConnectionSession);
+        Assert.IsNotNull(OctopusScenarioSdk.StartupFailureReason);
     }
 
     [Test]
@@ -209,7 +210,7 @@ public class OctopusSampleStartupTests
     private void NewLaunch()
     {
         OctopusSampleFeatureToggles.Reset();
-        _sdk = new OctopusRecordingScenarioSdk { Profile = NewProfile() };
+        _sdk = new OctopusRecordingScenarioSdk { Profile = NewProfile(), AlternateProfile = NewProfile() };
         OctopusScenarioSdk.Use(_sdk, PreferenceKey);
     }
 

@@ -4,30 +4,9 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Home: what the SDK is pointed at, what state the sample left it in, and the one door into the
-/// community — the read-only dashboard SDK_STANDARDS §5.1 puts first in the shell.
-///
-/// **Read-only, and the word is load-bearing.** Nothing here calls the SDK. Not on entry, not on a
-/// refresh: the two live values it shows arrive on `OctopusSDK`'s own events, and
-/// `UpdateNotSeenNotificationsCount()` — which *is* a native call — is deliberately not made, so a
-/// tab switch can never mutate anything. `OctopusSampleShellTests` counts the calls on the sample
-/// log seam and would fail if that changed.
-///
-/// **What it can honestly show is smaller than on Android, and the gap is the package's.** The
-/// Android sample reads four SDK flows: `isInitialisedFlow`, `connectionState`,
-/// `notSeenNotificationsCount`, `hasAccessToCommunity`. This package publishes the last two only.
-/// There is no initialisation flow and no connection state to read back — a gap
-/// <see cref="ConnectionScenario"/> already states on its own screen ("this package exposes no
-/// connection state to read back"). So the initialisation and session lines come from
-/// <see cref="OctopusSampleState"/>, i.e. from what the *sample* did, and the connection card
-/// labels the call it made rather than a session it cannot see — see
-/// <see cref="ConnectionStatusLabel"/>, where the two ways that inference goes wrong are written
-/// out. Android can say CONNECTED here because it reads the SDK's `connectionState`; this side
-/// cannot, and saying it anyway would be the sample lying to the reader most likely to trust it.
-///
-/// **The ids below are not catalogue ids.** The shared catalogue's `shell:` block defines exactly
-/// one Home id, `home-tab`. These reuse the Android sample's spelling so one cross-platform QA
-/// script reads the same on both — the same rule 2a applied to `shell-theme-toggle`.
+/// The former Home read-out, now a group of read-only cards in Settings. It shows sample
+/// observations without SDK calls. Status semantics stay unchanged until the Settings phase.
+/// Existing information/disclosure QA names remain stable after the move.
 /// </summary>
 public class OctopusSampleHomeView : MonoBehaviour
 {
@@ -58,18 +37,6 @@ public class OctopusSampleHomeView : MonoBehaviour
     /// <summary>Community access and the unseen-notification count — the two live SDK values.</summary>
     public const string CommunityAccessCardId = "home-community-access-card";
 
-    /// <summary>Reef Run's card: the game's only entry point, and no longer a hidden one.</summary>
-    public const string ArcadeCardId = "home-arcade-card";
-
-    /// <summary>The button that opens Reef Run.</summary>
-    public const string ArcadeButtonId = "home-arcade-button";
-
-    /// <summary>The docked door into the community.</summary>
-    public const string OpenCommunityId = "home-open-community-button";
-
-    /// <summary>Height of the docked button plus its padding, in canvas units.</summary>
-    private const float DockHeight = 192f;
-
     private TMP_Text _sdkTitle;
     private TMP_Text _configurationSummary;
     private TMP_Text _sdkDetail;
@@ -83,48 +50,28 @@ public class OctopusSampleHomeView : MonoBehaviour
 
     private bool _listening;
 
-    /// <summary>
-    /// Builds the dashboard into the shell's content area and returns it.
-    ///
-    /// <paramref name="onOpenCommunity"/> is what the docked button does. In this change it selects
-    /// the Community tab, which is where `OctopusSDK.Open` is called — one door, one call site,
-    /// rather than a second place that opens the community and drifts from the first.
-    /// </summary>
-    public static OctopusSampleHomeView BuildInto(RectTransform content,
-                                                  UnityEngine.Events.UnityAction onOpenCommunity)
+    public static OctopusSampleHomeView BuildInto(RectTransform parent)
     {
-        // Cheap and idempotent, and the dashboard is the one screen that would silently look wrong
-        // without it: if nothing has started mirroring the SDK's published values by now, a count
-        // pushed before this call would already be lost.
         OctopusSampleState.EnsureObserving();
-
-        var host = SampleUi.Panel("HomeDashboard", content, Color.clear);
-        SampleUi.Stretch(host, Vector2.zero, Vector2.one);
+        var host = SampleUi.Panel("SampleOverview", parent, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(host, OctopusSampleBranding.Dp(OctopusSampleBranding.GroupGap), new RectOffset(), false);
         var view = host.gameObject.AddComponent<OctopusSampleHomeView>();
-        view.Build(host, onOpenCommunity);
+        view._cards = host;
+        SampleUi.FlexibleLabel(host, OctopusSampleBranding.PlatformLabel, SampleUi.TextBody,
+            OctopusSampleBranding.Palette.PlatformSlot).gameObject.name = PlatformChipId;
+        view.BuildSdkStatusCard(host);
+        view.BuildConfigurationBlock(host);
+        view.BuildConnectionCard(host);
+        view.BuildCommunityAccessCard(host);
+        view.Listen();
+        view.Refresh();
         return view;
     }
 
-    private void Build(RectTransform host, UnityEngine.Events.UnityAction onOpenCommunity)
+    // Explicit for retained tabs: EditMode does not send the MonoBehaviour activation callbacks.
+    public void SetTabActive(bool active)
     {
-        BuildDock(host, onOpenCommunity);
-
-        var scrollHost = SampleUi.Panel("Scroll", host, Color.clear);
-        SampleUi.Stretch(scrollHost, Vector2.zero, Vector2.one);
-        scrollHost.offsetMin = new Vector2(0f, DockHeight);
-        _cards = SampleUi.VerticalScroll(scrollHost, SampleUi.ContentPadding());
-        SampleUi.DockFade(_cards);
-
-        _cards.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(16f);
-        BuildSdkStatusCard(_cards);
-        BuildConfigurationBlock(_cards);
-        BuildConnectionCard(_cards);
-        BuildCommunityAccessCard(_cards);
-        BuildArcadeCard(_cards);
-
-        // Subscribed from here rather than only from OnEnable: in edit mode Unity never calls
-        // OnEnable, so a test that changes the state after building would watch a dashboard that
-        // never hears about it. Listen() is idempotent, so the OnEnable below costs nothing.
+        if (!active) { StopListening(); return; }
         Listen();
         Refresh();
     }
@@ -330,57 +277,6 @@ public class OctopusSampleHomeView : MonoBehaviour
         return new KeyValuePair<string, string>(label, value);
     }
 
-    private void BuildDock(RectTransform host, UnityEngine.Events.UnityAction onOpenCommunity)
-    {
-        // The community is the product, so its door stays under the thumb rather than at the end of
-        // a scroll — the Android sample's reason, unchanged.
-        var dock = SampleUi.Panel("HomeDock", host, OctopusSampleBranding.Palette.Dock);
-        dock.anchorMin = Vector2.zero;
-        dock.anchorMax = new Vector2(1f, 0f);
-        dock.pivot = new Vector2(0.5f, 0f);
-        dock.sizeDelta = new Vector2(0f, DockHeight);
-        dock.anchoredPosition = Vector2.zero;
-
-        var button = SampleUi.Button(OpenCommunityId, dock, "Open community", onOpenCommunity);
-        SampleUi.Stretch(button, Vector2.zero, Vector2.one);
-        button.offsetMin = new Vector2(48f, 24f);
-        button.offsetMax = new Vector2(-48f, -24f);
-    }
-
-    public static void BuildPlatformChip(RectTransform parent)
-    {
-        var palette = OctopusSampleBranding.Palette;
-        // Identity only, next to Home in the app bar; the slot never signals application state.
-        var identity = SampleUi.Panel("PlatformIdentity", parent, OctopusSampleBranding.Clear);
-        var identityLayout = identity.gameObject.AddComponent<HorizontalLayoutGroup>();
-        identityLayout.childControlWidth = identityLayout.childControlHeight = true;
-        identityLayout.childForceExpandWidth = identityLayout.childForceExpandHeight = false;
-        identityLayout.childAlignment = TextAnchor.MiddleCenter;
-        bool dark = OctopusSampleBranding.Theme == OctopusSampleTheme.Dark;
-        var chip = SampleUi.Panel(PlatformChipId, identity,
-            dark ? OctopusSampleBranding.Tint(palette.Accent, palette.Chrome, 0.10f)
-                : OctopusSampleBranding.PlatformSlotLight,
-            OctopusSampleBranding.CardRadius,
-            dark ? OctopusSampleBranding.Tint(palette.Accent, palette.Chrome, 0.28f) : palette.PlatformSlot,
-            OctopusSampleBranding.Stroke);
-        var layout = chip.gameObject.AddComponent<HorizontalLayoutGroup>();
-        layout.padding = new RectOffset(30, 30, 0, 0);
-        layout.childAlignment = TextAnchor.MiddleLeft;
-        layout.childControlWidth = true;
-        layout.childForceExpandWidth = false;
-        layout.childControlHeight = true;
-        layout.childForceExpandHeight = false;
-        SampleUi.AppBarItem(identity);
-        SampleUi.AppBarItem(chip);
-
-        var label = SampleUi.Label("Label", chip, OctopusSampleBranding.PlatformLabel,
-                                   SampleUi.TextBody, dark ? palette.ChipInk : palette.OnChrome,
-                                   TextAnchor.MiddleLeft);
-        label.fontStyle = FontStyles.Bold;
-        label.textWrappingMode = TextWrappingModes.NoWrap;
-        label.gameObject.AddComponent<LayoutElement>();
-    }
-
     private void BuildSdkStatusCard(RectTransform parent)
     {
         var card = SampleUi.Card(SdkStatusCardId, parent);
@@ -407,12 +303,12 @@ public class OctopusSampleHomeView : MonoBehaviour
         _configurationSummary = SampleUi.FlexibleLabel(card, string.Empty,
             SampleUi.TextBody, SampleUi.TitleColor);
         var details = SampleUi.Panel("Details", card, OctopusSampleBranding.Clear);
-        SampleUi.VerticalStack(details, OctopusSampleBranding.Dp(12f), new RectOffset(), false);
+        SampleUi.VerticalStack(details, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceMd), new RectOffset(), false);
         foreach (var line in ConfigurationLines())
         {
             // Stacked labels keep long technical values readable at narrow widths.
             var row = SampleUi.Panel(line.Key, details, OctopusSampleBranding.Clear);
-            SampleUi.VerticalStack(row, OctopusSampleBranding.Dp(4f), new RectOffset(), false);
+            SampleUi.VerticalStack(row, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceXs), new RectOffset(), false);
             SampleUi.FlexibleLabel(row, line.Key, SampleUi.TextCaption, SampleUi.Muted);
             var value = SampleUi.FlexibleLabel(row, line.Value, SampleUi.TextBody, SampleUi.TitleColor);
             value.richText = false;
@@ -478,33 +374,11 @@ public class OctopusSampleHomeView : MonoBehaviour
         BuildDisclosure(card, "home-community-access-details", details);
     }
 
-    /// <summary>
-    /// Reef Run's entry. It used to be five taps on the version number in About; a host feature
-    /// that shares to the community and is reopened from it has no business hiding, and QA cannot
-    /// address a gesture.
-    ///
-    /// Building this card asks the SDK for nothing — Home is built before the SDK is initialised,
-    /// and a test pins that. The game's first SDK contact is the tap that opens it.
-    /// </summary>
-    private void BuildArcadeCard(RectTransform parent)
-    {
-        var card = SampleUi.Card(ArcadeCardId, parent);
-        SampleUi.FlexibleLabel(card, "Reef Run", SampleUi.TextTitle, SampleUi.TitleColor);
-        SampleUi.FlexibleLabel(card,
-                               "A small game that uses the SDK for real: share a score as a post, " +
-                               "and come back here when someone taps the challenge.",
-                               SampleUi.TextCaption, SampleUi.Muted);
-        SampleUi.Button(ArcadeButtonId, card, "Play Reef Run", SampleUiButtonVariant.Secondary,
-                        OpenArcade);
-    }
-
-    private static void OpenArcade() { OctopusReefRunView.Open(); }
-
     private static TMP_Text ValueRow(RectTransform card, string label)
     {
         var row = SampleUi.Panel(label, card, Color.clear);
         var layout = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-        layout.spacing = 16f;
+        layout.spacing = OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceLg);
         layout.childControlWidth = true;
         layout.childForceExpandWidth = true;
         layout.childControlHeight = true;
@@ -535,7 +409,7 @@ public class OctopusSampleHomeView : MonoBehaviour
     private static RectTransform HeaderRow(RectTransform card)
     {
         var row = SampleUi.Panel("Header", card, OctopusSampleBranding.Clear);
-        SampleUi.VerticalStack(row, OctopusSampleBranding.Dp(8f), new RectOffset(), false);
+        SampleUi.VerticalStack(row, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm), new RectOffset(), false);
         return row;
     }
 

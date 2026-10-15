@@ -98,8 +98,13 @@ public partial class OctopusSDK
 #endif
     }
 
+    /// <summary>
+    /// Sets the community's app name, applied on iOS only until the native Android SDK exposes
+    /// a title hook. Null, empty, or whitespace-only names clear the custom name.
+    /// </summary>
     public static void SetAppName(string appName)
     {
+        appName = string.IsNullOrWhiteSpace(appName) ? "" : appName;
 #if UNITY_EDITOR
         MockBackend.SetAppName(appName);
 #elif UNITY_ANDROID

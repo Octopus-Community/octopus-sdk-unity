@@ -18,6 +18,7 @@ public partial class OctopusSDK
     /// <c>apiServerHost</c>/<c>apiServerPort</c>, or the switch moves it to production.
     /// Call on the Unity main thread and wait for completion/error before other SDK calls.
     /// Callbacks run on the Unity main thread; failure does not roll back the old community.
+    /// On iOS, retains the app-managed audio session setting from Initialize, including after Stop.
     /// </summary>
     public static void SwitchCommunity(string apiKey, ConnectionMode mode,
         Action onCompleted = null, Action<string> onError = null)
@@ -28,13 +29,15 @@ public partial class OctopusSDK
     /// <summary>
     /// Same as <see cref="SwitchCommunity(string, ConnectionMode, Action, Action{string})"/>, but
     /// the new community is reached on a custom server — the switch counterpart of the
-    /// <c>apiServerHost</c>/<c>apiServerPort</c> parameters of <see cref="Initialize"/>, forwarded
+    /// <c>apiServerHost</c>/<c>apiServerPort</c> parameters of
+    /// <see cref="Initialize(string, ConnectionMode, string, int)"/>, forwarded
     /// to the native <c>switchCommunity</c> as Android's <c>apiServer</c> and iOS's
     /// <c>Configuration(apiServer:)</c>. The server is not remembered from Initialize: pass it on
-    /// every switch that must stay on it.
+    /// every switch that must stay on it. On iOS, retains the app-managed audio session setting
+    /// from Initialize, including after Stop.
     /// </summary>
     /// <param name="apiKey">The API key identifying the new community.</param>
-    /// <param name="mode">The connection mode (SSO or Octopus auth).</param>
+    /// <param name="mode">The required SSO connection mode.</param>
     /// <param name="apiServerHost">
     /// Custom gRPC server host (e.g. "api-demo2.8pus.io"). Host only — no scheme, port, or path.
     /// Null or empty targets the default Octopus production endpoint, like the overload without it.
@@ -61,6 +64,7 @@ public partial class OctopusSDK
         string host = apiServerHost ?? "";
         int id = BeginLifecycleRequest(onCompleted, onError);
         if (id == 0) return;
+        TokenProvider = null;
         ResetCommunityDataState(false);
         try
         {
@@ -72,13 +76,13 @@ public partial class OctopusSDK
             using (var plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
             {
                 plugin.CallStatic("switchCommunity", id, apiKey, mode.Mode, mode.AppManagedFieldsAsIntArray,
-                    host, apiServerPort);
+                    host, apiServerPort, Version);
             }
 #elif UNITY_IOS
             SetUnityTheme();
             RegisterIosBridgeCallbacks();
             OctopusSdkSwitchCommunity(id, apiKey, mode.Mode, mode.AppManagedFieldsAsIntArray,
-                mode.AppManagedFieldsAsIntArray.Length, host, apiServerPort);
+                mode.AppManagedFieldsAsIntArray.Length, host, apiServerPort, Version);
 #else
             QueueLifecycleResponse(id + "\nUnsupported platform.", true);
 #endif
@@ -89,18 +93,10 @@ public partial class OctopusSDK
         }
     }
 
-    /// <summary>Switches to Octopus-managed authentication; otherwise identical to SwitchCommunity.</summary>
-    public static void SwitchCommunityOctopusAuth(string apiKey,
-        Action onCompleted = null, Action<string> onError = null)
-    {
-        SwitchCommunity(apiKey, ConnectionMode.OctopusAuth(), onCompleted, onError);
-    }
-
     /// <summary>
     /// Closes the UI and disconnects the user while keeping the SDK initialized on the same
     /// community. Android also clears SDK data and image caches; iOS only disconnects the user.
-    /// iOS 1.14.0 cannot reset Octopus Auth: reports onError instead of calling its fatal
-    /// SSO-only disconnect primitive. No-op before initialization. Call on the Unity main thread; wait for the main-thread
+    /// No-op before initialization. Call on the Unity main thread; wait for the main-thread
     /// completion/error callback before other SDK calls. Does not clear Mock.Calls.
     /// </summary>
     public static void Reset(Action onCompleted = null, Action<string> onError = null)
@@ -133,7 +129,7 @@ public partial class OctopusSDK
     /// Closes the UI and releases the SDK. Initialize or SwitchCommunity is required before
     /// reuse. Android stops native operations without clearing persistent data; iOS attempts
     /// disconnection then releases the bridge's instance and subscriptions, even if disconnect
-    /// fails. In iOS Octopus Auth it releases without disconnecting (no safe native primitive).
+    /// fails.
     /// No-op when stopped. Call on the Unity main thread and wait for the main-thread
     /// completion/error callback before other SDK calls. C# event subscriptions are retained.
     /// </summary>
@@ -141,6 +137,7 @@ public partial class OctopusSDK
     {
         int id = BeginLifecycleRequest(onCompleted, onError);
         if (id == 0) return;
+        TokenProvider = null;
         ResetCommunityDataState(true);
         try
         {
@@ -249,7 +246,7 @@ public partial class OctopusSDK
 #if UNITY_IOS && !UNITY_EDITOR
     [DllImport("__Internal")]
     private static extern void OctopusSdkSwitchCommunity(int requestId, string apiKey, string mode,
-        int[] fields, int fieldsCount, string apiServerHost, int apiServerPort);
+        int[] fields, int fieldsCount, string apiServerHost, int apiServerPort, string wrapperVersion);
     [DllImport("__Internal")] private static extern void OctopusSdkReset(int requestId);
     [DllImport("__Internal")] private static extern void OctopusSdkStop(int requestId);
     [DllImport("__Internal")] private static extern void OctopusSdkClose([MarshalAs(UnmanagedType.I1)] bool keepState);

@@ -41,7 +41,7 @@ public abstract class OctopusSampleSettingsDetailView : MonoBehaviour
 
     private void Rebuild()
     {
-        SampleUiDebugEntryHost.ReleaseAll();
+        SampleUiDebugEntryHost.ReleaseFor(gameObject);
         for (var i = transform.childCount - 1; i >= 0; i--)
         {
             var child = transform.GetChild(i).gameObject;
@@ -67,7 +67,7 @@ public abstract class OctopusSampleSettingsDetailView : MonoBehaviour
     public virtual void Close()
     {
         Unsubscribe();
-        SampleUiDebugEntryHost.ReleaseAll();
+        SampleUiDebugEntryHost.ReleaseFor(gameObject);
         gameObject.SetActive(false);
         if (Application.isPlaying) Destroy(gameObject); else DestroyImmediate(gameObject);
     }

@@ -82,6 +82,6 @@ public static class OctopusReefRunChallenge
         var fires = OctopusScenarioSdk.NavigateFireCount;
         if (fires == _seenFires) return;
         _seenFires = fires;
-        Handle(OctopusScenarioSdk.LastNavigateObjectId);
+        if (OctopusSampleHostIntegration.ClientObject) Handle(OctopusScenarioSdk.LastNavigateObjectId);
     }
 }
