@@ -97,6 +97,8 @@ public class OctopusScenarioSdkFacadeTests
             Assert.AreEqual(Bio, call.Args[2]);
             Assert.AreEqual(Picture, call.Args[3]);
             Assert.AreEqual(true, call.Args[4], "No SSO token provider was passed.");
+            Assert.IsNotNull(_sdk.LastTokenProvider);
+            Assert.AreEqual(AuthToken, _sdk.LastTokenProvider().GetAwaiter().GetResult());
         }
     }
 
@@ -196,6 +198,7 @@ public class OctopusScenarioSdkFacadeTests
         _sdk.Clear();
         Tap(pilot, 1);
         CollectionAssert.AreEqual(new[] { "Track" }, _sdk.ScenarioMethods);
+        Assert.AreEqual("qa_sample_event", _sdk.Last.Args[0]);
         var withProps = (IDictionary<string, string>)_sdk.Last.Args[1];
         Assert.AreEqual(3, withProps.Count);
         Assert.AreEqual("59.90", withProps["price"]);
@@ -216,12 +219,12 @@ public class OctopusScenarioSdkFacadeTests
         Assert.AreEqual("en", _sdk.Last.Args[0]);
 
         // Preset 3 is "Reset to system": the package has no reset overload, so it overrides with
-        // the device's own code. Which code that is depends on the machine — that it is a real,
-        // non-empty one is the contract.
+        // the device's own code, using the same OS language and culture fallback as the sample.
         _sdk.Clear();
         Tap(pilot, 2);
         CollectionAssert.AreEqual(new[] { "OverrideDefaultLocale" }, _sdk.ScenarioMethods);
-        Assert.IsNotEmpty((string)_sdk.Last.Args[0]);
+        Assert.AreEqual(LocaleScenario.LanguageCodeFor(UnityEngine.Application.systemLanguage,
+            System.Globalization.CultureInfo.CurrentCulture), _sdk.Last.Args[0]);
     }
 
     [Test]
@@ -352,6 +355,8 @@ public class OctopusScenarioSdkFacadeTests
 
         Tap(pilot, 4);
         CollectionAssert.AreEqual(new[] { "Initialize", "ConnectUser", "DisconnectUser" }, _sdk.ScenarioMethods);
+        _sdk.CompletePending();
+        _context.Drain();
     }
 
     [Test]
@@ -372,6 +377,53 @@ public class OctopusScenarioSdkFacadeTests
         Tap(pilot, 4);
         CollectionAssert.AreEqual(new[] { "DisconnectUser" }, _sdk.ScenarioMethods,
             "The slot was not released by the failure: " + pilot.Result);
+        _sdk.CompletePending();
+        _context.Drain();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void PendingDisconnectRefusesAnotherCallAndReleasesTheSlot(bool fail)
+    {
+        _sdk.DeferCompletions = true;
+        var pilot = new ConnectionScenario();
+        Tap(pilot, 4);
+        Assert.IsNotNull(_sdk.Pending);
+        Tap(pilot, 0);
+        CollectionAssert.AreEqual(new[] { "Initialize", "DisconnectUser" }, _sdk.ScenarioMethods);
+        StringAssert.Contains("still running", pilot.Result);
+        if (fail) _sdk.FailPending("bridge unavailable");
+        else _sdk.CompletePending();
+        _context.Drain();
+        StringAssert.Contains(fail ? "DisconnectUser failed" : "DisconnectUser call completed", pilot.Result);
+        Tap(pilot, 0);
+        CollectionAssert.AreEqual(new[] { "Initialize", "DisconnectUser", "ConnectUser" }, _sdk.ScenarioMethods);
+        _sdk.CompletePending();
+        _context.Drain();
+    }
+
+    [TestCase(0, false, false)]
+    [TestCase(0, true, false)]
+    [TestCase(4, false, false)]
+    [TestCase(4, true, false)]
+    [TestCase(0, false, true)]
+    [TestCase(4, true, true)]
+    public void CompletionAfterAnSdkSwapCannotChangeTheNewSession(int preset, bool fail, bool custom)
+    {
+        _sdk.DeferCompletions = true;
+        var pilot = new ConnectionScenario();
+        if (custom)
+        {
+            pilot.Presets[preset].Fill(pilot.Fields);
+            pilot.RunCustom();
+        }
+        else Tap(pilot, preset);
+        OctopusScenarioSdk.Use(new OctopusRecordingScenarioSdk { Profile = NewProfile() });
+        var session = OctopusSampleState.ConnectionSession;
+        if (fail) _sdk.FailPending("old SDK failure");
+        else _sdk.CompletePending();
+        _context.Drain();
+        Assert.AreEqual(session, OctopusSampleState.ConnectionSession);
     }
 
     private static void Tap(OctopusScenarioPilot pilot, int presetIndex)

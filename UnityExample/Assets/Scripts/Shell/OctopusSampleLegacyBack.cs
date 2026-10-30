@@ -52,13 +52,21 @@ public sealed class OctopusSampleLegacyBack : MonoBehaviour
     private void OnBack(InputAction.CallbackContext context) { _pending = true; }
 #endif
 
+    private void Awake()
+    {
+        SceneManager.activeSceneChanged += ActiveSceneChanged;
+        ActiveSceneChanged(default(Scene), SceneManager.GetActiveScene());
+    }
+
+    private void OnDestroy() { SceneManager.activeSceneChanged -= ActiveSceneChanged; }
+
+    private void ActiveSceneChanged(Scene previous, Scene current)
+    {
+        if (current.name == OctopusSampleShell.SceneName) Destroy(gameObject);
+    }
+
     private void Update()
     {
-        if (SceneManager.GetActiveScene().name == OctopusSampleShell.SceneName)
-        {
-            Destroy(gameObject);
-            return;
-        }
 #if ENABLE_INPUT_SYSTEM
         if (!_pending) return;
         _pending = false;

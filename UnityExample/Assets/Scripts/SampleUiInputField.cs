@@ -48,6 +48,12 @@ public class SampleUiInputField : TMP_InputField
     /// </summary>
     public bool Outlined;
 
+    private string _measuredText;
+    private float _measuredWidth = -1f, _measuredScale, _measuredFontSize, _bufferHeight;
+    private TMP_FontAsset _measuredFont;
+    private FontStyles _measuredStyle;
+    internal int PreferredHeightMeasurements { get; private set; }
+
     public override float preferredHeight
     {
         get
@@ -60,8 +66,22 @@ public class SampleUiInputField : TMP_InputField
             // caret visibility; its displayed geometry must not become the layout's source.
             float width = Mathf.Max(1f, textViewport != null ? textViewport.rect.width
                 : ((RectTransform)transform).rect.width - padding);
-            float bufferHeight = textComponent.GetPreferredValues(text, width, Mathf.Infinity).y;
-            return Mathf.Max(floor, Mathf.Max(line, bufferHeight) + padding);
+            // Comparing the buffer and width also invalidates on input edits and geometry changes,
+            // without registering another onValueChanged listener or forcing a layout rebuild.
+            if (_measuredText != text || _measuredWidth != width ||
+                _measuredScale != OctopusSampleTextScale.Current || _measuredFont != textComponent.font ||
+                _measuredFontSize != textComponent.fontSize || _measuredStyle != textComponent.fontStyle)
+            {
+                _measuredText = text;
+                _measuredWidth = width;
+                _measuredScale = OctopusSampleTextScale.Current;
+                _measuredFont = textComponent.font;
+                _measuredFontSize = textComponent.fontSize;
+                _measuredStyle = textComponent.fontStyle;
+                _bufferHeight = textComponent.GetPreferredValues(text, width, Mathf.Infinity).y;
+                PreferredHeightMeasurements++;
+            }
+            return Mathf.Max(floor, Mathf.Max(line, _bufferHeight) + padding);
         }
     }
 

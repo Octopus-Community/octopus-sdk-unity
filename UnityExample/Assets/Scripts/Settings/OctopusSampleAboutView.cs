@@ -27,7 +27,7 @@ public class OctopusSampleAboutView : MonoBehaviour
     public const string BackId = "about-back";
 
     /// <summary>
-    /// The Play update card, under the ids every sample shares (pm-tools AUTO_UPDATE.md). Built
+    /// The Play update card, under the ids every sample shares (shared sample update behaviour). Built
     /// only on an Android player: in the Editor and on iOS there is no row at all, never an error.
     /// </summary>
     public const string UpdateCardId = "sample-update-card";
@@ -244,9 +244,13 @@ public class OctopusSampleAboutView : MonoBehaviour
 
         SampleUi.ListRow(RepositoryRowId, content, "SDK repository", "Source and documentation",
             () => Application.OpenURL(RepositoryUrl));
-        BuildDesignReferenceRow(content);
+        BuildDesignReferenceRow(content, DesignReferenceUrl());
         SampleUi.ListRow(OctopusSampleShell.LegacyScenesId, content, "Legacy examples", "Transitional Unity examples",
-            () => UnityEngine.SceneManagement.SceneManager.LoadScene(OctopusSampleShell.LegacyMenuScene));
+            () =>
+            {
+                OctopusSampleHostIntegration.Detach();
+                UnityEngine.SceneManagement.SceneManager.LoadScene(OctopusSampleShell.LegacyMenuScene);
+            });
 
         var licences = SampleUi.Card(LicencesCardId, content);
         SampleUi.FlexibleLabel(licences, "Licences", SampleUi.TextTitle, SampleUi.TitleColor);
@@ -295,13 +299,12 @@ public class OctopusSampleAboutView : MonoBehaviour
     /// <summary>
     /// The internal design route is built only for a configured, usable web URL.
     /// </summary>
-    private static void BuildDesignReferenceRow(RectTransform content)
+    private static void BuildDesignReferenceRow(RectTransform content, string url, System.Action<string> open = null)
     {
-        var url = DesignReferenceUrl();
         if (string.IsNullOrEmpty(url)) return;
 
         SampleUi.ListRow(DesignReferenceRowId, content, "Design reference", "The shared sample design",
-            () => Application.OpenURL(url));
+            () => (open ?? Application.OpenURL)(url));
     }
 
     private void BuildHeader(RectTransform root)

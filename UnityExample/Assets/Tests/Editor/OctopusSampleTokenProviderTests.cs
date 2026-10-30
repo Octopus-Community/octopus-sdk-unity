@@ -80,7 +80,7 @@ public class OctopusSampleTokenProviderTests
         var parts = provider.GetToken("fixture-user", claims).Split('.');
         Assert.AreEqual(3, parts.Length);
         var header = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
-        var payload = "{\"sub\":\"fixture-user\",\"exp\":1731536000" +
+        var payload = "{\"sub\":\"fixture-user\",\"exp\":1700003600" +
             (withEntitlements ? ",\"entitlements\":[\"customer:premium\",\"customer:moderator\"]" : "") + "}";
         Assert.AreEqual(header, Decode(parts[0]));
         Assert.AreEqual(payload, Decode(parts[1]));
@@ -97,7 +97,7 @@ public class OctopusSampleTokenProviderTests
         var profile = new OctopusExampleConfig.ExampleProfile();
         var token = new OctopusSampleTokenProvider(profile, () => DateTimeOffset.FromUnixTimeSeconds(0), FixtureSecret)
             .GetToken("a\"\\\n\t\u0001é", new[] { "quote\"\n" });
-        Assert.AreEqual("{\"sub\":\"a\\\"\\\\\\n\\t\\u0001é\",\"exp\":31536000,\"entitlements\":[\"quote\\\"\\n\"]}",
+        Assert.AreEqual("{\"sub\":\"a\\\"\\\\\\n\\t\\u0001é\",\"exp\":3600,\"entitlements\":[\"quote\\\"\\n\"]}",
             Decode(token.Split('.')[1]));
     }
 
@@ -132,7 +132,7 @@ public class OctopusSampleTokenProviderTests
         var first = provider.GetToken("fixture-user");
         now = now.AddSeconds(1);
         Assert.AreNotEqual(first, provider.GetToken("fixture-user"));
-        StringAssert.Contains("\"exp\":31536001", Decode(provider.GetToken("fixture-user").Split('.')[1]));
+        StringAssert.Contains("\"exp\":3601", Decode(provider.GetToken("fixture-user").Split('.')[1]));
     }
 
     public static string Decode(string value) { return Encoding.UTF8.GetString(DecodeBytes(value)); }

@@ -304,13 +304,13 @@ public static class SampleUi
 
     /// <summary>A rounded, optionally outlined panel. Geometry is shared through the sprite cache.</summary>
     public static RectTransform Panel(string name, Transform parent, Color color, float radiusDp,
-                                      Color border, float strokeDp = OctopusSampleBranding.Stroke)
+                                      Color border, float strokeDp = OctopusSampleBranding.Stroke, bool elevated = true)
     {
         var rect = Panel(name, parent, color);
         var fill = rect.GetComponent<Image>();
         fill.sprite = SampleUiShapes.Rounded(radiusDp);
         fill.type = Image.Type.Sliced;
-        if (radiusDp >= OctopusSampleBranding.FieldRadius && color.a > 0f)
+        if (elevated && radiusDp >= OctopusSampleBranding.FieldRadius && color.a > 0f)
             rect.gameObject.AddComponent<SampleUiElevation>();
         if (strokeDp > 0f) Stroke(rect, radiusDp, border, strokeDp);
         return rect;
@@ -734,7 +734,6 @@ public static class SampleUi
                          multiline ? TextAnchor.UpperLeft : TextAnchor.MiddleLeft);
         text.richText = false;
         text.raycastTarget = true;
-        text.overflowMode = TextOverflowModes.Masking;
         Stretch(text.rectTransform, Vector2.zero, Vector2.one);
 
         var input = rect.gameObject.AddComponent<SampleUiInputField>();
@@ -780,6 +779,13 @@ public static class SampleUi
         if (styled != null) styled.SetError(message);
     }
 
+    /// <summary>Shared inset for card contents, including nested cards and their actions.</summary>
+    public static RectOffset CardPadding()
+    {
+        return Padding(OctopusSampleBranding.SpaceLg, OctopusSampleBranding.SpaceLg);
+    }
+
+
     /// <summary>
     /// A card: the <see cref="RowBackground"/> ground every block on a screen sits on, already a
     /// vertical stack with the shared padding. Sized by the caller's layout group, so a card inside
@@ -801,7 +807,7 @@ public static class SampleUi
     {
         var card = Panel(name, parent, RowBackground, OctopusSampleBranding.CardRadius, border);
         VerticalStack(card, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm),
-            Padding(OctopusSampleBranding.SpaceLg, OctopusSampleBranding.SpaceLg), false);
+            CardPadding(), false);
         return card;
     }
 

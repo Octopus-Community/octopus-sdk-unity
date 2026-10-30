@@ -140,6 +140,7 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
             return;
         }
         var token = OctopusScenarioSdk.OperationToken;
+        var generation = OctopusScenarioSdk.CommunityGeneration;
 
         var caveat = requested.Length == 0 || !string.IsNullOrWhiteSpace(profile.signingSecret)
             ? string.Empty
@@ -154,6 +155,7 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
             OctopusSampleLog.Current.LogApiCall("OctopusSDK.ConnectUser", "userId=" + profile.userId);
             await OctopusScenarioSdk.Current.ConnectUser(profile.userId, profile.nickname, profile.bio,
                                                         profile.picture, () => Task.FromResult(provider.GetToken(profile.userId, requested)));
+            if (generation != OctopusScenarioSdk.CommunityGeneration) return;
             // Completion is not success: the native bridges signal the end of the call whether
             // the token was accepted or not, and this package exposes no connection state to
             // read back. Say what is actually known.
@@ -166,6 +168,7 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
         }
         catch (System.Exception e)
         {
+            if (generation != OctopusScenarioSdk.CommunityGeneration) return;
             Report("ConnectUser failed: " + e.Message);
             OctopusSampleState.ReportSession(OctopusSampleState.Session.Failed,
                                              "ConnectUser failed: " + e.Message);
@@ -201,18 +204,21 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
             return;
         }
         var token = OctopusScenarioSdk.OperationToken;
+        var generation = OctopusScenarioSdk.CommunityGeneration;
 
         try
         {
             ReportRunning("Disconnecting…");
             OctopusSampleLog.Current.LogApiCall("OctopusSDK.DisconnectUser");
             await OctopusScenarioSdk.Current.DisconnectUser();
+            if (generation != OctopusScenarioSdk.CommunityGeneration) return;
             Report("DisconnectUser call completed (mode: " + mode + ").");
             OctopusSampleState.ReportSession(OctopusSampleState.Session.Disconnected,
                                              "Disconnect call completed");
         }
         catch (System.Exception e)
         {
+            if (generation != OctopusScenarioSdk.CommunityGeneration) return;
             Report("DisconnectUser failed: " + e.Message);
             OctopusSampleState.ReportSession(OctopusSampleState.Session.Failed,
                                              "DisconnectUser failed: " + e.Message);

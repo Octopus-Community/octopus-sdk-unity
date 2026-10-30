@@ -59,7 +59,7 @@ public class OctopusSampleStartupTests
         Assert.IsTrue(OctopusSampleState.IsInitialized);
         Assert.AreEqual(forced, OctopusSampleFeatureToggles.ForceLogin);
         CollectionAssert.AreEqual(new[] { "Initialize" }, _sdk.ScenarioMethods);
-        Assert.AreEqual("READY", OctopusSampleHomeView.SdkStatusLabel());
+        Assert.AreEqual("READY", OctopusSampleStatus.SdkStatusLabel());
     }
 
     [Test]
@@ -95,7 +95,7 @@ public class OctopusSampleStartupTests
         Assert.DoesNotThrow(Restore);
         Assert.IsFalse(OctopusSampleState.IsInitialized);
         Assert.AreEqual(0, _sdk.Methods.Count);
-        StringAssert.Contains("Startup initialization failed", OctopusSampleHomeView.ConnectionDetail());
+        StringAssert.Contains("Startup initialization failed", OctopusSampleStatus.ConnectionDetail());
     }
 
     [Test]
@@ -171,8 +171,8 @@ public class OctopusSampleStartupTests
         PlayerPrefs.SetInt(PreferenceKey, 99);
         Restore();
         Assert.AreEqual(OctopusSampleState.Session.StartupFailed, OctopusSampleState.ConnectionSession);
-        Assert.AreEqual("STARTUP FAILED", OctopusSampleHomeView.ConnectionStatusLabel());
-        var detail = OctopusSampleHomeView.ConnectionDetail();
+        Assert.AreEqual("STARTUP FAILED", OctopusSampleStatus.ConnectionStatusLabel());
+        var detail = OctopusSampleStatus.ConnectionDetail();
         StringAssert.Contains("no connection call was made", detail);
         StringAssert.DoesNotContain("the call did not complete", detail);
         StringAssert.Contains("Startup initialization failed", OctopusScenarioSdk.StartupFailureReason);

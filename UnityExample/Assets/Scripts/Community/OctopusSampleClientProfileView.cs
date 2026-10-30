@@ -68,9 +68,17 @@ public class OctopusSampleClientProfileView : MonoBehaviour
         // Unbind here and not only in OnDestroy: OnDestroy never runs for a component that never
         // woke up (EditMode), and a destination completing after the page closed must not rebuild it.
         Unbind();
+        // The entry rides in this header: hand it back before the hierarchy goes away, then let
+        // the scenario screen this page was opened from take it again — the shell's app bar,
+        // where the release returns it, sits under that screen.
+        SampleUiDebugEntryHost.ReleaseFor(gameObject);
         gameObject.SetActive(false);
         if (Application.isPlaying) Destroy(gameObject);
         else DestroyImmediate(gameObject);
+        var opener = FindAnyObjectByType<OctopusScenarioScreenView>();
+        if (opener != null)
+            foreach (var host in opener.GetComponentsInChildren<SampleUiDebugEntryHost>())
+                host.Resume();
     }
 
     private void OnDestroy()
@@ -123,6 +131,7 @@ public class OctopusSampleClientProfileView : MonoBehaviour
     {
         if (_root != null)
         {
+            SampleUiDebugEntryHost.ReleaseFor(gameObject);
             _root.gameObject.SetActive(false);
             _root.SetParent(null, false);
             if (Application.isPlaying) Destroy(_root.gameObject);
@@ -144,7 +153,10 @@ public class OctopusSampleClientProfileView : MonoBehaviour
         _bottomBleed = SampleUi.BuildBleed(_root, "BottomBleed", OctopusSampleBranding.Palette.Surface, false);
         var root = SampleUi.SafeArea("clientProfile-safe-area", _root);
 
-        SampleUi.AppBar("Header", root, "Client profile", Dismiss, BackTestId);
+        var header = SampleUi.AppBar("Header", root, "Client profile", Dismiss, BackTestId);
+        // This page sits above the scenario screen's canvas, so the header holding the Debug
+        // entry is covered: the page's own header claims it, as every detail route's does.
+        SampleUiDebugEntryHost.Attach(header);
 
         var content = SampleUi.VerticalScroll(root, SampleUi.OverlayPadding());
         content.GetComponent<VerticalLayoutGroup>().spacing = OctopusSampleBranding.Dp(16f);

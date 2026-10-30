@@ -305,6 +305,21 @@ public class OctopusSampleUnifiedProfileTests
         Assert.IsNull(Find(view.transform, OctopusScenarioScreenView.UnifiedProfileHintId));
     }
 
+    [Test]
+    public void ClosingUnifiedProfileUnsubscribesFromTheOriginalSdkAfterASwap()
+    {
+        var view = OpenUnifiedDetail();
+        var field = typeof(OctopusRecordingScenarioSdk).GetField("ProfileChanged",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        var before = (Delegate)field.GetValue(_sdk);
+        Assert.IsNotNull(before);
+        OctopusScenarioSdk.Use(new OctopusRecordingScenarioSdk());
+        view.Dismiss();
+        var after = (Delegate)field.GetValue(_sdk);
+        Assert.IsTrue(after == null || Array.TrueForAll(after.GetInvocationList(), handler =>
+            !ReferenceEquals(handler.Target, view)), "The old SDK retains the closed view.");
+    }
+
     private OctopusScenarioScreenView OpenUnifiedDetail()
     {
         var view = OctopusScenarioScreenView.Open(new UnifiedProfileScenario());

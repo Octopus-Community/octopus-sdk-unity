@@ -5,14 +5,6 @@ using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
-/// <summary>The three sample destinations, matching the Android shell.</summary>
-public enum OctopusSampleTab
-{
-    Scenarios,
-    Community,
-    Settings
-}
-
 /// <summary>
 /// Code-built uGUI shell, opening on Scenarios. Each tab retains its content and detail pages
 /// while another tab is selected; only a theme change rebuilds the content from saved view state.
@@ -233,9 +225,6 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
             return null;
         }
         ShowScenarioSection(OctopusScenarioSections.SectionOf(id));
-        // Restore synchronously before lookup: the shell chrome is deferred in Play mode, but
-        // a suspended scenario must participate in the same replacement decision as a visible one.
-        SampleUiDetailPage.ShowTab(OctopusSampleTab.Scenarios);
         // Open() hands back whatever screen is already up; a link names one scenario, so another
         // one left open would answer it with the wrong screen.
         var open = FindAnyObjectByType<OctopusScenarioScreenView>();
@@ -849,6 +838,9 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
         icon.anchorMin = icon.anchorMax = new Vector2(0.5f, 0.5f);
         icon.sizeDelta = Vector2.one * OctopusSampleBranding.Dp(24f);
         icon.anchoredPosition = Vector2.zero;
+        string symbol = tab == OctopusSampleTab.Scenarios ? "science"
+            : tab == OctopusSampleTab.Community ? "forum" : "settings";
+        if (SampleUiIcons.Apply(icon.GetComponent<Image>(), symbol, ink)) return;
         float[,] lines;
         switch (tab)
         {
@@ -887,15 +879,7 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
             segment.localRotation = Quaternion.Euler(0f, 0f,
                 Mathf.Atan2(to.y - from.y, to.x - from.x) * Mathf.Rad2Deg);
         }
-        string symbol = tab == OctopusSampleTab.Scenarios ? "science"
-            : tab == OctopusSampleTab.Community ? "forum" : "settings";
-        if (SampleUiIcons.Apply(icon.GetComponent<Image>(), symbol, ink))
-        {
-            // Retain the existing Ring/Stroke objects and names; only their old line rendering
-            // is replaced by the exported symbol on Icon. They remain the missing-asset fallback.
-            foreach (var oldGraphic in icon.GetComponentsInChildren<Image>())
-                if (oldGraphic.transform != icon) oldGraphic.enabled = false;
-        }
+
     }
 
     private static void SetContentActive(RectTransform content, bool active)
@@ -906,8 +890,6 @@ public class OctopusSampleShell : MonoBehaviour, IOctopusSampleQaNavigation
         if (community != null) community.SetTabActive(active);
         var settings = content.GetComponent<OctopusSampleSettingsView>();
         if (settings != null) settings.SetTabActive(active);
-        var overview = content.GetComponentInChildren<OctopusSampleHomeView>(true);
-        if (overview != null) overview.SetTabActive(active);
         var list = content.GetComponent<OctopusScenariosListView>();
         if (list != null) list.SetTabActive(active);
     }

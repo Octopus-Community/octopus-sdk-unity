@@ -25,6 +25,9 @@ public static class OctopusSampleHostIntegration
         Apply();
         Raise();
     }
+    private static readonly Func<string, UrlOpeningStrategy> UrlHandler = ResolveUrl;
+    private static Func<string, UrlOpeningStrategy> _previousUrlHandler;
+
     public static void Apply()
     {
         if (!OctopusSampleState.IsInitialized) return;
@@ -35,13 +38,19 @@ public static class OctopusSampleHostIntegration
         OctopusSDK.OnGroupAccessDenied += GroupDenied;
         // Login is always wired in SSO; there is no switch that would strand a required login.
         OctopusSDK.OnLoginRequired += LoginRequired;
-        OctopusSDK.NavigateToUrlHandler = UrlMode == 2 ? null : (Func<string, UrlOpeningStrategy>)ResolveUrl;
+        if (UrlMode != 2)
+        {
+            _previousUrlHandler = OctopusSDK.NavigateToUrlHandler;
+            OctopusSDK.NavigateToUrlHandler = UrlHandler;
+        }
     }
     internal static void Detach()
     {
         OctopusSDK.OnGroupAccessDenied -= GroupDenied;
         OctopusSDK.OnLoginRequired -= LoginRequired;
-        OctopusSDK.NavigateToUrlHandler = null;
+        if (ReferenceEquals(OctopusSDK.NavigateToUrlHandler, UrlHandler))
+            OctopusSDK.NavigateToUrlHandler = _previousUrlHandler;
+        _previousUrlHandler = null;
     }
     public static void Clear()
     {
@@ -54,7 +63,7 @@ public static class OctopusSampleHostIntegration
     private static void LoginRequired() { OctopusSampleAccountView.Open(); }
     private static void GroupDenied(string id)
     {
-        if (!GroupAccess) return;
+        if (!GroupAccess || GroupAccessDeniedScenario.OwnsCallback) return;
         LastCallback = "The host received a denied group request.";
         OctopusSampleLog.Current.LogStateChange("Host group access denied", "Callback received");
         OctopusMainThread.Post(() => OctopusSampleHostCallbackView.Open("Group access denied", LastCallback));

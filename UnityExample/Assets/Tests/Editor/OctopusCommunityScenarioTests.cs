@@ -570,7 +570,7 @@ public class OctopusCommunityScenarioTests
     [TestCase("groups")]
     [TestCase("communityAccess")]
     [TestCase("groupAccessDenied")]
-    public void NativeEventsDoNotRetainAnAbandonedPilot(string id)
+    public void RemovingTheLastRendererDisposesThePilot(string id)
     {
         // Initialise session-wide observers before measuring the pilot's own subscription.
         string reason;
@@ -584,24 +584,61 @@ public class OctopusCommunityScenarioTests
         {
             Tap(pilot, 0);
             Assert.AreEqual(baseline + 1, NativeEventListenerCount(id),
-                "The pilot must subscribe before abandonment is tested.");
+                "The pilot must subscribe before disposal is tested.");
         }
         finally
         {
-            // Match the view's OnDestroy: losing the last renderer disposes the pilot.
+            // Losing the last renderer implicitly disposes the pilot.
             pilot.ResultChanged -= renderer;
         }
 
         // Mono's conservative GC can keep an unreachable object alive through stale stack slots.
         // Check actual unsubscription instead of GC reachability, even while holding the pilot.
         Assert.AreEqual(baseline, NativeEventListenerCount(id),
-            "The abandoned pilot must release its SDK event subscription.");
+            "The disposed pilot must release its SDK event subscription.");
         var result = pilot.Result;
         _sdk.EmitGroups(new List<OctopusGroup>());
         _sdk.EmitCommunityAccess(true);
         _sdk.EmitGroupAccessDenied("locked");
-        Assert.AreEqual(result, pilot.Result, "Native events must no longer reach the abandoned pilot.");
+        Assert.AreEqual(result, pilot.Result, "Native events must no longer reach the disposed pilot.");
         Assert.AreEqual(baseline, NativeEventListenerCount(id));
+    }
+
+    [TestCase("groups", "GroupsChanged")]
+    [TestCase("communityAccess", "OnHasAccessToCommunityChanged")]
+    [TestCase("groupAccessDenied", "_groupAccessDenied")]
+    public void NativeSubscriberClosuresContainNoStrongPilotReference(string id, string eventField)
+    {
+        var pilot = (CommunityScenarioPilot)OctopusScenarioPilots.Create(id);
+        _pilots.Add(pilot);
+        Tap(pilot, 0);
+        var field = typeof(OctopusRecordingScenarioSdk).GetField(eventField,
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.IsNotNull(field);
+        var subscribers = (Delegate)field.GetValue(_sdk);
+        Assert.IsNotNull(subscribers);
+        var visited = new HashSet<object>();
+        foreach (var handler in subscribers.GetInvocationList())
+            AssertNoStrongPilotCapture(handler, pilot, visited);
+    }
+
+    private static void AssertNoStrongPilotCapture(object captured, object pilot, HashSet<object> visited)
+    {
+        if (captured == null) return;
+        Assert.AreNotSame(pilot, captured, "An SDK subscriber retains the pilot without Dispose.");
+        if (captured is WeakReference || !visited.Add(captured)) return;
+        var callback = captured as Delegate;
+        if (callback != null)
+        {
+            foreach (var handler in callback.GetInvocationList())
+                AssertNoStrongPilotCapture(handler.Target, pilot, visited);
+            return;
+        }
+        // Walk compiler closure objects only; do not traverse SDK services or Unity objects.
+        if (!Attribute.IsDefined(captured.GetType(), typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute))) return;
+        foreach (var field in captured.GetType().GetFields(System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic))
+            AssertNoStrongPilotCapture(field.GetValue(captured), pilot, visited);
     }
 
     private int NativeEventListenerCount(string id)
@@ -674,12 +711,16 @@ public class OctopusCommunityScenarioTests
             "No host signer is installed, so the sample is on its demo fallback.");
         Assert.IsNotNull(OctopusScenarioSdk.BridgeShareSigner,
             "The fallback is what makes the getter non-null; that is what hides the state.");
+        Assert.AreEqual("Demo fallback", OctopusSampleDiagnostics.Facts().Single(
+            fact => fact.Id == "debug-info-bridge-share-signer").Value);
 
         OctopusScenarioSdk.BridgeShareSigner = fingerprint =>
             System.Threading.Tasks.Task.FromResult("host-result:" + fingerprint);
         try
         {
             Assert.IsTrue(OctopusScenarioSdk.HasHostBridgeShareSigner);
+            Assert.AreEqual("Installed", OctopusSampleDiagnostics.Facts().Single(
+                fact => fact.Id == "debug-info-bridge-share-signer").Value);
             Assert.AreEqual("host-result:sample-fingerprint",
                 OctopusScenarioSdk.BridgeShareSigner("sample-fingerprint").Result);
         }
@@ -687,6 +728,7 @@ public class OctopusCommunityScenarioTests
 
         Assert.IsFalse(OctopusScenarioSdk.HasHostBridgeShareSigner,
             "Clearing the host signer must restore the demo fallback AND say so.");
+        Assert.IsNotNull(OctopusScenarioSdk.BridgeShareSigner);
     }
 
     [Test]

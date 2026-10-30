@@ -9,6 +9,7 @@ public class OctopusSampleSettingsView : MonoBehaviour
     public const string IntroCardId = "settings-intro-card";
     public const string SupportCardId = "settings-support-card";
     public const string SupportTitleId = "settings-support-title";
+    public const string FeedbackRowId = "settings-feedback-row";
     public const string AboutRowId = "settings-about-row";
     public const string DevToolsRowId = "settings-devtools-row";
     public const string SdkTitleId = "settings-sdk-title";
@@ -22,33 +23,22 @@ public class OctopusSampleSettingsView : MonoBehaviour
     public const string DemoGameRowId = "settings-demo-game-row";
     public const string AccountRowId = "settings-account-row";
     public const string ConfigRowId = "settings-reconfigure-button";
-    public const string ResetConfigCardId = "settings-reset-config-card";
-    public const string ResetConfigButtonId = "settings-reset-config-button";
-    public const string ResetConfigConfirmId = "settings-reset-config-confirm";
-    public const string ResetConfigCancelId = "settings-reset-config-cancel";
-    public const string ResetConfigResultId = "settings-reset-config-result";
-    public const string ResetResultId = "settings-reset-result";
     public const string VersionLabelId = "settings-version-label";
     public const string AppearanceRowId = "settings-appearance-row";
     public const string LanguageRowId = "settings-language-row";
-    public const string LanguageLinkId = "settings-language-locale-link";
-    public const string LocaleScenarioId = "locale";
     private bool _listening, _confirming, _resetting;
     private IOctopusScenarioSdk _observedSdk;
-    private string _resetResult = "";
     private RectTransform _supportCard;
-    private TMP_Text _appearance, _language, _status, _community, _server;
+    private TMP_Text _appearance, _language, _status, _community, _server, _account;
     private GameObject _dialog;
     public int RowsEventCount { get; private set; }
     public bool IsConfirmingReset { get { return _confirming; } }
-    public string ResetResult { get { return _resetResult; } }
     public sealed class ViewState
     {
-        public bool ConfirmingReset, ConfirmingConfigReset;
-        public string ResetResult, ConfigResetResult;
+        public bool ConfirmingReset;
     }
-    public ViewState CaptureState() { return new ViewState { ResetResult = _resetResult }; }
-    public void RestoreState(ViewState state) { if (state != null) _resetResult = state.ResetResult; }
+    public ViewState CaptureState() { return new ViewState { ConfirmingReset = _confirming }; }
+    public void RestoreState(ViewState state) { if (state != null && state.ConfirmingReset) RequestReset(); }
     public static string AppearanceText()
     {
         var type = OctopusSampleNativeTheme.CurrentAppearance;
@@ -100,7 +90,7 @@ public class OctopusSampleSettingsView : MonoBehaviour
     public static string StatusText()
     {
         return OctopusSampleState.IsInitialized
-            ? "SDK · Initialized (sample record) · " + OctopusSampleHomeView.ConnectionStatusLabel()
+            ? "SDK · Initialized (sample record) · " + OctopusSampleStatus.ConnectionStatusLabel()
             : "SDK · Not initialized (sample record)";
     }
     private void Build(RectTransform content)
@@ -113,12 +103,13 @@ public class OctopusSampleSettingsView : MonoBehaviour
         var summary = SampleUi.Card("settings-community-block", summaryHolder);
         SampleUi.FlexibleLabel(summary, "Community", SampleUi.TextTitle, SampleUi.TitleColor);
         var draft = OctopusScenarioSdk.ConfigurationDraft();
-        _community = Fact(summary, "Community", draft.Community == 5 ? "Custom community" : "Demo community");
+        _community = Fact(summary, "Community", draft.Community == OctopusSampleConfigurationDraft.CustomCommunity ? "Custom community" : "Demo community");
         _server = Fact(summary, "Server", draft.CustomServer ? "Custom" : "Demo");
         _status = SampleUi.FlexibleLabel(summary, StatusText(), SampleUi.TextCaption, SampleUi.Muted);
         _status.name = "settings-sdk-status";
         SampleUi.FlexibleLabel(summary, "Initialization and connection are recorded calls; native session state is not exposed.", SampleUi.TextCaption, SampleUi.Muted);
-        Row(AccountRowId, content, "Account", OctopusSampleAccountView.ConnectionText(), () => OctopusSampleAccountView.Open());
+        var account = Row(AccountRowId, content, "Account", OctopusSampleAccountView.ConnectionText(), () => OctopusSampleAccountView.Open());
+        _account = account.Find("Copy").GetChild(1).GetComponent<TMP_Text>();
         var sdk = Group(IntroCardId, content, SdkTitleId, "SDK");
         var appearance = Row(AppearanceRowId, sdk, "Appearance", AppearanceText(), () => OctopusSampleAppearanceView.Open());
         _appearance = appearance.Find("Copy").GetChild(1).GetComponent<TMP_Text>();
@@ -173,11 +164,12 @@ public class OctopusSampleSettingsView : MonoBehaviour
             child.SetActive(false); child.transform.SetParent(null, false);
             if (Application.isPlaying) Destroy(child); else DestroyImmediate(child);
         }
+        var rows = OctopusSampleSettingsRows.Support;
         bool tools = false;
-        foreach (var row in OctopusSampleSettingsRows.Support) if (row.Id == DevToolsRowId) tools = true;
+        foreach (var row in rows) if (row.Id == DevToolsRowId) tools = true;
         if (!tools) Row(DevToolsRowId, _supportCard, "Developer tools",
             "Host app integration · Events log · Debug info · Debug console", () => OctopusSampleDeveloperToolsView.Open());
-        foreach (var row in OctopusSampleSettingsRows.Support)
+        foreach (var row in rows)
         {
             var action = row.Action;
             if (_supportCard.childCount > 1) SampleUi.SummaryDivider(_supportCard);
@@ -189,7 +181,7 @@ public class OctopusSampleSettingsView : MonoBehaviour
     public void RequestReset()
     {
         if (_resetting) return;
-        _resetResult = ""; _confirming = true;
+        _confirming = true;
         if (_dialog != null) return;
         _dialog = OctopusSampleResetDialog.Open(CancelReset, ConfirmReset);
     }
@@ -202,7 +194,7 @@ public class OctopusSampleSettingsView : MonoBehaviour
         {
             // Reset refreshes the theme and can rebuild the shell before this callback. A Stop
             // can also complete after a tab change: navigation belongs to the operation.
-            if (this != null) { _resetting = false; _resetResult = message; }
+            if (this != null) _resetting = false;
             if (ok) OctopusSampleConfigView.Open();
             else OctopusSampleHostCallbackView.Open("Reset Configuration", message);
         });
@@ -251,11 +243,9 @@ public class OctopusSampleSettingsView : MonoBehaviour
         if (_language != null) _language.text = LanguageText();
         if (_status != null) _status.text = StatusText();
         var draft = OctopusScenarioSdk.ConfigurationDraft();
-        if (_community != null) _community.text = "Community · " + (draft.Community == 5 ? "Custom community" : "Demo community");
+        if (_community != null) _community.text = "Community · " + (draft.Community == OctopusSampleConfigurationDraft.CustomCommunity ? "Custom community" : "Demo community");
         if (_server != null) _server.text = "Server · " + (draft.CustomServer ? "Custom" : "Demo");
-        var row = transform.Find(AccountRowId);
-        foreach (var t in GetComponentsInChildren<Transform>(true)) if (t.name == AccountRowId) row = t;
-        if (row != null) row.Find("Copy").GetChild(1).GetComponent<TMP_Text>().text = OctopusSampleAccountView.ConnectionText();
+        if (_account != null) _account.text = OctopusSampleAccountView.ConnectionText();
     }
     private void OnDisable() { StopListening(); CloseDialog(); }
     private void OnDestroy() { StopListening(); CloseDialog(); }

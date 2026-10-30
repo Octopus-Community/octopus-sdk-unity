@@ -72,9 +72,15 @@ public static class OctopusReefRunShare
     }
 
     /// <summary>The post body the SDK creates the first time a run is shared.</summary>
+    internal static string QaPostPrefix;
+
     public static string PostText(int score)
     {
-        return "I cleared " + Reefs(score) + " in Reef Run, the mini-game built into the Octopus " +
+        var prefix = string.Empty;
+#if UNITY_EDITOR || OCTOPUS_INTERNAL
+        if (!string.IsNullOrEmpty(QaPostPrefix)) prefix = QaPostPrefix + " ";
+#endif
+        return prefix + "I cleared " + Reefs(score) + " in Reef Run, the mini-game built into the Octopus " +
                "SDK sample for Unity. One tap keeps the octopus swimming — tap the button below " +
                "to take the same challenge and try to beat me.";
     }

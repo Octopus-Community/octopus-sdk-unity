@@ -43,3 +43,6 @@ UnityExample/Assets/Scripts/OctopusTestHarness.cs.meta
 # Generated before every sample build by OctopusSampleNativePinsProcessor (native build pins)
 UnityExample/Assets/Resources/OctopusSampleNativePins.txt
 UnityExample/Assets/Resources/OctopusSampleNativePins.txt.meta
+
+# Python bytecode left by the Scripts test suites.
+__pycache__/

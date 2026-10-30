@@ -38,9 +38,11 @@ public static class OctopusSampleNativeTheme
         try
         {
             var choice = appearance ?? SchemeTypeFor(OctopusSampleBranding.Theme);
-            OctopusSampleBranding.Theme = choice == 0 ? OctopusSampleSystemAppearance.Read()
+            var theme = choice == 0 ? OctopusSampleSystemAppearance.Read()
                 : choice == LightSchemeType ? OctopusSampleTheme.Light : OctopusSampleTheme.Dark;
-            OctopusSampleBranding.RefreshViews();
+            var changed = theme != OctopusSampleBranding.Theme;
+            OctopusSampleBranding.Theme = theme;
+            if (!changed) OctopusSampleBranding.RefreshViews();
         }
         finally { _configuring = false; }
     }

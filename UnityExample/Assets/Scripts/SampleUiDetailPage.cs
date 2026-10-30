@@ -30,7 +30,12 @@ public class SampleUiDetailPage : MonoBehaviour
         bool hasTabs = retainTabs && FindAnyObjectByType<OctopusSampleShell>() != null;
         if (hasTabs)
         {
-            _owner = GetComponentInParent<Canvas>(true).rootCanvas.gameObject;
+            var canvas = GetComponentInParent<Canvas>(true);
+            var shell = FindAnyObjectByType<OctopusSampleShell>();
+            if (canvas == null || canvas.rootCanvas.gameObject == shell.gameObject ||
+                canvas.rootCanvas.sortingOrder <= shell.GetComponent<Canvas>().sortingOrder)
+                throw new InvalidOperationException("A retained detail needs its own overlay canvas above the shell.");
+            _owner = canvas.rootCanvas.gameObject;
             foreach (var owner in new List<GameObject>(OwnerTabs.Keys))
                 if (owner == null) OwnerTabs.Remove(owner);
             if (!OwnerTabs.TryGetValue(_owner, out _tab))

@@ -108,6 +108,9 @@ public class SampleUiHalo : MonoBehaviour
         rect.SetParent(ground, false);
         rect.SetAsFirstSibling();
         SampleUi.Stretch(rect, Vector2.zero, Vector2.one);
+        // A ground can be a layout group (the Scenarios app bar is a horizontal one): without this
+        // the halo becomes its first item, shoves the bar's content aside and covers one slot only.
+        go.AddComponent<LayoutElement>().ignoreLayout = true;
         go.GetComponent<RawImage>().raycastTarget = false;
         go.AddComponent<SampleUiHalo>().Refresh();
         return rect;
@@ -234,7 +237,7 @@ public class SampleUiHalo : MonoBehaviour
     /// the page (the Scenarios header). In dark the ground is a texture, the halo's, whose texels
     /// away from the corner are the page itself; a vertex colour cannot match it, since uGUI stores
     /// it in 8-bit linear and the ink page #070D17 comes out #0D0D16. So the band samples the
-    /// same opaque sRGB page texels through <see cref="PlainSpriteFor"/>. In light there is no halo
+    /// same opaque sRGB page texels and viewport-anchored halo as the content. In light there is no halo
     /// and the ground is the root's vertex colour, so the band takes that very colour.
     /// </summary>
     public static void PaintPage(Image image)
@@ -245,6 +248,11 @@ public class SampleUiHalo : MonoBehaviour
             image.sprite = PlainSpriteFor(palette.Page);
             image.type = Image.Type.Simple;
             image.color = Color.white;
+            // Sample the same viewport-anchored gradient as the page instead of ending the
+            // header on a flat page colour while the content below still carries the halo.
+            var halo = image.transform.Find(ObjectName);
+            if (halo == null) halo = Attach((RectTransform)image.transform);
+            halo.GetComponent<SampleUiHalo>().Refresh();
         }
         else
         {

@@ -52,11 +52,6 @@ public sealed class OctopusSampleDeveloperToolsView : MonoBehaviour
     private bool _rebuildRequested;
     private string _copyText = string.Empty;
 
-    /// <summary>Feature-toggles card link to the Configuration screen, whose profile sets Force login.</summary>
-    public const string ForceLoginConfigLinkId = "devtools-force-login-config-link";
-
-    /// <summary>Feature-toggles card link to Scenarios › Notifications, which holds the Push switch.</summary>
-    public const string PushRegistrationScenariosLinkId = "devtools-push-registration-scenarios-link";
 
     public string CurrentScreen { get; private set; }
 

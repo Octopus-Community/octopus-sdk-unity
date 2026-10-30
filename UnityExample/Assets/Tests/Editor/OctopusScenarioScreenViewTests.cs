@@ -531,11 +531,16 @@ public class OctopusScenarioScreenViewTests
         var view = Open(id);
         var bench = Find(view.transform, "scenario-try-it");
         Assert.IsNotNull(bench);
-        var guidance = Find(view.transform, "scenario-you-will-see");
+        // The guidance sits in its own padded inset, which is the bench's direct child.
+        var guidance = Find(view.transform, "scenario-you-will-see").parent;
+        Assert.AreEqual("scenario-guidance-inset", guidance.name);
         Assert.AreSame(bench, guidance.parent);
         var presets = Find(view.transform, "PresetsSection");
         var controls = Find(view.transform, "ControlsSection");
         var result = Find(view.transform, id + "-result");
+        Assert.AreSame(bench, presets.parent);
+        Assert.AreSame(bench, controls.parent);
+        Assert.AreSame(bench, result.parent);
         Assert.Less(guidance.GetSiblingIndex(), presets.GetSiblingIndex());
         Assert.Less(presets.GetSiblingIndex(), controls.GetSiblingIndex());
         Assert.Less(controls.GetSiblingIndex(), result.GetSiblingIndex());
@@ -860,11 +865,11 @@ public class OctopusScenarioScreenViewTests
         public int FillCount;
         public int PresetRunCount;
 
-        public DeferredCustomPilot(string testId = "qa-preset-groups-1") : base("groups")
+        public DeferredCustomPilot(string testId = null) : base("groups")
         {
             _presets = new List<OctopusScenarioPreset>
             {
-                new OctopusScenarioPreset(testId, PresetLabel(1, "Default"), fields =>
+                new OctopusScenarioPreset(testId ?? PresetTestId(1), PresetLabel(1, "Default"), fields =>
                 {
                     FillCount++;
                     fields.Set("value", "default");

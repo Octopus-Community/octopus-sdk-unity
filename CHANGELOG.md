@@ -6,6 +6,44 @@ section when a release is cut (format inspired by
 
 ## Unreleased
 
+## 1.15.1 — 2026-10-30
+
+Patch on the 1.15 line: it moves the native SDKs to their latest patches (Android 1.15.0 → 1.15.2,
+iOS 1.15.0 → 1.15.1) and carries their fixes, plus an iOS pause/resume guard. No C# API change,
+bridge AAR unchanged. Unity 2019.4 minimum unchanged. Legacy `OctopusCommunitySDK.unitypackage` for
+this version was generated from the source tree without the Unity Editor
+(`Scripts/build_legacy_package_nounity.py`), not import-tested in a scratch project before the cut.
+UPM remains the reference install path.
+
+### Changed
+- native: Android SDK 1.15.0 → 1.15.2 (two patches, no API change).
+- native: iOS SDK 1.15.0 → 1.15.1 (patch, no API change, iOS deployment target unchanged).
+
+### Fixed
+- android: Reopening the community after the host unmounted it no longer crashes while loading
+  comments or making network requests (native Koin scope fix in Android SDK 1.15.2).
+- android: The "Illegal activities or products" report reason now reaches moderation as its own
+  reason instead of being filed as spam (Android SDK 1.15.1).
+- ios: On devices with no bottom safe area (iPhones and iPads with a home button, floating iPad
+  windows), the community now keeps a 16pt bottom margin, so the "Write a post" button and the
+  profile bubble no longer touch the screen edge. Applies on iOS 15 and later; Unity does not
+  expose a bottom inset setting, so this follows the native default.
+- ios: Apps that opt out of the iOS 26 glass design (`UIDesignRequiresCompatibility`) get a
+  consistent pre-glass look: opaque navigation bar, pinned tabs and bar buttons. The floating
+  Explore Groups button gets a background on any iOS version without glass.
+- ios: The groups list and the profile edition screen keep the community background in their
+  navigation bar instead of turning white when glass is not available.
+- ios: The comment and reply icons no longer bounce when the app returns to the foreground.
+- ios: Text typed in multi-line fields follows a switch to dark mode immediately.
+- ios: The Report and Block menu icons stay red when the host app sets a tint color.
+- ios: Images open in the zoom viewer from the Comments tab of a profile.
+- ios: Images shown more than once on a screen (such as a profile's Comments tab) no longer stay
+  blank.
+- ios: Guard player pause/resume using Unity's unload notification and, when exposed, the
+  engine quit state. Reset the unload guard after embedded startup returns without another
+  unload, rather than requiring `AppReady`, which the trampoline reload path does not restore.
+  Keep the existing app-termination guard. (#544)
+
 ## 1.15.0 — 2026-10-15
 
 Native SDKs: Android 1.15.0, iOS 1.15.0. Breaking: Octopus-owned authentication is removed (see

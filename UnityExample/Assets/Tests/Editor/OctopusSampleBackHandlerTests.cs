@@ -166,6 +166,31 @@ public class OctopusSampleBackHandlerTests
         Assert.AreEqual(0, _backgroundRequests);
     }
 
+    [Test]
+    public void BackToScenariosClosesItsSuspendedDetailButTabTapsRetainIt()
+    {
+        var detail = Track(_shell.OpenScenarioScreen("connection"));
+        _shell.Select(OctopusSampleTab.Settings);
+        Assert.IsFalse(detail.gameObject.activeInHierarchy);
+        _shell.Select(OctopusSampleTab.Scenarios);
+        Assert.IsTrue(detail.gameObject.activeInHierarchy, "A tab tap restores its detail.");
+        _shell.Select(OctopusSampleTab.Settings);
+        Assert.AreEqual(OctopusSampleBackOutcome.Scenarios, _handler.HandleBack());
+        Assert.IsTrue(detail == null, "System Back must return to the list root.");
+        Assert.AreEqual(OctopusSampleTab.Scenarios, _shell.Selected);
+    }
+
+    [Test]
+    public void KeyboardBackIsConsumedWhileVisibleAndOnTheClosingFrame()
+    {
+        Assert.AreEqual(OctopusSampleBackOutcome.Ignored, _handler.HandleBack(true, 10));
+        Assert.AreEqual(OctopusSampleBackOutcome.Ignored, _handler.HandleBack(false, 11));
+        Assert.AreEqual(OctopusSampleBackOutcome.Ignored, _handler.HandleBack(false, 11));
+        Assert.AreEqual(0, _backgroundRequests);
+        Assert.AreEqual(OctopusSampleBackOutcome.Background, _handler.HandleBack(false, 12));
+        Assert.AreEqual(1, _backgroundRequests);
+    }
+
     private T Track<T>(T view) where T : Component
     {
         _objects.Add(view.gameObject);

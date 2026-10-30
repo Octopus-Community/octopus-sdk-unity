@@ -10,8 +10,8 @@ using UnityEngine;
 /// frame on a 33 ms cadence on a 60, 90 or 120 Hz panel. That is the "laggy, and the scroll feels
 /// strange" of issue #294: an inertial fling sampled at 30 Hz reads as stepped rather than slow.
 ///
-/// This type only states the intent that was missing. It deliberately does not clamp for battery,
-/// throttle in the background or expose a setting: the sample exists to show the SDK's screens at
+/// This type only states the intent that was missing. It caps mobile requests at 120 Hz, follows the current OS mode, and
+/// does not throttle in the background or expose a setting: the sample exists to show the SDK's screens at
 /// the rate a real host would draw them.
 ///
 /// On iOS, going above 60 also needs <c>CADisableMinimumFrameDuration</c> in the generated
@@ -36,7 +36,7 @@ public static class OctopusSampleFrameRate
     /// Pure, so the policy is testable without a player: <c>Screen.currentResolution</c> reports
     /// nothing usable in batch mode, and every interesting case here is a number, not a device.
     /// </summary>
-    public static int TargetFor(double refreshRateHz)
+    public static int TargetFor(double refreshRateHz, bool mobile = true)
     {
         if (double.IsNaN(refreshRateHz) || double.IsInfinity(refreshRateHz) || refreshRateHz <= 0d)
         {
@@ -52,13 +52,13 @@ public static class OctopusSampleFrameRate
             return Fallback;
         }
 
-        return rounded > Ceiling ? Ceiling : rounded;
+        return mobile && rounded > Ceiling ? Ceiling : rounded;
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void Apply()
     {
-#if UNITY_ANDROID || UNITY_IOS
+#if (UNITY_ANDROID || UNITY_IOS) && !UNITY_EDITOR
         // targetFrameRate is only honoured while vSync is off. Both mobile quality levels already
         // ship vSyncCount: 0; the guard keeps this from dirtying QualitySettings.asset in the
         // Editor, where a play-mode write to an unchanged value still marks the asset.
@@ -66,7 +66,11 @@ public static class OctopusSampleFrameRate
         {
             QualitySettings.vSyncCount = 0;
         }
-#endif
+        // currentResolution follows the active OS mode, including power-saving choices; do not
+        // force the panel into a supported but inactive high-refresh mode.
         Application.targetFrameRate = TargetFor(Screen.currentResolution.refreshRateRatio.value);
+#else
+        Application.targetFrameRate = TargetFor(Screen.currentResolution.refreshRateRatio.value, false);
+#endif
     }
 }

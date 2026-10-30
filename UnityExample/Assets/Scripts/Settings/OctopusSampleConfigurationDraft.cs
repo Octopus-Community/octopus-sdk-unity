@@ -3,6 +3,7 @@ using System;
 // Plain in-memory form state. Never serialize credentials or put them in PlayerPrefs.
 public sealed class OctopusSampleConfigurationDraft
 {
+    public const int CustomCommunity = 5;
     public int Community = 1;
     public bool CustomServer;
     public string CustomHost = "";
@@ -36,7 +37,7 @@ public sealed class OctopusSampleConfigurationDraft
 
     public string CommunityLabel
     {
-        get { return Community >= 1 && Community <= 5 ? CommunityLabels[Community - 1] : "Unavailable"; }
+        get { return Community >= 1 && Community <= CustomCommunity ? CommunityLabels[Community - 1] : "Unavailable"; }
     }
 
     public OctopusSampleConfigurationDraft Copy()

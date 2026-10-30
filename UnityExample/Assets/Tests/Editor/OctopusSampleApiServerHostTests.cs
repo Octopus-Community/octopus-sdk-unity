@@ -81,7 +81,7 @@ public class OctopusSampleApiServerHostTests
     {
         Use(new OctopusExampleConfig.ExampleProfile { apiKey = "not-a-real-key" });
 
-        var lines = OctopusSampleHomeView.ConfigurationLines();
+        var lines = OctopusSampleStatus.ConfigurationLines();
 
         Assert.AreEqual("Server environment", lines[0].Key);
         Assert.AreEqual(OctopusExampleConfig.DemoApiServerHost, lines[0].Value);
@@ -96,7 +96,7 @@ public class OctopusSampleApiServerHostTests
         OctopusScenarioSdk.CommunitySwitched(new OctopusExampleConfig.ExampleProfile
             { apiKey = "not-a-real-alternate-key", apiServerHost = "api.example.test" }, 2);
 
-        Assert.AreEqual("api.example.test", OctopusSampleHomeView.ConfigurationLines()[0].Value,
+        Assert.AreEqual("api.example.test", OctopusSampleStatus.ConfigurationLines()[0].Value,
             "Home kept showing the startup host after a switch (#391).");
     }
 

@@ -29,7 +29,7 @@ UnityPackage/                 the published UPM package — the ONLY thing integ
   Samples~/                   3 UPM samples, one project per sample
 UnityExample/                 demo Unity project, references UnityPackage via a local path
 AndroidBridge/                Gradle project producing octopus-bridge.aar (private only)
-ci/                           local + CI gates (compile-check, native-pins, firebase-analytics-guard, bridge-contract, mirror-export-guard)
+ci/                           local + CI gates (compile-check, native-pins, firebase-analytics-guard, bridge-contract, bridge-aar, mirror-export-guard)
 Scripts/                      release tooling, local Unity gates and CI attestation checker (private only)
 ```
 
@@ -43,7 +43,7 @@ Full architecture, module boundaries and API-stability rules: [CLAUDE.md](CLAUDE
 | .NET 8 SDK | `ci/compile-check/compile-check.sh` | `dotnet --version` should report an 8.x SDK; override the binary with `DOTNET=/path/to/dotnet` |
 | JDK 11 | `AndroidBridge/build.sh` | `AndroidBridge/bridge/build.gradle.kts` pins `sourceCompatibility`/`targetCompatibility`/`jvmTarget` to `11` |
 | Ruby | `UnityPackage/Editor/ruby/patch_xcode_proj.rb` (the iOS Xcode post-process) | Any recent system Ruby — the `xcodeproj` gem is vendored and committed under `UnityPackage/Editor/ruby/vendor/bundle`, so no `bundle install` is needed. This script runs automatically during an Xcode export (`iOSBuildPostProcessor.cs`); you only invoke it by hand if you are changing the script itself |
-| `actionlint` | linting `.github/workflows/*.yml` | Installed via Homebrew (`brew install actionlint`) or the pinned release CI downloads (see `workflow-lint` job in `pr.yml`) |
+| `actionlint` | linting `.github/workflows/*.yml` | Installed via Homebrew (`brew install actionlint`) or the pinned release CI downloads (see the `actionlint` step in `pr.yml`) |
 
 No Unity licence is required for the compile gate, the native-pin check, the bridge-contract
 check or the mirror-export guard — only for actually opening `UnityExample/`, running the
@@ -60,7 +60,7 @@ All of these are read from the scripts themselves — run them before opening a 
 export PATH="$HOME/.dotnet:$PATH"        # or wherever your dotnet 8 SDK lives
 ci/compile-check/compile-check.sh                        # Compile UnityPackage (dotnet vs Unity stubs), gated through PR gate
 ci/native-pins/verify-native-pins.sh                      # Native SDK pin coherence, gated through PR gate
-ci/firebase-analytics-guard/check-firebase-analytics.sh   # Firebase Analytics kept out of the sample (in the native-pins job), gated through PR gate
+ci/firebase-analytics-guard/check-firebase-analytics.sh   # Firebase Analytics kept out of the sample (next to the native pins step), gated through PR gate
 ci/bridge-contract/check-bridge-contract.sh               # Bridge string contract (C# vs Kotlin vs Swift), gated through PR gate
 ci/mirror-export-guard/check-mirror-export.sh             # Mirror export guard (git archive), gated through PR gate
 actionlint .github/workflows/*.yml                        # Lint workflows (actionlint), gated through PR gate
@@ -152,21 +152,24 @@ follows observed green and red runs.
 
 ### If you touched `AndroidBridge/`
 
-Rebuild and commit the AAR in the **same PR** — it is a committed build output, and nothing in
-CI can tell it went stale:
+Rebuild and commit the AAR in the **same PR** — it is a committed build output, and the `pr.yml`
+step `bridge-aar` fails the PR when the committed AAR differs from a rebuild:
 
 ```bash
 cd AndroidBridge && ./build.sh          # == ./gradlew :bridge:generate
 ```
 
-This copies the result to `UnityPackage/Runtime/Android/octopus-bridge.aar`. Nothing automated
-compiles `AndroidBridge/` on its own (no `src/test`, no CI job) — say in the PR body what you ran
-to verify it, since no gate will.
+This copies the result to `UnityPackage/Runtime/Android/octopus-bridge.aar`. The `pr.yml` steps
+`android-bridge` (compile + `src/test` unit tests) and `bridge-aar` (the comparison) run on any PR
+touching `AndroidBridge/`; neither runs the bridge inside a Unity player, so say in the PR body
+what you ran on a device.
 
 ### Bumping a native SDK pin
 
 Never hand-edit a pin. `.claude/commands/bump-native-sdk.md` walks a coherent bump (Android
-and/or iOS) end to end, including which files move together and what CI checks afterward.
+and/or iOS) end to end, including which files move together and what CI checks afterward;
+`Scripts/bump-native-pins.sh --android X.Y.Z --ios X.Y.Z` writes every pin line and rebuilds the
+bridge AAR in one gesture.
 
 ## Sending a pull request
 

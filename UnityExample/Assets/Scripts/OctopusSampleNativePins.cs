@@ -12,10 +12,17 @@ public static class OctopusSampleNativePins
     public const string ResourceName = "OctopusSampleNativePins";
     public const string Unavailable = "Unavailable — build pin metadata was not captured";
 
+    /// <summary>Reads metadata for display without letting missing build sources break a screen.</summary>
+    public static string ReadOrUnavailable(System.Func<string> read)
+    {
+        try { return read(); }
+        catch (System.Exception) { return Unavailable; }
+    }
+
     public static string Current()
     {
 #if UNITY_EDITOR
-        return ReadSources();
+        return ReadOrUnavailable(ReadSources);
 #else
         var metadata = Resources.Load<TextAsset>(ResourceName);
         return metadata == null || string.IsNullOrEmpty(metadata.text) ? Unavailable : metadata.text;
@@ -62,7 +69,7 @@ public static class OctopusSampleNativePins
     /// </summary>
     public static string Write()
     {
-        var summary = ReadSources();
+        var summary = ReadOrUnavailable(ReadSources);
         var path = System.IO.Path.Combine(Application.dataPath, "..", AssetPath);
         if (!System.IO.File.Exists(path) || System.IO.File.ReadAllText(path) != summary)
         {

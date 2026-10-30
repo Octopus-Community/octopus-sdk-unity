@@ -175,8 +175,9 @@ public class OctopusSampleFeatureTogglesTests
             "The console announced a config rebuild that did not happen.");
     }
 
-    [Test]
-    public void InitialisingFromAScenarioLocksTheSwitchAlreadyOnScreen()
+    [TestCase("SSO")]
+    [TestCase("OctopusAuth")]
+    public void ReportingInitializationLocksTheSwitchAlreadyOnScreen(string mode)
     {
         // The list is drawn once and then sits behind the scenario screen that initialises the SDK.
         // Nothing repaints it on the way back, so it listens: without that, the tester returns to a
@@ -188,7 +189,7 @@ public class OctopusSampleFeatureTogglesTests
         Assert.IsNull(Find(shell.transform, OctopusScenariosListView.ForceLoginConfigLinkId),
             "The link to Configuration shows while the switch still decides.");
 
-        OctopusSampleState.ReportInitialized("SSO");
+        OctopusSampleState.ReportInitialized(mode);
 
         Assert.IsNotNull(Find(shell.transform, OctopusScenariosListView.ForceLoginLockedNoteId),
             "A scenario brought the SDK up and the switch behind it still looks live.");
@@ -246,15 +247,17 @@ public class OctopusSampleFeatureTogglesTests
     }
 
     [Test]
-    public void PushToggleSurvivesCollapseButSearchOnlyMatchesCards()
+    public void PushToggleSurvivesCollapseAndFollowsItsCardThroughSearch()
     {
         var shell = Create();
         shell.Select(OctopusSampleTab.Scenarios);
         var view = shell.GetComponentInChildren<OctopusScenariosListView>();
         view.ToggleSection(ScenarioSection.Notifications);
         Assert.IsNotNull(Find(shell.transform, OctopusSampleFeatureToggles.PushRegistrationId));
+        // The switch's own label finds the push card, and the section keeps the switch that card needs.
         view.SetQuery("  PUSH REGISTRATION  ");
-        Assert.IsNull(Find(shell.transform, OctopusSampleFeatureToggles.PushRegistrationId));
+        Assert.IsNotNull(Find(shell.transform, "scenarios-pushNotifications-card"));
+        Assert.IsNotNull(Find(shell.transform, OctopusSampleFeatureToggles.PushRegistrationId));
         Assert.IsNull(Find(shell.transform, "scenarios-connection-card"));
         view.SetQuery("locale");
         Assert.IsNull(Find(shell.transform, OctopusSampleFeatureToggles.PushRegistrationId));

@@ -209,11 +209,11 @@ public class OctopusSampleAccountConfigViewTests
         Assert.IsNotNull(config);
 
         // What Home's and Community's Connection links run: a tab switch, then a screen over it.
-        var screen = shell.OpenScenarioScreen(OctopusSampleHomeView.ConnectionScenarioId);
+        var screen = shell.OpenScenarioScreen(OctopusSampleStatus.ConnectionScenarioId);
         try
         {
             Assert.IsNotNull(screen, "The link opened no scenario screen.");
-            Assert.AreEqual(OctopusSampleHomeView.ConnectionScenarioId, screen.ScenarioId);
+            Assert.AreEqual(OctopusSampleStatus.ConnectionScenarioId, screen.ScenarioId);
             Assert.AreEqual(OctopusSampleTab.Scenarios, shell.Selected);
             Assert.IsTrue(config == null, "Configuration stayed open under the linked scenario.");
             Assert.IsNull(UnityEngine.Object.FindAnyObjectByType<OctopusSampleAccountView>(),
@@ -280,12 +280,25 @@ public class OctopusSampleAccountConfigViewTests
         _sdk.EmitProfile(null);
         Assert.IsNull(Find(account.transform, OctopusSampleAccountView.DisconnectId));
         Assert.AreEqual("No connected profile reported", Label(account, OctopusSampleAccountView.StateId));
-        _sdk.EmitProfile(new OctopusProfile());
+        _sdk.EmitProfile(new OctopusProfile(isGuest: true));
         Assert.IsNull(Find(account.transform, OctopusSampleAccountView.DisconnectId));
         StringAssert.Contains("Guest", Label(account, OctopusSampleAccountView.StateId));
-        _sdk.EmitProfile(new OctopusProfile(clientUserId: ""));
+        _sdk.EmitProfile(new OctopusProfile(clientUserId: "", isGuest: true));
         Assert.IsNull(Find(account.transform, OctopusSampleAccountView.DisconnectId));
         StringAssert.Contains("Guest", Label(account, OctopusSampleAccountView.StateId));
+    }
+
+    [Test]
+    public void AccountUsesTheGuestFlagEvenWhenTheHostIdentityIsAbsentOrPresent()
+    {
+        OctopusSampleState.ReportInitialized("SSO");
+        var account = OctopusSampleAccountView.Open();
+        _sdk.EmitProfile(new OctopusProfile(isGuest: false));
+        Assert.IsNotNull(Find(account.transform, OctopusSampleAccountView.DisconnectId));
+        Assert.AreEqual("Profile connected", OctopusSampleAccountView.ConnectionText());
+        _sdk.EmitProfile(new OctopusProfile(clientUserId: "test-user", isGuest: true));
+        Assert.IsNull(Find(account.transform, OctopusSampleAccountView.DisconnectId));
+        StringAssert.Contains("Guest", OctopusSampleAccountView.ConnectionText());
     }
 
     [Test]
@@ -337,10 +350,11 @@ public class OctopusSampleAccountConfigViewTests
         Assert.IsNotNull(Find(config.transform, OctopusSampleConfigView.StartId));
         UnityEngine.Object.DestroyImmediate(config.gameObject);
         var account = OctopusSampleAccountView.Open();
+        _sdk.EmitProfile(new OctopusProfile(clientUserId: "test-user", isGuest: false));
         OctopusSampleBranding.Theme = theme;
         Assert.AreEqual(SampleUi.Background, Find(account.transform, OctopusSampleAccountView.ScreenId).GetComponent<Image>().color);
         Assert.IsNotNull(Find(account.transform, OctopusSampleAccountView.ConnectId));
-        Assert.IsNull(Find(account.transform, OctopusSampleAccountView.DisconnectId));
+        Assert.IsNotNull(Find(account.transform, OctopusSampleAccountView.DisconnectId));
         Assert.IsEmpty(_sdk.Methods);
     }
 

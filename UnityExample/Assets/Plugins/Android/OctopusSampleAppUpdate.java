@@ -52,23 +52,22 @@ public final class OctopusSampleAppUpdate {
         }
     }
 
-    /**
-     * Starts Play's IMMEDIATE flow for the info the last successful check returned. Only ever
-     * called from a tap: the sample never launches an update on its own. Returns false when
-     * there is nothing to start.
-     */
-    public static boolean startImmediateUpdate(final Activity activity) {
+    /** Starts Play's IMMEDIATE flow, reporting a refused or failed start to the listener. */
+    public static void startImmediateUpdate(final Activity activity, final Listener listener) {
         final AppUpdateInfo info = lastInfo;
-        if (info == null || !info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)) return false;
+        if (info == null || !info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)) {
+            listener.onError(NO_ERROR_CODE);
+            return;
+        }
         activity.runOnUiThread(() -> {
             try {
-                AppUpdateManagerFactory.create(activity.getApplicationContext())
+                boolean started = AppUpdateManagerFactory.create(activity.getApplicationContext())
                         .startUpdateFlowForResult(info, activity,
                                 AppUpdateOptions.defaultOptions(AppUpdateType.IMMEDIATE), REQUEST_CODE);
+                if (!started) listener.onError(NO_ERROR_CODE);
             } catch (Throwable ignored) {
-                // A stale info or a missing Play Store: the C# side re-checks on resume.
+                listener.onError(NO_ERROR_CODE);
             }
         });
-        return true;
     }
 }

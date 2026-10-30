@@ -77,6 +77,7 @@ public class PushNotificationLauncher : MonoBehaviour
 
                     // Route once per tap. Prefer the FCM message id; fall back to the link path.
                     var messageId = extras.Call<string>("getString", "google.message_id");
+                    if (string.IsNullOrEmpty(messageId)) messageId = extras.Call<string>("getString", "message_id");
                     var key = string.IsNullOrEmpty(messageId)
                         ? extras.Call<string>("getString", "link_path")
                         : messageId;

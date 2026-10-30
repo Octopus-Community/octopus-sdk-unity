@@ -85,6 +85,40 @@ public class SampleUiPrimitiveTests
     }
 
     [Test]
+    public void InputPreferredHeightReusesMeasurementUntilTheBufferOrGeometryChanges()
+    {
+        var field = (SampleUiInputField)SampleUi.Field("measure-field", _host.transform, "short", true);
+        var first = field.preferredHeight;
+        var count = field.PreferredHeightMeasurements;
+        Assert.AreEqual(first, field.preferredHeight);
+        Assert.AreEqual(count, field.PreferredHeightMeasurements);
+        field.text = "longer buffer with different lines\nand more text";
+        var changed = field.preferredHeight;
+        var editedCount = field.PreferredHeightMeasurements;
+        Assert.Greater(editedCount, count);
+        Assert.AreEqual(changed, field.preferredHeight);
+        Assert.AreEqual(editedCount, field.PreferredHeightMeasurements);
+        field.textViewport.sizeDelta += new Vector2(120f, 0f);
+        var resized = field.preferredHeight;
+        Assert.Greater(field.PreferredHeightMeasurements, editedCount);
+    }
+
+    [Test]
+    public void UnknownRowsDoNotReserveAnIconSlot()
+    {
+        Assert.IsNull(SampleUiIcons.ForRow("settings-unrecognised-row"));
+        var row = SampleUi.ListRow("settings-unrecognised-row", _host.transform, "Unknown", "Detail", null);
+        Assert.IsNull(row.Find("Icon"));
+        foreach (var id in new[] { OctopusSampleSettingsView.AccountRowId, OctopusSampleSettingsView.AppearanceRowId,
+            OctopusSampleSettingsView.LanguageRowId, OctopusSampleSettingsView.ConfigRowId,
+            OctopusSampleSettingsView.DevToolsRowId, OctopusSampleSettingsView.AboutRowId,
+            OctopusSampleSettingsView.ResetButtonId, OctopusSampleSettingsView.DemoGameRowId,
+            OctopusSampleSettingsView.FeedbackRowId, OctopusSampleAboutView.RepositoryRowId,
+            OctopusSampleAboutView.DesignReferenceRowId, OctopusSampleAboutView.LicenceLinkId })
+            Assert.IsNotEmpty(SampleUiIcons.ForRow(id), id);
+    }
+
+    [Test]
     public void FieldErrorSiblingIsReleasedAfterSafeEditorTeardown()
     {
         var input = (SampleUiInputField)SampleUi.LabeledField("field", _host.transform,

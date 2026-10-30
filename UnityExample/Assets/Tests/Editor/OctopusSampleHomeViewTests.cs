@@ -10,8 +10,8 @@ using UnityEngine;
 /// Same constraint as <see cref="OctopusSampleShellTests"/> — the test assembly overrides its
 /// precompiled references down to `nunit.framework.dll`, so no `UnityEngine.UI` type can be named
 /// here. Text on screen is therefore asserted through the static label functions
-/// <see cref="OctopusSampleHomeView.SdkStatusLabel"/> and
-/// <see cref="OctopusSampleHomeView.ConnectionStatusLabel"/>, which are the exact strings
+/// <see cref="OctopusSampleStatus.SdkStatusLabel"/> and
+/// <see cref="OctopusSampleStatus.ConnectionStatusLabel"/>, which are the exact strings
 /// <c>Refresh</c> paints, and everything else through <c>GameObject.name</c> and object identity.
 /// </summary>
 public class OctopusSampleHomeViewTests
@@ -81,7 +81,7 @@ public class OctopusSampleHomeViewTests
                 "surface with no accessibility tree, so a name that moves takes the QA script with " +
                 "it.");
         }
-        Assert.IsNull(Find(shell.transform, OctopusSampleHomeView.SdkStatusCardId),
+        Assert.IsNull(Find(shell.transform, "home-sdk-status-card"),
             "The retired dashboard is back inside Settings.");
     }
 
@@ -110,8 +110,8 @@ public class OctopusSampleHomeViewTests
     [Test]
     public void AnUntouchedSessionReadsNotInitializedAndNoCall()
     {
-        Assert.AreEqual("Not initialized", OctopusSampleHomeView.SdkStatusLabel());
-        Assert.AreEqual("NO CALL", OctopusSampleHomeView.ConnectionStatusLabel(),
+        Assert.AreEqual("Not initialized", OctopusSampleStatus.SdkStatusLabel());
+        Assert.AreEqual("NO CALL", OctopusSampleStatus.ConnectionStatusLabel(),
             "Nothing was asked of the SDK, which is a different answer from the SDK refusing.");
     }
 
@@ -123,15 +123,15 @@ public class OctopusSampleHomeViewTests
         // bridge reports a connect complete even when authentication failed, and a disconnect that
         // throws leaves the earlier session running.
         OctopusSampleState.ReportInitialized("SSO");
-        Assert.AreEqual("READY", OctopusSampleHomeView.SdkStatusLabel());
-        Assert.AreEqual("NO CALL", OctopusSampleHomeView.ConnectionStatusLabel(),
+        Assert.AreEqual("READY", OctopusSampleStatus.SdkStatusLabel());
+        Assert.AreEqual("NO CALL", OctopusSampleStatus.ConnectionStatusLabel(),
             "Initializing is not connecting.");
 
         OctopusSampleState.ReportSession(OctopusSampleState.Session.ConnectCompleted, "done");
-        Assert.AreEqual("CONNECT OK", OctopusSampleHomeView.ConnectionStatusLabel());
+        Assert.AreEqual("CONNECT OK", OctopusSampleStatus.ConnectionStatusLabel());
 
         OctopusSampleState.ReportSession(OctopusSampleState.Session.Disconnected, "done");
-        Assert.AreEqual("DISCONNECT OK", OctopusSampleHomeView.ConnectionStatusLabel());
+        Assert.AreEqual("DISCONNECT OK", OctopusSampleStatus.ConnectionStatusLabel());
 
         // Every state, StartupFailed included (#387): enumerated, so a new state is swept too.
         var sessions = (OctopusSampleState.Session[])System.Enum.GetValues(typeof(OctopusSampleState.Session));
@@ -139,7 +139,7 @@ public class OctopusSampleHomeViewTests
         foreach (var session in sessions)
         {
             OctopusSampleState.ReportSession(session, "detail");
-            var label = OctopusSampleHomeView.ConnectionStatusLabel();
+            var label = OctopusSampleStatus.ConnectionStatusLabel();
             Assert.AreNotEqual("CONNECTED", label,
                 "The dashboard cannot observe a session, so no state of it may read CONNECTED.");
             Assert.AreNotEqual("OFF", label,
@@ -152,7 +152,7 @@ public class OctopusSampleHomeViewTests
     {
         OctopusSampleState.ReportSession(OctopusSampleState.Session.Failed, "boom");
 
-        Assert.AreEqual("CALL FAILED", OctopusSampleHomeView.ConnectionStatusLabel(),
+        Assert.AreEqual("CALL FAILED", OctopusSampleStatus.ConnectionStatusLabel(),
             "A connection call that threw says nothing about the session — only that the call did " +
             "not complete.");
     }
@@ -214,7 +214,7 @@ public class OctopusSampleHomeViewTests
         // The assertion that actually protects something: SetUp configured a profile whose API key
         // and auth token are recognisable strings, and no rendered value may contain either. This
         // screen is mirrored publicly and screenshotted by QA, so a leak here leaves the repo.
-        foreach (var line in OctopusSampleHomeView.ConfigurationLines())
+        foreach (var line in OctopusSampleStatus.ConfigurationLines())
         {
             var rendered = line.Key + " = " + line.Value;
             Assert.That(line.Value, Does.Not.Contain(SecretApiKey),
@@ -242,7 +242,7 @@ public class OctopusSampleHomeViewTests
         StringAssert.Contains("ssoTokenSecret or authToken", pilot.Result);
         Assert.AreEqual(OctopusSampleState.Session.Failed, OctopusSampleState.ConnectionSession);
         Assert.AreEqual(pilot.Result, OctopusSampleState.SessionDetail);
-        Assert.AreEqual("CALL FAILED", OctopusSampleHomeView.ConnectionStatusLabel());
+        Assert.AreEqual("CALL FAILED", OctopusSampleStatus.ConnectionStatusLabel());
         Assert.IsTrue(probe.StateChanges.Exists(entry =>
             entry.headline == "[OctopusQA] scenario=connection state=refused" && entry.detail == pilot.Result));
         CollectionAssert.DoesNotContain(_sdk.ScenarioMethods, "ConnectUser");
@@ -253,9 +253,9 @@ public class OctopusSampleHomeViewTests
     public void TheConfigurationBlockLabelsAreExactlyTheExpectedList()
     {
         var labels = new List<string>();
-        foreach (var line in OctopusSampleHomeView.ConfigurationLines()) labels.Add(line.Key);
+        foreach (var line in OctopusSampleStatus.ConfigurationLines()) labels.Add(line.Key);
         Assert.AreEqual("Carried in the SSO token; presets set claims when demo signing is configured",
-            OctopusSampleHomeView.ConfigurationLines().Find(line => line.Key == "Entitlements").Value);
+            OctopusSampleStatus.ConfigurationLines().Find(line => line.Key == "Entitlements").Value);
 
         Assert.AreEqual(
             new[]
@@ -278,7 +278,7 @@ public class OctopusSampleHomeViewTests
         // the seam reads LoadedOrNull.
         _sdk.Profile = null;
 
-        foreach (var line in OctopusSampleHomeView.ConfigurationLines())
+        foreach (var line in OctopusSampleStatus.ConfigurationLines())
         {
             Assert.IsNotEmpty(line.Value, "Line '" + line.Key + "' rendered empty.");
         }

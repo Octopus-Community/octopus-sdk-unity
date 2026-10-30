@@ -151,6 +151,13 @@ public class SampleUiHaloTests
     {
         var palette = OctopusSampleBranding.Palette;
         var ground = root.GetComponent<Image>();
+        if (halo.enabled)
+        {
+            // A player re-aims every halo in its LateUpdate, once layout and the canvas scaler have
+            // settled. EditMode renders no frame: settle the canvases and run that same refresh.
+            Canvas.ForceUpdateCanvases();
+            foreach (var each in _shell.GetComponentsInChildren<SampleUiHalo>()) each.Refresh();
+        }
         foreach (var name in new[] { "TopBleed", "AppBar", "LargeTitle" })
         {
             var band = FindDeep(_shell.transform, name).GetComponent<Image>();
@@ -160,6 +167,26 @@ public class SampleUiHaloTests
                 Assert.AreSame(SampleUiHalo.PlainFor(palette.Page), band.sprite.texture,
                     name + " must sample the page ground's own texels.");
                 Assert.AreEqual(Color.white, band.color, name + " must not tint the page texels.");
+                var bandHalo = band.transform.Find(SampleUiHalo.ObjectName);
+                Assert.IsNotNull(bandHalo, name + " must continue the page gradient across its edge.");
+                var bandImage = bandHalo.GetComponent<RawImage>();
+                Assert.AreSame(halo.texture, bandImage.texture);
+                // Continuity, not a recomputation: the band's halo shows exactly the slice of the
+                // page halo's texture that lies under the band on screen.
+                var page = ScreenRect((RectTransform)halo.transform);
+                var slice = ScreenRect((RectTransform)bandHalo);
+                // The whole band, after layout: a layout group must not take the halo for an item.
+                AssertRect(ScreenRect(band.rectTransform), slice, name + "'s halo must cover the whole band.");
+                // A band with no area (TopBleed when the safe area is the whole screen, as in the
+                // Editor) paints nothing, so it has no gradient to continue.
+                if (slice.width <= 0f || slice.height <= 0f) continue;
+                var uv = halo.uvRect;
+                var expected = new Rect(
+                    uv.x + (slice.xMin - page.xMin) / page.width * uv.width,
+                    uv.y + (slice.yMin - page.yMin) / page.height * uv.height,
+                    slice.width / page.width * uv.width,
+                    slice.height / page.height * uv.height);
+                AssertRect(expected, bandImage.uvRect, name + " must continue the page gradient, not restart it.");
                 // The halo's texels away from the corner are those very page texels.
                 var plain = (Color32)SampleUiHalo.PlainFor(palette.Page).GetPixel(0, 0);
                 var texture = (Texture2D)halo.texture;
@@ -173,6 +200,21 @@ public class SampleUiHaloTests
                 Assert.AreEqual(ground.color, band.color, name + " must take the root ground's own colour.");
             }
         }
+    }
+
+    private static Rect ScreenRect(RectTransform rect)
+    {
+        var corners = new Vector3[4];
+        rect.GetWorldCorners(corners);
+        return Rect.MinMaxRect(corners[0].x, corners[0].y, corners[2].x, corners[2].y);
+    }
+
+    private static void AssertRect(Rect expected, Rect actual, string message)
+    {
+        Assert.AreEqual(expected.x, actual.x, 1e-4f, message);
+        Assert.AreEqual(expected.y, actual.y, 1e-4f, message);
+        Assert.AreEqual(expected.width, actual.width, 1e-4f, message);
+        Assert.AreEqual(expected.height, actual.height, 1e-4f, message);
     }
 
     [Test]

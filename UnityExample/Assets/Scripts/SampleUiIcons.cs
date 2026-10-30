@@ -34,6 +34,7 @@ public static class SampleUiIcons
 
     public static void Row(RectTransform row, string symbol)
     {
+        if (string.IsNullOrEmpty(symbol)) return;
         var icon = SampleUi.Panel("Icon", row, OctopusSampleBranding.Clear);
         Apply(icon.GetComponent<Image>(), symbol, OctopusSampleBranding.Palette.Muted);
         var size = icon.gameObject.AddComponent<LayoutElement>();
@@ -92,7 +93,7 @@ public static class SampleUiIcons
         if (id == OctopusSampleAboutView.RepositoryRowId) return "code";
         if (id == OctopusSampleAboutView.DesignReferenceRowId) return "design_services";
         if (id == OctopusSampleAboutView.LicenceLinkId) return "description";
-        if (id == "settings-feedback-row") return "feedback";
-        return "bug_report";
+        if (id == OctopusSampleSettingsView.FeedbackRowId) return "feedback";
+        return null;
     }
 }

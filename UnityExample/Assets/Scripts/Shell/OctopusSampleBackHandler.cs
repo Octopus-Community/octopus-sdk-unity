@@ -135,13 +135,32 @@ public sealed class OctopusSampleBackHandler : MonoBehaviour
         return true;
     }
 
-    private void Update() { HandlePendingPress(); }
+    private void Update()
+    {
+        ObserveKeyboard(TouchScreenKeyboard.visible, Time.frameCount);
+        HandlePendingPress();
+    }
 #endif
 
     /// <summary>Handles one back press. Called by <c>Update</c> on the key, and by the tests.</summary>
     public OctopusSampleBackOutcome HandleBack()
     {
-        var outcome = Resolve();
+        return HandleBack(TouchScreenKeyboard.visible, Time.frameCount);
+    }
+
+    private bool _keyboardVisible;
+    private int _keyboardClosedFrame = -1;
+
+    private bool ObserveKeyboard(bool visible, int frame)
+    {
+        if (_keyboardVisible && !visible) _keyboardClosedFrame = frame;
+        _keyboardVisible = visible;
+        return visible || _keyboardClosedFrame == frame;
+    }
+
+    internal OctopusSampleBackOutcome HandleBack(bool keyboardVisible, int frame)
+    {
+        var outcome = ObserveKeyboard(keyboardVisible, frame) ? OctopusSampleBackOutcome.Ignored : Resolve();
         OctopusSampleQaLaunch.Log("back=" + outcome.ToString().ToLowerInvariant());
         return outcome;
     }
@@ -166,6 +185,7 @@ public sealed class OctopusSampleBackHandler : MonoBehaviour
             if (_shell != null && screen.transform.IsChildOf(_shell.transform) &&
                 _shell.Selected != OctopusSampleTab.Scenarios)
             {
+                SampleUiDetailPage.CloseForNavigation(OctopusSampleTab.Scenarios);
                 _shell.Select(OctopusSampleTab.Scenarios);
                 return OctopusSampleBackOutcome.Scenarios;
             }

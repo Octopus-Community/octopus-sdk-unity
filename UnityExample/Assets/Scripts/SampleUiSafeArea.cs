@@ -21,9 +21,11 @@ public class SampleUiSafeArea : UIBehaviour
 
     /// <summary>
     /// Android system-bar insets are re-read every this many frames (a JNI round trip), on a resize,
-    /// and on every frame while the last read found no bar (<see cref="InsetsReadDue"/>).
+    /// and briefly on successive frames when the first reads find no bar (<see cref="InsetsReadDue"/>).
     /// </summary>
     public const int InsetsRefreshFrames = 10;
+    public const int EmptyInsetsFastReads = 3;
+    private static int _emptyInsetsReads;
     private static int _insetsFrame = -1;
     private static Vector2 _insetsScreen;
     private static Vector4 _systemInsets;
@@ -35,6 +37,7 @@ public class SampleUiSafeArea : UIBehaviour
         _keyboardFrame = -1;
         _keyboardArea = new Rect();
         _insetsFrame = -1;
+        _emptyInsetsReads = 0;
         _systemInsets = Vector4.zero;
         _hasSystemInsets = false;
     }
@@ -56,11 +59,14 @@ public class SampleUiSafeArea : UIBehaviour
         var safe = Screen.safeArea;
 #if UNITY_ANDROID && !UNITY_EDITOR
         var screen = new Vector2(Screen.width, Screen.height);
-        if (InsetsReadDue(Time.frameCount, _insetsFrame, screen, _insetsScreen, _hasSystemInsets, _systemInsets))
+        if (InsetsReadDue(Time.frameCount, _insetsFrame, screen, _insetsScreen, _hasSystemInsets, _systemInsets, _emptyInsetsReads))
         {
+            if (screen != _insetsScreen) _emptyInsetsReads = 0;
             _insetsFrame = Time.frameCount;
             _insetsScreen = screen;
             _hasSystemInsets = TryQuerySystemInsets(screen, out _systemInsets);
+            _emptyInsetsReads = _hasSystemInsets && _systemInsets == Vector4.zero
+                ? _emptyInsetsReads + 1 : EmptyInsetsFastReads;
         }
         safe = AndroidSafeArea(safe, _systemInsets, screen, _hasSystemInsets);
 #endif
@@ -76,15 +82,16 @@ public class SampleUiSafeArea : UIBehaviour
     /// Android has dispatched the window insets to the view tree, and comes back as zero. Cached for
     /// ten frames, it laid the shell out under the 63 px status bar until the next read moved the
     /// whole page down — a jump a slow device stretches to seconds. The sample always shows the
-    /// system bars, so an empty read is retried on the next frame until the real insets arrive.
+    /// system bars, so the first few empty reads are retried on successive frames. Valid zero
+    /// overlap then uses the normal cadence, including after a resize.
     /// A failed read keeps the normal cadence: it falls back to <see cref="Screen.safeArea"/>.
     /// </summary>
     public static bool InsetsReadDue(int frame, int readFrame, Vector2 screen, Vector2 readScreen,
-                                     bool hasInsets, Vector4 insets)
+                                     bool hasInsets, Vector4 insets, int emptyReads = 0)
     {
         if (readFrame < 0 || screen != readScreen) return true;
         if (frame - readFrame >= InsetsRefreshFrames) return true;
-        return hasInsets && insets == Vector4.zero && frame != readFrame;
+        return emptyReads < EmptyInsetsFastReads && hasInsets && insets == Vector4.zero && frame != readFrame;
     }
 
     /// <summary>

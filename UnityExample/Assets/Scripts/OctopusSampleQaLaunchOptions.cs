@@ -17,6 +17,7 @@ public sealed class OctopusSampleQaLaunchOptions
     public string Destination { get; private set; }
     public int? Preset { get; private set; }
     public bool AutoStart { get; private set; }
+    public string PostPrefix { get; private set; }
 
     /// <summary>
     /// `qaTheme` (`light` or `dark`): the appearance for this launch only, never saved, so reference
@@ -55,8 +56,10 @@ public sealed class OctopusSampleQaLaunchOptions
         string value;
         if (extras.TryGetValue("qaTab", out value))
         {
-            if (value != "scenarios" && value != "community" && value != "settings")
-                return options.Fail("unknown tab");
+            var known = false;
+            foreach (var name in Enum.GetNames(typeof(OctopusSampleTab)))
+                if (value == name.ToLowerInvariant()) known = true;
+            if (!known) return options.Fail("unknown tab");
             options.Tab = value;
         }
         if (extras.TryGetValue("qaScenario", out value))
@@ -71,8 +74,16 @@ public sealed class OctopusSampleQaLaunchOptions
         if (extras.TryGetValue("qaPreset", out value))
         {
             int preset;
-            if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out preset) || preset < 1)
-                return options.Fail("unknown preset");
+            if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out preset))
+            {
+                foreach (var scenario in OctopusScenarioCatalog.All)
+                {
+                    if (scenario.Id != options.Scenario || scenario.PresetTestIds == null) continue;
+                    var index = Array.IndexOf(scenario.PresetTestIds, value);
+                    if (index >= 0) preset = index + 1;
+                }
+            }
+            if (preset < 1) return options.Fail("unknown preset");
             // A destination is a screen, not a scenario: it has no presets to number.
             if (options.Scenario == null) return options.Fail("preset requires scenario");
             options.Preset = preset;
@@ -82,6 +93,14 @@ public sealed class OctopusSampleQaLaunchOptions
             bool autoStart;
             if (!bool.TryParse(value, out autoStart)) return options.Fail("invalid autoStart");
             options.AutoStart = autoStart;
+        }
+        if (extras.TryGetValue("qaPostPrefix", out value))
+        {
+            if (value == null || value.Length > 32) return options.Fail("invalid post prefix");
+            foreach (var c in value)
+                if (!(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') &&
+                    c != ' ' && c != '[' && c != ']' && c != '-' && c != '_') return options.Fail("invalid post prefix");
+            options.PostPrefix = value.Trim();
         }
         if (extras.TryGetValue("qaTheme", out value))
         {

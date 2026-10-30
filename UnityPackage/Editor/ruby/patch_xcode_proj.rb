@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-PACKAGE_VERSION = '1.15.0'
+PACKAGE_VERSION = '1.15.1'
 PACKAGE_URL     = 'https://github.com/Octopus-Community/octopus-sdk-swift.git'
 PRODUCTS        = ['Octopus', 'OctopusUI']
 
@@ -56,34 +56,79 @@ pbxproj = project.root_object
 abort 'Project name mismatch' unless pbxproj.name == PROJECT_NAME
 
 # ------------------------------------------------------------
-# 1. Add Swift Package reference
-# ------------------------------------------------------------
-
-package =
-  pbxproj.package_references.find do |pkg|
-    pkg.is_a?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference) &&
-      pkg.repositoryURL == PACKAGE_URL
-  end
-
-unless package
-  package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
-  package.repositoryURL = PACKAGE_URL
-  pbxproj.package_references << package
-end
-# Always (re)write the requirement: an Xcode project exported in Append mode keeps the
-# reference from the previous SDK version, and leaving it untouched would pin the old one.
-package.requirement = {
-  'kind' => 'exactVersion',
-  'version' => PACKAGE_VERSION
-}
-
-# ------------------------------------------------------------
-# 2. Resolve UnityFramework target
+# 1. Resolve UnityFramework target
 # ------------------------------------------------------------
 
 framework_target =
   project.targets.find { |t| t.name == FRAMEWORK_TARGET } ||
   abort("[Octopus SDK] Target not found: #{FRAMEWORK_TARGET}")
+
+# ------------------------------------------------------------
+# 2. Add or update the Swift Package reference
+# ------------------------------------------------------------
+
+# Internal tooling (pm-tools native-dev): OCTOPUS_IOS_DEV_PACKAGE_URL and
+# OCTOPUS_IOS_DEV_REVISION, exported together by `native-dev prepare` during a native
+# dev-source window, point the package at an unreleased native commit. Inert when unset:
+# the public URL at PACKAGE_VERSION, as always.
+dev_url      = ENV.fetch('OCTOPUS_IOS_DEV_PACKAGE_URL', '')
+dev_revision = ENV.fetch('OCTOPUS_IOS_DEV_REVISION', '')
+if dev_url.empty? != dev_revision.empty?
+  abort '[Octopus SDK] OCTOPUS_IOS_DEV_PACKAGE_URL and OCTOPUS_IOS_DEV_REVISION must be set together'
+end
+package_url = dev_url.empty? ? PACKAGE_URL : dev_url
+requirement =
+  if dev_url.empty?
+    { 'kind' => 'exactVersion', 'version' => PACKAGE_VERSION }
+  else
+    { 'kind' => 'revision', 'revision' => dev_revision }
+  end
+
+# An Append-mode export keeps the reference of the previous build, which may carry the other
+# URL: the public one before a window, the dev one during it, the public one again after it.
+# Ours is a remote reference on either URL, or one our products link that is pinned to a
+# revision of an Octopus-Community `octopus-sdk-swift*` repository — a dev reference always
+# is, and its exact URL is unknown once the variables are unset. Anything else (a local
+# package, the host's own fork, another remote) is the host's and left alone.
+OCTOPUS_REPO_URL = %r{\Ahttps://github\.com/Octopus-Community/octopus-sdk-swift[A-Za-z0-9-]*\.git\z}.freeze
+octopus_deps = framework_target.package_product_dependencies.select do |d|
+  PRODUCTS.include?(d.product_name)
+end
+candidates =
+  pbxproj.package_references.select do |pkg|
+    next false unless pkg.is_a?(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+    next true if [PACKAGE_URL, package_url].include?(pkg.repositoryURL)
+
+    OCTOPUS_REPO_URL.match?(pkg.repositoryURL.to_s) &&
+      pkg.requirement.is_a?(Hash) && pkg.requirement['kind'] == 'revision' &&
+      octopus_deps.any? { |d| d.package.equal?(pkg) }
+  end
+package = candidates.find { |pkg| pkg.repositoryURL == package_url } || candidates.first
+
+unless package
+  package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+  pbxproj.package_references << package
+end
+# Xcodeproj compares objects by content: a duplicate identical to the survivor would be
+# removed together with it, and re-pointing a link onto an "equal" object is a no-op. So the
+# duplicates are made distinct first; then the products that linked one move to the survivor,
+# in every target (removing a duplicate would leave their link empty); then they go. A product
+# with no package at all — a local package added as a folder — is the host's: left alone.
+stale_refs = candidates.reject { |c| c.equal?(package) }
+stale_refs.each { |stale| stale.repositoryURL = "removed:#{stale.uuid}" }
+project.targets.each do |t|
+  next unless t.respond_to?(:package_product_dependencies)
+
+  t.package_product_dependencies.each do |d|
+    d.package = package if stale_refs.any? { |c| c.equal?(d.package) }
+  end
+end
+stale_refs.each(&:remove_from_project)
+package.repositoryURL = package_url
+# Always (re)write the requirement: an Xcode project exported in Append mode keeps the
+# reference from the previous SDK version, and leaving it untouched would pin the old one.
+package.requirement = requirement
+puts "[Octopus SDK] native-dev: Octopus package at revision #{dev_revision}" unless dev_url.empty?
 
 # ------------------------------------------------------------
 # 3. Link SwiftPM products

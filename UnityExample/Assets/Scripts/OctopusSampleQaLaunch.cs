@@ -21,11 +21,13 @@ public interface IOctopusSampleQaNavigation
 public interface IOctopusSampleQaScenario
 {
     bool RunPreset(int number);
+    string PresetError { get; }
 }
 
 /// <summary>One launch request, consumed before navigation or Start can re-enter it.</summary>
 public sealed class OctopusSampleQaRequest
 {
+    public const int TabReadyFrameLimit = 300;
     private readonly OctopusSampleQaLaunchOptions _options;
     private bool _applied;
     private bool _started;
@@ -35,6 +37,7 @@ public sealed class OctopusSampleQaRequest
         _options = options;
         if (options.Error != null) return;
         OctopusSampleFixtures.ApplyOverrides(options.FixtureOverrides);
+        OctopusReefRunShare.QaPostPrefix = options.PostPrefix;
         if (options.Theme.HasValue) OctopusSampleBranding.ApplyLaunchTheme(options.Theme);
     }
 
@@ -59,7 +62,16 @@ public sealed class OctopusSampleQaRequest
             : _options.Tab;
         if (tab == null) yield break;
         navigation.SelectTab(tab);
-        while (!navigation.IsTabReady(tab)) yield return null;
+        var frames = 0;
+        while (!navigation.IsTabReady(tab))
+        {
+            if (++frames > TabReadyFrameLimit)
+            {
+                OctopusSampleQaLaunch.Error("tab not ready");
+                yield break;
+            }
+            yield return null;
+        }
         if (_options.Destination != null)
         {
             if (!navigation.OpenDestination(_options.Destination))
@@ -70,7 +82,7 @@ public sealed class OctopusSampleQaRequest
         var screen = navigation.OpenScenario(_options.Scenario);
         if (screen == null) OctopusSampleQaLaunch.Error("unknown scenario");
         else if (_options.Preset.HasValue && !screen.RunPreset(_options.Preset.Value))
-            OctopusSampleQaLaunch.Error("unknown preset");
+            OctopusSampleQaLaunch.Error(screen.PresetError ?? "unknown preset");
     }
 }
 
@@ -83,8 +95,9 @@ public static class OctopusSampleQaLaunch
     private static void Initialize()
     {
         _request = null;
+        OctopusReefRunShare.QaPostPrefix = null;
         OctopusSampleFixtures.ApplyOverrides(null);
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR && OCTOPUS_INTERNAL
         var extras = new Dictionary<string, string>();
         try
         {
@@ -92,7 +105,7 @@ public static class OctopusSampleQaLaunch
             using (var activity = player.GetStatic<AndroidJavaObject>("currentActivity"))
             using (var intent = activity.Call<AndroidJavaObject>("getIntent"))
             {
-                foreach (var key in new[] { "qaTab", "qaScenario", "qaPreset", "qaTheme" })
+                foreach (var key in new[] { "qaTab", "qaScenario", "qaPreset", "qaTheme", "qaPostPrefix" })
                     if (intent.Call<bool>("hasExtra", key))
                         extras[key] = intent.Call<string>("getStringExtra", key);
                 foreach (var name in OctopusSampleFixtures.Names)
@@ -102,8 +115,13 @@ public static class OctopusSampleQaLaunch
                         extras[key] = intent.Call<string>("getStringExtra", key);
                 }
                 if (intent.Call<bool>("hasExtra", "qaAutoStart"))
-                    extras["qaAutoStart"] = intent.Call<bool>("getBooleanExtra", "qaAutoStart", false)
-                        ? "true" : "false";
+                    {
+                    // Android's typed getter returns its default for --es. Read the string form
+                    // first so invalid strings reach the parser instead of silently becoming false.
+                    var text = intent.Call<string>("getStringExtra", "qaAutoStart");
+                    extras["qaAutoStart"] = text ?? (intent.Call<bool>("getBooleanExtra", "qaAutoStart", false)
+                        ? "true" : "false");
+                }
             }
         }
         catch (Exception)

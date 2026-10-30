@@ -6,6 +6,39 @@ using UnityEngine.TextCore.LowLevel;
 /// <summary>One shared dynamic SDF atlas per Inter weight, backed by bundled font data.</summary>
 public static class SampleUiFonts
 {
+    static SampleUiFonts()
+    {
+        Application.quitting += Release;
+#if UNITY_EDITOR
+        UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += Release;
+#endif
+    }
+
+    /// <summary>Releases only the runtime fonts and native resources owned by this cache.</summary>
+    public static void Release()
+    {
+        var fonts = new HashSet<TMP_FontAsset> { _regular, _bold, _mono };
+        foreach (var font in fonts)
+        {
+            if (font == null || font == TMP_Settings.defaultFontAsset) continue;
+            if (font.atlasTextures != null)
+                foreach (var atlas in font.atlasTextures) if (atlas != null) DestroyOwned(atlas);
+            if (font.material != null) DestroyOwned(font.material);
+            DestroyOwned(font);
+        }
+        _regular = _bold = _mono = null;
+        _monoResolved = false;
+    }
+
+    private static void DestroyOwned(Object value)
+    {
+#if UNITY_EDITOR
+        Object.DestroyImmediate(value);
+#else
+        Object.Destroy(value);
+#endif
+    }
+
     private static TMP_FontAsset _regular;
     private static TMP_FontAsset _bold;
 

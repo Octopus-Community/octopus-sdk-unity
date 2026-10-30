@@ -1,11 +1,5 @@
 using UnityEngine;
 
-public enum OctopusSampleTheme
-{
-    Light = 0,
-    Dark = 1
-}
-
 /// <summary>
 /// The sample token source, mapped from Android SampleTokens.kt (DS v15).
 /// Colours are opaque sRGB values; uGUI's linear-colour conversion stays at the rendering boundary.

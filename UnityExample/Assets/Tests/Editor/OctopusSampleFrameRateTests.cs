@@ -48,6 +48,13 @@ public class OctopusSampleFrameRateTests
     }
 
     [Test]
+    public void DesktopAndEditorFollowTheCurrentModeWithoutTheMobileCeiling()
+    {
+        Assert.AreEqual(165, OctopusSampleFrameRate.TargetFor(165d, false));
+        Assert.AreEqual(60, OctopusSampleFrameRate.TargetFor(double.NaN, false));
+    }
+
+    [Test]
     public void TheCeilingIsAboveTheFallback()
     {
         Assert.Greater(OctopusSampleFrameRate.Ceiling, OctopusSampleFrameRate.Fallback);

@@ -3,6 +3,11 @@ using System.Collections.Generic;
 
 public sealed class GroupAccessDeniedScenario : CommunityScenarioPilot
 {
+    private static int _ownerGeneration = -1, _owners;
+    public static bool OwnsCallback
+    {
+        get { return _ownerGeneration == OctopusScenarioSdk.CommunityGeneration && _owners > 0; }
+    }
     private Action _unregister;
     private int _fireCount;
     private string _lastGroupId = "—";
@@ -27,8 +32,19 @@ public sealed class GroupAccessDeniedScenario : CommunityScenarioPilot
             { Show("Callback already registered — no-op (still armed)."); return; }
             var sdk = OctopusScenarioSdk.Current;
             Announce("OnGroupAccessDenied +=");
-            _unregister = Observe<string>(h => sdk.GroupAccessDenied += h,
-                h => { Announce("OnGroupAccessDenied -="); sdk.GroupAccessDenied -= h; },
+            var generation = OctopusScenarioSdk.CommunityGeneration;
+            _unregister = Observe<string>(h =>
+                {
+                    sdk.GroupAccessDenied += h;
+                    if (_ownerGeneration != generation) { _ownerGeneration = generation; _owners = 0; }
+                    _owners++;
+                },
+                h =>
+                {
+                    Announce("OnGroupAccessDenied -=");
+                    sdk.GroupAccessDenied -= h;
+                    if (_ownerGeneration == generation) _owners = Math.Max(0, _owners - 1);
+                },
                 (owner, id) => ((GroupAccessDeniedScenario)owner).Received(id));
             Show("Callback registered. It will fire when the user taps a locked group in the Community tab.");
         }

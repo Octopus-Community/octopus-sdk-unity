@@ -69,6 +69,7 @@ public partial class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQa
         // A host profile page opened from this screen has no meaning without it.
         var profilePage = FindAnyObjectByType<OctopusSampleClientProfileView>();
         if (profilePage != null) profilePage.Dismiss();
+        OnDestroy();
         // The entry rides in this header: hand it back before the hierarchy goes away.
         SampleUiDebugEntryHost.ReleaseFor(gameObject);
         gameObject.SetActive(false);
@@ -103,7 +104,8 @@ public partial class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQa
         Build();
         OctopusSampleBranding.ThemeChanged += OnThemeChanged;
         _pilot.ResultChanged += OnResultChanged;
-        OctopusScenarioSdk.Current.ProfileChanged += OnConnectionProfileChanged;
+        _profileSdk = OctopusScenarioSdk.Current;
+        _profileSdk.ProfileChanged += OnConnectionProfileChanged;
         _pilot.HostProfileRequested += OnHostProfileRequested;
         if (ShowsUnifiedProfileHint || _pilot.Id == "unifiedProfile")
         {
@@ -118,13 +120,15 @@ public partial class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQa
         RefreshResult();
     }
 
+    private IOctopusScenarioSdk _profileSdk;
+
     private void OnDestroy()
     {
         if (_pilot != null)
         {
             _pilot.ResultChanged -= OnResultChanged;
             _pilot.HostProfileRequested -= OnHostProfileRequested;
-            OctopusScenarioSdk.Current.ProfileChanged -= OnConnectionProfileChanged;
+            if (_profileSdk != null) _profileSdk.ProfileChanged -= OnConnectionProfileChanged;
         }
         if (_observingUnifiedProfile) OctopusSampleUnifiedProfile.Changed -= OnUnifiedProfileChanged;
         _observingUnifiedProfile = false;
@@ -276,7 +280,9 @@ public partial class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQa
             foreach (var parameter in parameters)
                 SampleUi.FlexibleLabel(signature, parameter, SampleUi.TextCaption, SampleUi.Muted).richText = false;
         }
-        var guidance = SampleUi.FlexibleLabel(bench, "You will see: " + _pilot.YouWillSee,
+        var guidanceInset = SampleUi.Panel("scenario-guidance-inset", bench, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(guidanceInset, 0f, SampleUi.CardPadding(), false);
+        var guidance = SampleUi.FlexibleLabel(guidanceInset, "You will see: " + _pilot.YouWillSee,
                                               SampleUi.TextBody, SampleUi.TitleColor);
         guidance.name = "scenario-you-will-see";
         if (_pilot.Id == "unifiedProfile") BuildUnifiedControls(bench);
@@ -310,7 +316,9 @@ public partial class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQa
         SampleUi.VerticalStack(card, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceSm), new RectOffset(), false);
         var chip = SampleUi.Card("scenario-api-" + _pilot.Row.ReferenceApi, card);
         SampleUi.FlexibleLabel(chip, _pilot.Row.ReferenceApi, SampleUi.TextCaption, SampleUi.Muted);
-        SampleUi.FlexibleLabel(card, _pilot.Row.Subtitle, SampleUi.TextBody, SampleUi.Muted);
+        var copy = SampleUi.Panel("scenario-description-copy", card, OctopusSampleBranding.Clear);
+        SampleUi.VerticalStack(copy, 0f, SampleUi.CardPadding(), false);
+        SampleUi.FlexibleLabel(copy, _pilot.Row.Subtitle, SampleUi.TextBody, SampleUi.Muted);
     }
 
     private void BuildFields(RectTransform content)
@@ -469,9 +477,14 @@ public partial class OctopusScenarioScreenView : MonoBehaviour, IOctopusSampleQa
         return section;
     }
 
+    private string _qaPresetError;
+    string IOctopusSampleQaScenario.PresetError { get { return _qaPresetError; } }
+
     bool IOctopusSampleQaScenario.RunPreset(int number)
     {
-        if (!_qaBound || _pilot.IsRunning || number < 1 || number > _pilot.Presets.Count) return false;
+        _qaPresetError = !_qaBound ? "scenario not bound" : _pilot.IsRunning ? "pilot busy"
+            : number < 1 || number > _pilot.Presets.Count ? "unknown preset" : null;
+        if (_qaPresetError != null) return false;
         ApplyPreset(_pilot.Presets[number - 1], true);
         return true;
     }

@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: LiberationSans SDF Material
-  m_Shader: {fileID: 4800000, guid: fe393ace9b354375a9cb14cdbbc28be4, type: 3}
+  m_Shader: {fileID: 4800000, guid: 29b5bc257c5648a1904e6f644a4d4470, type: 3}
   m_ShaderKeywords:
   m_LightmapFlags: 1
   m_EnableInstancingVariants: 0
@@ -75,8 +75,8 @@ MonoBehaviour:
   material: {fileID: 2180264}
   materialHashCode: -1183942120
   m_Version: 1.1.0
-  m_SourceFontFileGUID: e3265ab4bf004d28a9537516768c1c75
-  m_SourceFontFile_EditorRef: {fileID: 12800000, guid: e3265ab4bf004d28a9537516768c1c75,
+  m_SourceFontFileGUID: d63c8ff9c2804f0693137d621d9a1384
+  m_SourceFontFile_EditorRef: {fileID: 12800000, guid: d63c8ff9c2804f0693137d621d9a1384,
     type: 3}
   m_SourceFontFile: {fileID: 0}
   m_AtlasPopulationMode: 0
@@ -7713,10 +7713,10 @@ MonoBehaviour:
       m_FeatureLookupFlags: 0
   fallbackFontAssets: []
   m_FallbackFontAssetTable:
-  - {fileID: 11400000, guid: 2e498d1c8094910479dc3e1b768306a4, type: 2}
+  - {fileID: 11400000, guid: 3256d5b87915499e91dfc5494120bd15, type: 2}
   m_CreationSettings:
     sourceFontFileName:
-    sourceFontFileGUID: e3265ab4bf004d28a9537516768c1c75
+    sourceFontFileGUID: d63c8ff9c2804f0693137d621d9a1384
     pointSizeSamplingMode: 0
     pointSize: 86
     padding: 9
@@ -7725,7 +7725,7 @@ MonoBehaviour:
     atlasHeight: 1024
     characterSetSelectionMode: 1
     characterSequence: 32 - 126, 160 - 255, 8192 - 8303, 8364, 8482, 9633
-    referencedFontAssetGUID: 8f586378b4e144a9851e7b34d9b748ee
+    referencedFontAssetGUID: 8c194170f5e44a5ba8142c1006839557
     referencedTextAssetGUID:
     fontStyle: 0
     fontStyleModifier: 0

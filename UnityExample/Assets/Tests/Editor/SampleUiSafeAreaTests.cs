@@ -130,6 +130,23 @@ public class SampleUiSafeAreaTests
     }
 
     [Test]
+    public void SustainedZeroInsetsUseTheNormalCadenceAfterTheColdLaunchBudget()
+    {
+        int readFrame = -1, emptyReads = 0, reads = 0;
+        for (int frame = 0; frame < 3600; frame++)
+        {
+            if (!SampleUiSafeArea.InsetsReadDue(frame, readFrame, PlayerScreen, PlayerScreen,
+                true, Vector4.zero, emptyReads)) continue;
+            readFrame = frame;
+            emptyReads++;
+            reads++;
+        }
+        Assert.AreEqual(362, reads);
+        Assert.IsTrue(SampleUiSafeArea.InsetsReadDue(3600, readFrame,
+            new Vector2(2337f, 1080f), PlayerScreen, true, Vector4.zero, emptyReads));
+    }
+
+    [Test]
     public void ARealReadIsKeptForTheRefreshInterval()
     {
         var statusBar = new Vector4(0f, 63f, 0f, 0f);

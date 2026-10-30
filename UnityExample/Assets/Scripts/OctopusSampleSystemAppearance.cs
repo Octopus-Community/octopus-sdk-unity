@@ -32,11 +32,11 @@ public static class OctopusSampleSystemAppearance
         }
         catch (Exception)
         {
-            return OctopusSampleTheme.Light;
+            return OctopusSampleBranding.Theme;
         }
 #elif UNITY_IOS && !UNITY_EDITOR
         try { return OctopusSampleReadInterfaceStyle() == 2 ? OctopusSampleTheme.Dark : OctopusSampleTheme.Light; }
-        catch (Exception) { return OctopusSampleTheme.Light; }
+        catch (Exception) { return OctopusSampleBranding.Theme; }
 #elif UNITY_EDITOR
         return UnityEditor.EditorGUIUtility.isProSkin ? OctopusSampleTheme.Dark : OctopusSampleTheme.Light;
 #else

@@ -39,6 +39,22 @@ public class OctopusSampleNativeThemeTests
     }
 
     [Test]
+    public void ConfiguringAChangedThemeRaisesOneRebuildNotification()
+    {
+        var notifications = 0;
+        System.Action changed = () => notifications++;
+        OctopusSampleBranding.ThemeChanged += changed;
+        try
+        {
+            OctopusSampleNativeTheme.Configure(true, OctopusSampleNativeTheme.DarkSchemeType);
+            Assert.AreEqual(1, notifications);
+            OctopusSampleNativeTheme.Configure(false, OctopusSampleNativeTheme.DarkSchemeType);
+            Assert.AreEqual(2, notifications, "A palette-only change still needs one rebuild.");
+        }
+        finally { OctopusSampleBranding.ThemeChanged -= changed; }
+    }
+
+    [Test]
     public void LiveThemeAdapterOnlyChangesColorsAndPreservesOtherAssetThemeSettings()
     {
         bool enabled = OctopusSDK.Mock.Enabled;

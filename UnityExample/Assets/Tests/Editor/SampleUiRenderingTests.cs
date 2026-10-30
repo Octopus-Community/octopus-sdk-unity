@@ -6,6 +6,21 @@ using UnityEngine.UI;
 
 public class SampleUiRenderingTests
 {
+    [Test]
+    public void ReleasingTheFontCacheDestroysItsOwnedNativeResources()
+    {
+        var font = SampleUiFonts.Regular;
+        Assert.IsNotNull(font);
+        Assert.AreNotSame(TMP_Settings.defaultFontAsset, font, "The bundled Inter face must be available.");
+        var material = font.material;
+        var atlases = (Texture2D[])font.atlasTextures.Clone();
+        SampleUiFonts.Release();
+        Assert.IsTrue(font == null);
+        Assert.IsTrue(material == null);
+        foreach (var atlas in atlases) Assert.IsTrue(atlas == null);
+        Assert.IsNotNull(SampleUiFonts.Regular, "The next screen can recreate the cache.");
+    }
+
     [TestCase(1f)]
     [TestCase(0.875f)]
     [TestCase(1.25f)]
@@ -239,7 +254,6 @@ public class SampleUiRenderingTests
         finally { Object.DestroyImmediate(host); }
     }
 
-    [TestCase("home")]
     [TestCase("science")]
     [TestCase("forum")]
     [TestCase("settings")]

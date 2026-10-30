@@ -510,7 +510,7 @@ public class OctopusScenariosListView : MonoBehaviour
         var card = SampleUi.Panel(OctopusSampleCommunityConfigLines.PreviewId, wrapper, p.Surface,
             HeadRadiusDp, p.Border);
         SampleUi.VerticalStack(card, OctopusSampleBranding.Dp(OctopusSampleBranding.SpaceXs),
-            SampleUi.Padding(OctopusSampleBranding.SpaceMd, OctopusSampleBranding.SpaceMd), false);
+            SampleUi.CardPadding(), false);
         var title = SampleUi.Label("Title", card, OctopusSampleCommunityConfigLines.Title, SampleUi.TextLabel,
             p.Title, TextAnchor.MiddleLeft);
         title.fontStyle = FontStyles.Bold;

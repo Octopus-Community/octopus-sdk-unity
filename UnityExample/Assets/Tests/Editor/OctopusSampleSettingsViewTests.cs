@@ -26,6 +26,24 @@ public class OctopusSampleSettingsViewTests
     }
     private OctopusSampleSettingsView View() { return Shell().GetComponentInChildren<OctopusSampleSettingsView>(); }
     private static Transform Find(Transform root, string id) { return root.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == id); }
+    [Test]
+    public void ThemeRebuildKeepsAnOpenResetConfirmation()
+    {
+        var shell = Shell();
+        var view = shell.GetComponentInChildren<OctopusSampleSettingsView>();
+        view.RequestReset();
+        var previous = OctopusSampleBranding.Theme;
+        try
+        {
+            OctopusSampleBranding.Theme = previous == OctopusSampleTheme.Dark ? OctopusSampleTheme.Light : OctopusSampleTheme.Dark;
+            var rebuilt = shell.GetComponentInChildren<OctopusSampleSettingsView>();
+            Assert.IsTrue(rebuilt.IsConfirmingReset);
+            Assert.IsNotNull(GameObject.Find("settings-reset-dialog"));
+            rebuilt.CancelReset();
+        }
+        finally { OctopusSampleBranding.Theme = previous; }
+    }
+
     [Test] public void AboutShowsBuildPinsLicencesAndLegacyEntry()
     {
         var view = OctopusSampleAboutView.Open();
@@ -207,6 +225,35 @@ public class OctopusSampleSettingsViewTests
 #endif
     }
 
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("https://example.invalid/design")]
+    public void DesignReferenceRowUsesTheSuppliedUrl(string url)
+    {
+        var host = new GameObject("DesignReferenceTest", typeof(RectTransform));
+        try
+        {
+            string opened = null;
+            System.Action<string> open = value => opened = value;
+            typeof(OctopusSampleAboutView).GetMethod("BuildDesignReferenceRow",
+                System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)
+                .Invoke(null, new object[] { (RectTransform)host.transform, url, open });
+            var row = Find(host.transform, OctopusSampleAboutView.DesignReferenceRowId);
+            if (string.IsNullOrEmpty(url)) Assert.IsNull(row);
+            else
+            {
+                Assert.IsNotNull(row);
+                Assert.IsNotNull(row.GetComponent<Button>());
+                Assert.GreaterOrEqual(row.GetComponent<LayoutElement>().minHeight,
+                    OctopusSampleBranding.MinTouchUnits);
+                Assert.IsNotNull(row.GetComponent<Button>().targetGraphic);
+                row.GetComponent<Button>().onClick.Invoke();
+                Assert.AreEqual(url, opened);
+            }
+        }
+        finally { UnityEngine.Object.DestroyImmediate(host); }
+    }
+
     [Test]
     public void AboutHasPublicLinksAndTextAttribution()
     {
@@ -272,6 +319,7 @@ public class OctopusSampleSettingsViewTests
         var view = View();
         OctopusSampleSettingsRows.Register("settings-devtools-row", "Developer tools", "first", () => { });
         OctopusSampleSettingsRows.Register("settings-devtools-row", "Developer tools", "second", () => { });
+        Assert.AreEqual("second", OctopusSampleSettingsRows.Support.Single(row => row.Id == "settings-devtools-row").Subtitle);
 
         CollectionAssert.AreEqual(
             new[] { "settings-devtools-row", OctopusSampleSettingsView.AboutRowId },

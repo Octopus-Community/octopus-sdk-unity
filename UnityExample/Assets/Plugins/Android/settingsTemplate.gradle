@@ -13,6 +13,15 @@ include ':launcher', ':unityLibrary'
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
+        // Internal tooling (pm-tools native-dev): inert unless OCTOPUS_ANDROID_DEV_REPO is set.
+        // Kept outside the Android Resolver markers below, which EDM4U regenerates.
+        def octopusDevRepo = System.getenv("OCTOPUS_ANDROID_DEV_REPO")
+        if (octopusDevRepo && findByName("octopusNativeDev") == null) {
+            exclusiveContent {
+                forRepository { maven { name = "octopusNativeDev"; url = uri(octopusDevRepo) } }
+                filter { includeGroup("com.octopuscommunity") }
+            }
+        }
         **ARTIFACTORYREPOSITORY**
         google()
         mavenCentral()

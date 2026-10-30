@@ -3,6 +3,7 @@ using System;
 /// <summary>Shared token registration gate for the sample's notification callbacks and pilots.</summary>
 public static class OctopusSamplePushRegistration
 {
+    /// <summary>Diagnostic emitted when a token callback is gated by the registration switch.</summary>
     public const string SkippedHeadline = "Push registration skipped by the toggle";
 
     private static string _lastToken;

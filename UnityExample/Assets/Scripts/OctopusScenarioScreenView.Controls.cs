@@ -122,7 +122,7 @@ public partial class OctopusScenarioScreenView
     {
         if (this == null)
         {
-            OctopusScenarioSdk.Current.ProfileChanged -= OnConnectionProfileChanged;
+            if (_profileSdk != null) _profileSdk.ProfileChanged -= OnConnectionProfileChanged;
             return;
         }
         RefreshConnection();

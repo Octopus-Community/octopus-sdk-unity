@@ -163,8 +163,8 @@ The Editor and iOS do not read launch options. All QA markers come from sample c
 | --- | --- | --- |
 | `qaTab` | `--es` | Select `scenarios`, `community` or `settings` after shell readiness. |
 | `qaScenario` | `--es` | Open a catalog id through the Scenarios list and pilot registry. Takes precedence over `qaTab`. |
-| `qaPreset` | `--es` | With `qaScenario`, run the preset at its one-based position after binding (the displayed Preset number, including actions whose catalog id ends in `clear`). |
-| `qaAutoStart` | `--ez` | Invoke Configuration's Apply once if explicitly opened; normal startup needs no QA extra. |
+| `qaPreset` | `--es` | With `qaScenario`, run the catalogue `test_id` (for example `qa-preset-customEvents-1`). A one-based preset position remains accepted for older scripts. |
+| `qaAutoStart` | `--ez` or `--es` | Invoke Configuration's Apply once if explicitly opened; normal startup needs no QA extra. |
 
 Configuration calls `OctopusSampleQaLaunch.ConfigShown(Apply)` when opened and
 `ConfigStarted()` after successful Apply. Startup already auto-starts the default demo profile.
@@ -190,6 +190,8 @@ adb shell am start -S -n com.octopuscommunity.sdk.unity.sample/com.google.fireba
 # Observe markers (start this in another terminal before launching).
 adb logcat -v brief -s Unity | grep -F '[OctopusQA]'
 ```
+
+Navigation and result markers are always emitted, including manual interactions, so a manually reproduced run has the same diagnostic trace. Tab readiness waits stop after 300 frames.
 
 Markers occupy one log line, with prefix `[OctopusQA]`. Result text has line breaks
 collapsed into spaces; it is the displayed result, including `Running…` and stale
@@ -227,3 +229,36 @@ and `OpenScenario` uses the existing pilot registry and returns a bound
 `IOctopusSampleQaScenario`. Its `RunPreset` fills values and executes explicitly; ordinary preset taps only fill.
 Keep tab, opened, running and changed-result markers in the corresponding view
 paths; preserve the single-consumption request and Config callbacks above.
+
+## Build verification and local metadata
+
+Build entry points restore the original ProjectSettings bytes after both success and exceptions,
+including pre-existing local edits. An abrupt Editor termination or domain reload still needs the
+calling process to restore its snapshot. For an Editor QA build, use a Development build and add
+`OCTOPUS_INTERNAL` in Player > Scripting Define Symbols to show Send feedback; remove it afterward.
+Every non-Development build, including File > Build Settings and a non-Development debug APK,
+refuses a configured `ssoTokenSecret` or per-profile `authToken`. Development builds may use local
+demo credentials. Never distribute those builds outside the intended demo QA workflow.
+
+Native build pins are diagnostic metadata. Missing source files display an unavailable marker;
+they do not prevent a feedback screen from opening. Pin parsing itself remains strict.
+
+The sample reads the current display refresh mode, requests at least 60 Hz and caps
+mobile players at 120 Hz. Editor and desktop requests have no mobile ceiling. The licence-free
+compile gate checks the QA launch slice, including `OCTOPUS_INTERNAL`; the UI and iOS frame-rate
+player branch still need Unity compilation. Device frame-time measurements remain separate QA.
+
+Reef Run share QA can pass `--es qaPostPrefix "[QA] session-1"` on an internal Android launch.
+The prefix is launch-only, limited to 32 ASCII letters, digits, spaces, brackets, hyphens and
+underscores, and ignored by non-internal players. Use a demo session and delete QA posts afterward.
+The service under `PushNotificationsExample/Plugins/Android/` mirrors the UPM push sample; manifest
+merging, notification display and taps still need an Android build and device verification.
+
+The bundled TMP essentials use sample-specific GUIDs, so importing TMP Essential Resources does
+not collide with their upstream asset identities. Runtime fonts, materials and atlases are released
+on application quit and before an Editor assembly reload.
+
+The default host URL handler intercepts contact links. Other links return `HandledByOctopus`,
+which the Unity SDK opens in the system browser while interception is enabled. Disabling host
+URL handling restores the previous handler. Loading the legacy examples detaches the shell's
+login, group and URL callbacks first.

@@ -322,7 +322,7 @@ public class OctopusSampleCommunityView : MonoBehaviour
         // The Connection scenario itself, not the list root: the band names one scenario, and the
         // list would leave the reader to find it among the rest.
         var shell = GetComponentInParent<OctopusSampleShell>();
-        if (shell != null) shell.OpenScenarioScreen(OctopusSampleHomeView.ConnectionScenarioId);
+        if (shell != null) shell.OpenScenarioScreen(OctopusSampleStatus.ConnectionScenarioId);
     }
 
     private static void BuildPlatformCard(RectTransform parent)
@@ -511,7 +511,7 @@ public class OctopusSampleCommunityView : MonoBehaviour
         // is how a reader ends up believing they disagree.
         if (_sessionValue != null)
         {
-            _sessionValue.text = OctopusSampleHomeView.ConnectionStatusLabel();
+            _sessionValue.text = OctopusSampleStatus.ConnectionStatusLabel();
         }
 
         if (_accessValue != null)

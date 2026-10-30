@@ -1,9 +1,10 @@
 using UnityEngine;
 using UnityEngine.UI;
+using TMPro;
 
 public class LanguageOverrideExample : MonoBehaviour
 {
-    private Text statusText;
+    private TMP_Text statusText;
 
     void Start()
     {
@@ -64,40 +65,18 @@ public class LanguageOverrideExample : MonoBehaviour
         button.targetGraphic = image;
         button.onClick.AddListener(onClick);
 
-        var textObj = new GameObject("Text");
-        textObj.transform.SetParent(buttonObj.transform, false);
-
-        var textRect = textObj.AddComponent<RectTransform>();
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.sizeDelta = Vector2.zero;
-
-        textObj.AddComponent<CanvasRenderer>();
-        var text = textObj.AddComponent<Text>();
-        text.text = label;
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = 30;
-        text.fontStyle = FontStyle.Bold;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.color = Color.black;
+        var text = SampleUi.Label("Text", buttonObj.transform, label, 30,
+            SampleUi.TitleColor, TextAnchor.MiddleCenter);
+        SampleUi.Stretch(text.rectTransform, Vector2.zero, Vector2.one);
+        text.fontStyle = FontStyles.Bold;
     }
 
-    Text CreateText(Transform parent, string content, float x, float y, int fontSize)
+    TMP_Text CreateText(Transform parent, string content, float x, float y, int fontSize)
     {
-        var textObj = new GameObject("StatusText");
-        textObj.transform.SetParent(parent, false);
-
-        var rect = textObj.AddComponent<RectTransform>();
-        rect.anchoredPosition = new Vector2(x, y);
-        rect.sizeDelta = new Vector2(700, 60);
-
-        textObj.AddComponent<CanvasRenderer>();
-        var text = textObj.AddComponent<Text>();
-        text.text = content;
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = fontSize;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.color = OctopusSampleBranding.Palette.OnChrome;
+        var text = SampleUi.Label("StatusText", parent, content, fontSize,
+            OctopusSampleBranding.Palette.OnChrome, TextAnchor.MiddleCenter);
+        text.rectTransform.anchoredPosition = new Vector2(x, y);
+        text.rectTransform.sizeDelta = new Vector2(700, 60);
         return text;
     }
 }

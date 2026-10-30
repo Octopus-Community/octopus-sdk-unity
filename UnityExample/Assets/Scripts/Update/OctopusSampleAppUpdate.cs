@@ -2,7 +2,7 @@ using System;
 using UnityEngine;
 
 /// <summary>
-/// The sample's Play In-App Update check (pm-tools <c>shared/design/samples/AUTO_UPDATE.md</c>).
+/// The sample's Play In-App Update check (shared sample update behaviour).
 /// Android player only: in the Editor and on iOS (TestFlight prompts by itself) the status stays
 /// <see cref="OctopusSampleUpdateState.Unsupported"/> and nothing is shown. Sample code only — the
 /// SDK package never asks Play anything.
@@ -129,7 +129,14 @@ public class OctopusSampleAppUpdate : MonoBehaviour
     /// <summary>Called from the Android main thread; hands the result to the Unity thread.</summary>
     private void Post(OctopusSampleUpdateStatus status)
     {
-        lock (_gate) { _pending = () => Publish(status); }
+        lock (_gate)
+        {
+            _pending = () =>
+            {
+                if (status.State == OctopusSampleUpdateState.Error) _flowStarted = false;
+                Publish(status);
+            };
+        }
     }
 
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -176,13 +183,16 @@ public class OctopusSampleAppUpdate : MonoBehaviour
             using (var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
             using (var activity = player.GetStatic<AndroidJavaObject>("currentActivity"))
             using (var bridge = new AndroidJavaClass(BridgeClass))
-                _flowStarted = bridge.CallStatic<bool>("startImmediateUpdate", activity);
+            {
+                _flowStarted = true;
+                bridge.CallStatic("startImmediateUpdate", activity, new Listener(this));
+            }
         }
         catch (Exception)
         {
             _flowStarted = false;
+            Publish(OctopusSampleUpdateStatus.Failed(null));
         }
-        if (!_flowStarted) Check();
     }
 #else
     private void Ask() { }

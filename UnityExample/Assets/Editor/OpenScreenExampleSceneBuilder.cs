@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using TMPro;
 
 // Builds the OpenScreen example scene (the prefilled-post test UI), wires its
 // buttons, registers it in the build settings, and adds an entry to the MainMenu
@@ -22,7 +23,6 @@ public static class OpenScreenExampleSceneBuilder
     const string MenuLabel = "OpenScreen Example";
     const string MainMenuMethod = "OpenOpenScreenExample";
 
-    static Font UIFont => Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
     [MenuItem("Octopus/Examples/Build OpenScreen Example Scene")]
     public static void Build()
@@ -72,39 +72,20 @@ public static class OpenScreenExampleSceneBuilder
 
     static void CreateText(Transform parent, string name, string content, Vector2 pos, int size, FontStyle style)
     {
-        var go = DefaultControls.CreateText(new DefaultControls.Resources());
-        go.name = name;
-        go.transform.SetParent(parent, false);
-        var rt = (RectTransform)go.transform;
-        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = new Vector2(900, 120);
-        rt.anchoredPosition = pos;
-
-        var text = go.GetComponent<Text>();
-        text.text = content;
-        text.font = UIFont;
-        text.fontSize = size;
-        text.fontStyle = style;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.color = Color.black;
+        var text = SampleUi.Label(name, parent, content, size, SampleUi.TitleColor, TextAnchor.MiddleCenter);
+        text.rectTransform.anchorMin = text.rectTransform.anchorMax = text.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        text.rectTransform.sizeDelta = new Vector2(900, 120);
+        text.rectTransform.anchoredPosition = pos;
+        text.fontStyle = style == FontStyle.Bold ? FontStyles.Bold : FontStyles.Normal;
     }
 
     static void CreateButton(Transform parent, string name, string label, Vector2 pos, UnityAction onClick)
     {
-        var go = DefaultControls.CreateButton(new DefaultControls.Resources());
-        go.name = name;
-        go.transform.SetParent(parent, false);
-        var rt = (RectTransform)go.transform;
-        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = new Vector2(680, 130);
-        rt.anchoredPosition = pos;
-
-        var text = go.GetComponentInChildren<Text>(true);
-        text.text = label;
-        text.font = UIFont;
-        text.fontSize = 32;
-
-        UnityEventTools.AddPersistentListener(go.GetComponent<Button>().onClick, onClick);
+        var rect = SampleUi.Button(name, parent, label, null);
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = new Vector2(680, 130);
+        rect.anchoredPosition = pos;
+        UnityEventTools.AddPersistentListener(rect.GetComponent<Button>().onClick, onClick);
     }
 
     static void AddToBuildSettings()

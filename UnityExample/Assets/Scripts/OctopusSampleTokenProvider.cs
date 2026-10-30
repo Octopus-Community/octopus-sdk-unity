@@ -42,7 +42,7 @@ public sealed class OctopusSampleTokenProvider
 
         var payload = new StringBuilder("{\"sub\":").Append(Quote(userId))
             .Append(",\"exp\":")
-            .Append((_clock().ToUnixTimeSeconds() + 365L * 24 * 60 * 60).ToString(CultureInfo.InvariantCulture));
+            .Append((_clock().ToUnixTimeSeconds() + 3600L).ToString(CultureInfo.InvariantCulture));
         var claims = new List<string>();
         if (entitlements != null)
             foreach (var entitlement in entitlements) claims.Add(Quote(entitlement));

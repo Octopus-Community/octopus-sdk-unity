@@ -2,7 +2,7 @@
 /// What the sample's Play In-App Update check found. Mirrors <c>AppUpdateChecker.Status</c> in the
 /// Android sample and <c>SampleUpdateStatus</c> in the Flutter one on purpose: one behaviour reached
 /// through three bindings, and the states are what a QA lane reads. Keep them in step
-/// (pm-tools <c>shared/design/samples/AUTO_UPDATE.md</c>).
+/// across the sample apps.
 /// </summary>
 public enum OctopusSampleUpdateState
 {

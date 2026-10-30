@@ -36,12 +36,13 @@ public class OctopusSampleAccountView : OctopusSampleSettingsDetailView
         var profile = OctopusScenarioSdk.Current.CurrentProfile;
         if (profile == null) return "No connected profile reported";
         if (IsGuest(profile)) return "Guest / no SSO identity reported";
-        return "SSO profile connected · " + profile.ClientUserId;
+        return string.IsNullOrEmpty(profile.ClientUserId) ? "Profile connected"
+            : "SSO profile connected · " + profile.ClientUserId;
     }
 
     private static bool IsGuest(OctopusProfile profile)
     {
-        return profile == null || string.IsNullOrEmpty(profile.ClientUserId);
+        return profile == null || profile.IsGuest;
     }
 
     private void ProfileChanged(OctopusProfile profile) { Refresh(); }

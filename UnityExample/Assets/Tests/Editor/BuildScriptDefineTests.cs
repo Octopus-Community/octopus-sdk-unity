@@ -2,9 +2,99 @@ using System;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEditor;
+using UnityEditor.Build;
 
 public class BuildScriptDefineTests
 {
+    [TestCase(null, false)]
+    [TestCase("", false)]
+    [TestCase(" \t\n", true)]
+    [TestCase("unit-test-only-secret", true)]
+    public void ReleaseBuildRefusesEveryNonEmptySsoTokenSecret(string secret, bool shouldRefuse)
+    {
+        var type = Type.GetType("BuildScript, Assembly-CSharp-Editor");
+        Assert.IsNotNull(type, "BuildScript is missing from Assembly-CSharp-Editor.");
+        var method = type.GetMethod("RequireNoSsoTokenSecret", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.IsNotNull(method, "The release signing-secret guard is missing or renamed.");
+        if (shouldRefuse)
+        {
+            var error = Assert.Throws<TargetInvocationException>(() => method.Invoke(null, new object[] { secret }));
+            Assert.IsInstanceOf<BuildFailedException>(error.InnerException);
+            StringAssert.Contains("Clear it in OctopusExampleConfig", error.InnerException.Message);
+            StringAssert.DoesNotContain(secret, error.InnerException.Message);
+        }
+        else
+        {
+            Assert.DoesNotThrow(() => method.Invoke(null, new object[] { secret }));
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void BuildSnapshotRestoresExactBytesIncludingAfterFailure(bool fail)
+    {
+        var path = System.IO.Path.GetTempFileName();
+        var original = new byte[] { 0, 1, 13, 10, 255, 42 };
+        try
+        {
+            System.IO.File.WriteAllBytes(path, original);
+            var type = Type.GetType("BuildScript, Assembly-CSharp-Editor");
+            var method = type.GetMethod("WithFileSnapshot", BindingFlags.NonPublic | BindingFlags.Static);
+            Action mutate = () =>
+            {
+                System.IO.File.WriteAllText(path, "mutated settings");
+                if (fail) throw new InvalidOperationException("test build failure");
+            };
+            if (fail) Assert.Throws<TargetInvocationException>(() => method.Invoke(null, new object[] { path, mutate }));
+            else Assert.DoesNotThrow(() => method.Invoke(null, new object[] { path, mutate }));
+            CollectionAssert.AreEqual(original, System.IO.File.ReadAllBytes(path));
+        }
+        finally { System.IO.File.Delete(path); }
+    }
+
+    [Test]
+    public void SdkVersionIsSafeForTheIosMarketingVersion()
+    {
+        StringAssert.IsMatch(@"^[0-9]+(\.[0-9]+){0,2}$", OctopusSDK.Version);
+    }
+
+    [TestCase(BuildTarget.iOS, true)]
+    [TestCase(BuildTarget.Android, false)]
+    [TestCase(BuildTarget.StandaloneOSX, false)]
+    public void ActiveIosTargetGuardAcceptsOnlyIos(BuildTarget target, bool expected)
+    {
+        var type = Type.GetType("BuildScript, Assembly-CSharp-Editor");
+        var method = type.GetMethod("IsIOSTarget", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.AreEqual(expected, method.Invoke(null, new object[] { target }));
+    }
+
+    [TestCase("defaultProfile")]
+    [TestCase("forcedLoginProfile")]
+    [TestCase("managedFieldsProfile")]
+    [TestCase("someManagedFieldsProfile")]
+    [TestCase("ssoTokenSecret")]
+    public void EveryCredentialIsRefusedOutsideDevelopmentBuilds(string field)
+    {
+        var config = UnityEngine.ScriptableObject.CreateInstance<OctopusExampleConfig>();
+        try
+        {
+            if (field == "ssoTokenSecret") config.ssoTokenSecret = "unit-test-only-secret";
+            else typeof(OctopusExampleConfig).GetField(field, BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(config, new OctopusExampleConfig.ExampleProfile { authToken = "not-a-real-token" });
+            var type = Type.GetType("OctopusSampleReleaseCredentialsGuard, Assembly-CSharp-Editor");
+            Assert.IsNotNull(type);
+            Assert.IsTrue(typeof(IPreprocessBuildWithReport).IsAssignableFrom(type));
+            var validate = type.GetMethod("Validate");
+            Assert.DoesNotThrow(() => validate.Invoke(null, new object[] { config, BuildOptions.Development }));
+            var error = Assert.Throws<TargetInvocationException>(() =>
+                validate.Invoke(null, new object[] { config, BuildOptions.None }));
+            Assert.IsInstanceOf<BuildFailedException>(error.InnerException);
+            StringAssert.DoesNotContain("not-a-real-token", error.InnerException.Message);
+            StringAssert.DoesNotContain("unit-test-only-secret", error.InnerException.Message);
+        }
+        finally { UnityEngine.Object.DestroyImmediate(config); }
+    }
+
     private static string WithInternalDefine(string defines, string environmentValue)
     {
         // An asmdef cannot reference Unity's predefined Assembly-CSharp-Editor assembly.

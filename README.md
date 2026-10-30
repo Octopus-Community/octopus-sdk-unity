@@ -33,7 +33,13 @@ hosted backend, a few lines of C#.
 | Android | API 23 (the native Android SDK depends on Media3 Compose, which requires it) |
 | iOS | 13.0 |
 | Dependency | [External Dependency Manager for Unity](https://github.com/googlesamples/unity-jar-resolver) (resolves the native Android SDK) |
-| Native SDKs in 1.15.0 | Android 1.15.0, iOS 1.15.0 (added as a Swift package at Xcode export) |
+| Native SDKs | Android 1.15.2, iOS 1.15.1 (added as a Swift package at Xcode export) |
+
+**iOS unload/quit guard.** The SDK blocks its player pause/resume helpers after Unity's unload
+notification. The block is cleared when the host's
+`UnityFramework.runEmbeddedWithArgc:argv:appLaunchOpts:` call returns without another unload.
+On trampolines exposing `engineLoadState`, values below `RenderingInitialized` also block the
+helpers; the app-termination guard remains in place.
 
 > **Known issue: Xcode 27 / iOS 27.** A Unity 6000.3 iOS export is refused at launch on iOS 27
 > (a Unity trampoline limitation, not an SDK bug). Use Unity 6000.5+ and re-export.
@@ -47,12 +53,12 @@ hosted backend, a few lines of C#.
 {
   "dependencies": {
     "com.google.external-dependency-manager": "https://github.com/googlesamples/unity-jar-resolver.git?path=upm#v1.2.187",
-    "com.octopuscommunity.octopus_sdk_for_unity": "https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#v1.15.0"
+    "com.octopuscommunity.octopus_sdk_for_unity": "https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#v1.15.1"
   }
 }
 ```
 
-Replace `v1.15.0` with the [latest release](https://github.com/Octopus-Community/octopus-sdk-unity/releases/latest)
+Replace `v1.15.1` with the [latest release](https://github.com/Octopus-Community/octopus-sdk-unity/releases/latest)
 tag. Without the `#v…` suffix the URL tracks this repo's `main` branch.
 
 **Legacy `.unitypackage`.** Import the
@@ -107,6 +113,7 @@ The existing initialization overload keeps the default behavior.
 - **Package samples**: in the Package Manager window, select **Octopus SDK for Unity >
   Samples** and import *Push Notifications Example* or *Groups Example*.
 - **`UnityExample`**, the full demo project in this repo:
+  authored with Unity **6000.6.3f1** (see `UnityExample/ProjectSettings/ProjectVersion.txt`).
 
   ```bash
   git clone https://github.com/Octopus-Community/octopus-sdk-unity.git
@@ -134,3 +141,9 @@ Both need an API key. Request a sandbox community through the form on
 
 The SDK is distributed under the
 [Octopus Community Mobile SDK License Agreement](LICENSE.md).
+
+### Sample artwork and font licences
+
+The Unity example bundles Inter (OFL 1.1, `UnityExample/Assets/Fonts/`), Material Symbols
+(Apache 2.0, `UnityExample/Assets/Sprites/`) and TMP essentials (Unity Companion License,
+`UnityExample/Assets/Fonts/TMP/`). Each folder retains its licence notices.

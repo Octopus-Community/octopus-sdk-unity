@@ -63,19 +63,14 @@ public class OctopusScenariosListViewTests
     [Test]
     public void EveryCatalogueScenarioSitsInExactlyOneSection()
     {
-        // The gate behind OctopusScenarioSections.SectionOf's throw: a scenario added to the
-        // catalogue and forgotten in the section map fails here rather than on a device.
-        var placed = new List<string>();
-        foreach (var section in OctopusScenarioSections.All)
-        {
-            foreach (var scenario in OctopusScenarioCatalog.All)
-            {
-                if (OctopusScenarioSections.SectionOf(scenario.Id) == section) placed.Add(scenario.Id);
-            }
-        }
-
-        Assert.AreEqual(OctopusScenarioCatalog.All.Count, placed.Count);
-        Assert.AreEqual(placed.Count, placed.Distinct().Count(), "A scenario is in two sections.");
+        var members = (Dictionary<ScenarioSection, string[]>)typeof(OctopusScenarioSections)
+            .GetField("Members", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+            .GetValue(null);
+        var placed = members.Values.SelectMany(ids => ids).ToArray();
+        CollectionAssert.AreEquivalent(OctopusScenarioCatalog.All.Select(s => s.Id), placed);
+        Assert.AreEqual(placed.Length, placed.Distinct().Count(), "A scenario is in two sections.");
+        foreach (var scenario in OctopusScenarioCatalog.All)
+            Assert.DoesNotThrow(() => OctopusScenarioSections.SectionOf(scenario.Id));
     }
 
     [Test]
@@ -143,14 +138,36 @@ public class OctopusScenariosListViewTests
 
         Assert.IsTrue(OctopusScenarioSections.Matches(connection, "CONNECTION"), "Id, upper case.");
         Assert.IsTrue(OctopusScenarioSections.Matches(connection, "connect"), "Title, partial.");
-        Assert.IsFalse(OctopusScenarioSections.Matches(connection, "disconnectUser"),
-            "Only card copy and its chip are searched, not hidden capability text.");
+        Assert.IsTrue(OctopusScenarioSections.Matches(connection, "disconnectUser"),
+            "Every API demonstrated by the pilot must be searchable.");
         Assert.IsTrue(OctopusScenarioSections.Matches(connection, "   "),
             "A whitespace-only query is not a query.");
         Assert.IsFalse(OctopusScenarioSections.Matches(connection, "reactions"));
 
         // Not the section title: a query that hit a head would return cards that do not contain it.
         Assert.IsFalse(OctopusScenarioSections.Matches(connection, "Sign-in"));
+    }
+
+    [TestCase("connection")]
+    [TestCase("titleneedle")]
+    [TestCase("subtitleword")]
+    [TestCase("capabilityword")]
+    [TestCase("apiword")]
+    public void SearchFieldsMatchIndependently(string query)
+    {
+        var scenario = new OctopusScenario("connection", "Unused", "capabilityword",
+            productTitle: "titleneedle", subtitle: "subtitleword", apiSymbol: "apiword");
+        Assert.IsTrue(OctopusScenarioSections.Matches(scenario, query.ToUpperInvariant()));
+        Assert.IsFalse(OctopusScenarioSections.Matches(scenario, "missingword"));
+    }
+
+    [Test]
+    public void PushRegistrationLabelAndSecondaryApiRemainSearchable()
+    {
+        CollectionAssert.Contains(OctopusScenarioSections.Filter("disconnectUser")
+            .SelectMany(g => g.Scenarios).Select(s => s.Id).ToArray(), "connection");
+        CollectionAssert.Contains(OctopusScenarioSections.Filter("Push registration")
+            .SelectMany(g => g.Scenarios).Select(s => s.Id).ToArray(), "pushNotifications");
     }
 
     [Test]
@@ -610,11 +627,15 @@ public class OctopusScenariosListViewTests
         var shell = Create();
         var list = shell.GetComponentInChildren<OctopusScenariosListView>();
         list.SetQuery("profile");
-        CollectionAssert.AreEqual(new[] { "unifiedProfile", "communityData", "profileFieldsLock", "initialScreen" },
+        // refreshEntitlements matches through its capability line ("OctopusProfile.entitlements"):
+        // the APIs a pilot demonstrates are searchable, not only the card copy.
+        CollectionAssert.AreEqual(
+            new[] { "unifiedProfile", "communityData", "profileFieldsLock", "refreshEntitlements", "initialScreen" },
             OctopusScenarioSections.Filter("profile").SelectMany(g => g.Scenarios).Select(s => s.Id));
         // Android keeps a section's switch while filtering: the matching cards still need it.
         Assert.IsNotNull(Find(list.transform, OctopusScenariosListView.ForceLoginRowId));
-        Assert.IsNull(Find(list.transform, "scenarios-refreshEntitlements-card"));
+        Assert.IsNotNull(Find(list.transform, "scenarios-refreshEntitlements-card"));
+        Assert.IsNull(Find(list.transform, "scenarios-connection-card"));
         list.SetQuery("zzzz");
         var empty = Find(list.transform, OctopusScenariosListView.EmptyStateId);
         CollectionAssert.AreEqual(new[] { "No scenario matches \"zzzz\"." },
@@ -638,7 +659,20 @@ public class OctopusScenariosListViewTests
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(list, null);
         Assert.AreSame(input, list.GetComponentInChildren<TMP_InputField>());
         Assert.AreEqual("profile", input.text);
+        Assert.AreEqual("profile", list.Query);
         Assert.IsNotNull(Find(list.transform, "scenarios-communityData-card"));
+        foreach (var query in new[] { "pr", "profile" })
+        {
+            input.text = query;
+            typeof(OctopusScenariosListView).GetField("_queryChangedAt",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(list, -1f);
+            typeof(OctopusScenariosListView).GetMethod("LateUpdate",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(list, null);
+            Assert.AreEqual(query, list.Query);
+            Assert.AreSame(input, list.GetComponentInChildren<TMP_InputField>());
+            Assert.AreEqual(query, input.text);
+            Assert.IsNotNull(Find(list.transform, "scenarios-communityData-card"));
+        }
     }
 
     [Test]

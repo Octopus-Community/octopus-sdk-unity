@@ -21,4 +21,13 @@ Mandatory: run Scripts/unity-local-gates.sh [--android] locally — or dispatch 
 neither UnityPackage/ nor UnityExample/.
 CI checks the counts, editor version and commit; missing evidence fails for Unity changes. -->
 
+### Native sources
+
+<!-- Private repo only — on the public mirror, leave this section as is.
+Required when the PR sets, changes or clears native-dev-sources.json, or touches AndroidBridge/
+while a manifest exists: the manifest state (or "cleared"), then what you ran and its result —
+`cd AndroidBridge && ./build.sh` with the AAR committed, and an iOS export resolved and built in
+Xcode — with `env_out="$(ci/native-dev/native-dev.sh prepare)" && eval "$env_out"` while the manifest exists, with no
+OCTOPUS_* variable set on the clearing PR. Otherwise write `not needed`. -->
+
 Refs #

@@ -168,13 +168,16 @@ public static class OctopusScenarioSections
         return OctopusScenarioPilots.Has(scenario.Id);
     }
 
-    /// <summary>Matches only displayed card copy, the reference API chip and id, like Android.</summary>
+    /// <summary>Matches card copy, capability API names, the reference chip and id.</summary>
     public static bool Matches(OctopusScenario scenario, string query)
     {
         if (string.IsNullOrEmpty(query) || query.Trim().Length == 0) return true;
         var needle = query.Trim().ToLowerInvariant();
         return Hit(scenario.DisplayTitle, needle)
                || Hit(scenario.Subtitle, needle)
+               || Hit(scenario.Capability, needle)
+               || Hit(scenario.ApiSymbol, needle)
+               || (scenario.Id == "pushNotifications" && Hit(OctopusSampleFeatureToggles.PushRegistrationLabel, needle))
                || Hit(scenario.ReferenceApi, needle)
                || Hit(scenario.Id, needle);
     }

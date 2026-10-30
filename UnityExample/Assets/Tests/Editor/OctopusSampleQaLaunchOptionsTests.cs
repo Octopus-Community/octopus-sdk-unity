@@ -45,6 +45,10 @@ public class OctopusSampleQaLaunchOptionsTests
         }
     }
 
+    [TestCase("qaTab", "", "unknown tab")]
+    [TestCase("qaScenario", "", "unknown scenario")]
+    [TestCase("qaPreset", "", "unknown preset")]
+    [TestCase("qaAutoStart", "", "invalid autoStart")]
     [TestCase("qaTab", "home", "unknown tab")]
     [TestCase("qaTab", "unknown", "unknown tab")]
     [TestCase("qaTab", "HOME", "unknown tab")]
@@ -215,6 +219,49 @@ public class OctopusSampleQaLaunchOptionsTests
         OctopusSampleQaLaunch.Log("scenario=customEvents result=one\ntwo");
     }
 
+    [Test]
+    public void ReefRunShareCanBeTaggedWithoutPersistingAnyLaunchInput()
+    {
+        var ordinary = OctopusReefRunShare.PostText(10);
+        try
+        {
+            var options = Parse("qaPostPrefix", "[QA] session-1");
+            Assert.IsNull(options.Error);
+            new OctopusSampleQaRequest(options);
+            Assert.AreEqual("[QA] session-1 " + ordinary, OctopusReefRunShare.PostText(10));
+            new OctopusSampleQaRequest(Parse());
+            Assert.AreEqual(ordinary, OctopusReefRunShare.PostText(10));
+            Assert.AreEqual("invalid post prefix", Parse("qaPostPrefix", "line\nbreak").Error);
+        }
+        finally { OctopusReefRunShare.QaPostPrefix = null; }
+    }
+
+    [Test]
+    public void CataloguePresetIdsResolveToTheirPositionalFallback()
+    {
+        foreach (var row in OctopusScenarioCatalog.All)
+        {
+            if (row.PresetTestIds == null) continue;
+            for (var i = 0; i < row.PresetTestIds.Length; i++)
+            {
+                var options = Parse("qaScenario", row.Id, "qaPreset", row.PresetTestIds[i]);
+                Assert.IsNull(options.Error, row.PresetTestIds[i]);
+                Assert.AreEqual(i + 1, options.Preset);
+            }
+        }
+    }
+
+    [Test]
+    public void ATabThatNeverBecomesReadyStopsWaiting()
+    {
+        var navigation = new Navigation();
+        var apply = new OctopusSampleQaRequest(Parse("qaTab", "scenarios")).Apply(navigation);
+        for (var i = 0; i < OctopusSampleQaRequest.TabReadyFrameLimit; i++) Assert.IsTrue(apply.MoveNext());
+        LogAssert.Expect(LogType.Log, "[OctopusQA] launch-options=error tab not ready");
+        Assert.IsFalse(apply.MoveNext());
+        Assert.AreEqual(0, navigation.OpenCount);
+    }
+
     private static OctopusSampleQaLaunchOptions Parse(params string[] pairs)
     {
         var extras = new Dictionary<string, string>();
@@ -241,6 +288,7 @@ public class OctopusSampleQaLaunchOptionsTests
             DestinationCount++;
             return DestinationExists;
         }
+        public string PresetError { get { return PresetExists ? null : "unknown preset"; } }
         public bool RunPreset(int number)
         {
             Preset = number;
