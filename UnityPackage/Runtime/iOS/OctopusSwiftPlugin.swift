@@ -1638,7 +1638,68 @@ private func fontFrom(name: String, size: Float) -> Font? {
     if name.isEmpty || size <= 0 {
         return nil
     }
+    // iOSThemeEmbedder leaves Apple's fonts out of the bundle (ITMS-91182). Unless the host
+    // registered one itself, draw the system font with the weight and design its name carries,
+    // scaled like Font.custom's default (relative to body). The scale is read once, here: unlike
+    // Font.custom it does not follow a text size change until the fonts are set again.
+    if let parts = appleSystemFontParts(name), UIFont(name: name, size: CGFloat(size)) == nil {
+        let scaledSize = UIFontMetrics(forTextStyle: .body).scaledValue(for: CGFloat(size))
+        let font = Font.system(size: scaledSize, weight: appleSystemFontWeight(parts), design: appleSystemFontDesign(parts))
+        return parts.styles.contains("italic") ? font.italic() : font
+    }
     return Font.custom(name, size: CGFloat(size))
+}
+
+// Keep both lists, and the matching rule, in sync with OctopusThemeSettings.IsAppleSystemFont.
+private let appleSystemFontFamilies = [
+    "sfpro", "sfcompact", "sfmono", "sfui", "sfns",
+    "sfarabic", "sfhebrew", "sfarmenian", "sfgeorgian", "newyork"
+]
+private let appleSystemFontStyleWords = [
+    "display", "text", "rounded", "mono", "condensed", "compressed", "expanded",
+    "small", "medium", "large", "extralarge",
+    "ultralight", "thin", "light", "regular", "semibold", "bold", "heavy", "black", "italic"
+]
+
+private typealias AppleSystemFontParts = (family: String, styles: [String])
+
+// Splits an Apple font name into its family and style words ("NewYorkMedium-BoldItalic" gives
+// "newyork" and ["medium", "bold", "italic"]), or nil when anything else follows the family.
+private func appleSystemFontParts(_ name: String) -> AppleSystemFontParts? {
+    let normalized = name.lowercased().filter { $0 != "-" && $0 != "_" && $0 != " " }
+    for family in appleSystemFontFamilies where normalized.hasPrefix(family) {
+        var rest = normalized.dropFirst(family.count)
+        var styles: [String] = []
+        while let word = appleSystemFontStyleWords.first(where: { rest.hasPrefix($0) }) {
+            styles.append(word)
+            rest = rest.dropFirst(word.count)
+        }
+        if rest.isEmpty {
+            return (family, styles)
+        }
+    }
+    return nil
+}
+
+private func appleSystemFontDesign(_ parts: AppleSystemFontParts) -> Font.Design {
+    if parts.family == "sfmono" || parts.styles.contains("mono") { return .monospaced }
+    if parts.family == "newyork" { return .serif }
+    if parts.styles.contains("rounded") { return .rounded }
+    return .default
+}
+
+// The last weight word wins. New York's first word is an optical size, not a weight:
+// "NewYorkMedium-Bold" is bold and "NewYorkMedium" is regular.
+private func appleSystemFontWeight(_ parts: AppleSystemFontParts) -> Font.Weight {
+    let weights: [String: Font.Weight] = [
+        "ultralight": .ultraLight, "thin": .thin, "light": .light, "regular": .regular,
+        "medium": .medium, "semibold": .semibold, "bold": .bold, "heavy": .heavy, "black": .black
+    ]
+    var styles = parts.styles
+    if parts.family == "newyork", let size = styles.first, ["small", "medium", "large", "extralarge"].contains(size) {
+        styles.removeFirst()
+    }
+    return styles.reversed().compactMap { weights[$0] }.first ?? .regular
 }
 
 // MARK: - Event serialization

@@ -354,6 +354,76 @@ public class OctopusThemeSettings : ScriptableObject
         return config.fontSize;
     }
 
+    // Apple's own families, matched on the file name with separators dropped so both the
+    // PostScript form ("SFProDisplay-Bold") and Apple's download form ("SF-Pro-Display-Bold")
+    // match. App Store Connect rejects them in a bundle (ITMS-91182), and iOS already ships them
+    // as its system font, so iOSThemeEmbedder leaves them out and the Swift bridge draws the
+    // system font instead. Keep both lists in sync with OctopusSwiftPlugin.swift.
+    private static readonly string[] AppleSystemFontFamilies =
+    {
+        "sfpro", "sfcompact", "sfmono", "sfui", "sfns",
+        "sfarabic", "sfhebrew", "sfarmenian", "sfgeorgian", "newyork"
+    };
+
+    // Whatever follows the family must be made only of these words, so that a third-party font
+    // whose name merely starts like Apple's ("NewYorker", "SFProverbial") is still embedded.
+    private static readonly string[] AppleSystemFontStyleWords =
+    {
+        "display", "text", "rounded", "mono", "condensed", "compressed", "expanded",
+        "small", "medium", "large", "extralarge",
+        "ultralight", "thin", "light", "regular", "semibold", "bold", "heavy", "black", "italic"
+    };
+
+    /// <summary>
+    /// Returns true if the font file (or PostScript name) belongs to an Apple system font
+    /// family (SF Pro, SF Compact, SF Mono, SF UI, SF Arabic, SF Hebrew, SF Armenian,
+    /// SF Georgian, New York). Those are never embedded in an iOS build.
+    /// </summary>
+    public static bool IsAppleSystemFont(string fontFileName)
+    {
+        if (string.IsNullOrEmpty(fontFileName)) return false;
+
+        var normalized = new System.Text.StringBuilder();
+        foreach (char c in Path.GetFileNameWithoutExtension(fontFileName))
+        {
+            if (c != '-' && c != '_' && c != ' ')
+            {
+                normalized.Append(char.ToLowerInvariant(c));
+            }
+        }
+
+        string name = normalized.ToString();
+        foreach (var family in AppleSystemFontFamilies)
+        {
+            if (name.StartsWith(family, System.StringComparison.Ordinal) && IsMadeOfStyleWords(name, family.Length))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsMadeOfStyleWords(string name, int start)
+    {
+        int index = start;
+        while (index < name.Length)
+        {
+            string match = null;
+            foreach (var word in AppleSystemFontStyleWords)
+            {
+                if (name.Length - index >= word.Length &&
+                    string.CompareOrdinal(name, index, word, 0, word.Length) == 0)
+                {
+                    match = word;
+                    break;
+                }
+            }
+            if (match == null) return false;
+            index += match.Length;
+        }
+        return true;
+    }
+
     /// <summary>
     /// Gets the singleton instance, loading from Resources if needed.
     /// Returns null if no settings exist (no theme assets configured).

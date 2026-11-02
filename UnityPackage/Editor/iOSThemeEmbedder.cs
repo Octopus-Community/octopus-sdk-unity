@@ -49,7 +49,7 @@ public class iOSThemeEmbedder : IPreprocessBuildWithReport
 
         if (hasFonts || hasLogo)
         {
-            int fontCount = hasFonts ? settings.Fonts.Length : 0;
+            int fontCount = CountEmbeddedFonts(settings);
             string logoStatus = hasLogo ? " + logo" : "";
             Debug.Log($"Octopus SDK: {fontCount} font(s){logoStatus} will be embedded in iOS build.");
         }
@@ -77,7 +77,7 @@ public class iOSThemeEmbedder : IPreprocessBuildWithReport
             return;
         }
 
-        int fontCount = hasFonts ? settings.Fonts.Length : 0;
+        int fontCount = CountEmbeddedFonts(settings);
         string logoStatus = hasLogo ? " + logo" : "";
         Debug.Log($"Octopus SDK: Embedding {fontCount} font(s){logoStatus} in iOS build...");
 
@@ -91,6 +91,22 @@ public class iOSThemeEmbedder : IPreprocessBuildWithReport
             Debug.LogError($"Octopus SDK: Failed to embed theme assets in iOS build: {ex.Message}");
             throw;
         }
+    }
+
+    // Apple system fonts are listed in the settings but left out of the bundle.
+    private static int CountEmbeddedFonts(OctopusThemeSettings settings)
+    {
+        int count = 0;
+        if (settings.Fonts == null) return count;
+
+        foreach (var font in settings.Fonts)
+        {
+            if (font != null && !OctopusThemeSettings.IsAppleSystemFont(AssetDatabase.GetAssetPath(font)))
+            {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static void EmbedThemeAssets(OctopusThemeSettings settings, string buildPath)
@@ -135,6 +151,15 @@ public class iOSThemeEmbedder : IPreprocessBuildWithReport
 
                 string sourceFullPath = Path.Combine(Application.dataPath, "..", sourcePath);
                 string fileName = Path.GetFileName(sourcePath);
+
+                // iOS ships Apple's fonts as its system font and App Store Connect rejects them
+                // in a bundle (ITMS-91182); the Swift bridge draws the system font in their place.
+                if (OctopusThemeSettings.IsAppleSystemFont(fileName))
+                {
+                    Debug.Log($"Octopus SDK: Not embedding Apple system font '{fileName}' in the iOS build: iOS draws it with its system font.");
+                    continue;
+                }
+
                 string destPath = Path.Combine(buildPath, fileName);
 
                 File.Copy(sourceFullPath, destPath, true);

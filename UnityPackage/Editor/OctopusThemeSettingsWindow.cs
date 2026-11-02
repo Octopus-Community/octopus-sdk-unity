@@ -536,6 +536,10 @@ public class OctopusThemeSettingsWindow : EditorWindow
             {
                 EditorGUILayout.HelpBox(errorMessage, MessageType.Error);
             }
+            else if (fontList[i] != null && OctopusThemeSettings.IsAppleSystemFont(AssetDatabase.GetAssetPath(fontList[i])))
+            {
+                EditorGUILayout.HelpBox("Apple system font: not embedded in iOS builds, where the system font (SF) is drawn with the weight in its name. Still embedded on Android.", MessageType.Info);
+            }
         }
 
         // Footer / Add Button

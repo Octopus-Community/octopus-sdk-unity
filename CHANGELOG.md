@@ -6,6 +6,33 @@ section when a release is cut (format inspired by
 
 ## Unreleased
 
+## 1.15.2 — 2026-11-02
+
+Patch on the 1.15 line with two iOS export fixes: the exported Xcode project builds again without
+any project setting, and Apple system fonts are no longer embedded in iOS builds. Native SDKs
+unchanged (Android 1.15.2, iOS 1.15.1), bridge AAR unchanged, one additive C# helper. Unity 2019.4
+minimum unchanged. Legacy `OctopusCommunitySDK.unitypackage` for this version was generated from
+the source tree without the Unity Editor (`Scripts/build_legacy_package_nounity.py`), not
+import-tested in a scratch project before the cut. UPM remains the reference install path.
+
+### Added
+- runtime: `OctopusThemeSettings.IsAppleSystemFont` tells whether a font file belongs to an
+  Apple system font family, which iOS builds do not embed.
+
+### Fixed
+- ios: The exported Xcode project builds again without any project setting. Since 1.15.1,
+  `OctopusUnityPause.mm` used `@try`, which fails to compile in Unity's `UnityFramework` target
+  (Objective-C exceptions disabled); the file now carries its own `-fobjc-exceptions` compile
+  flag (#550).
+- editor, ios: Apple system fonts (SF Pro, SF Compact, SF Mono, SF UI, SF Arabic, SF Hebrew,
+  SF Armenian, SF Georgian, New York) listed in `OctopusThemeSettings` are no longer copied into
+  the iOS bundle, where App Store Connect flags them (ITMS-91182) and they added several MB. iOS
+  draws its system font in their place, with the weight, design and italic read from the font file
+  name; an explicit `OctopusFont.FontWeight` still wins. Their size follows the text size setting
+  read when the fonts are applied, not later changes. Android keeps embedding them.
+  If your Xcode project was exported with an earlier version, export it once with Replace rather
+  than Append so the old font references are dropped.
+
 ## 1.15.1 — 2026-10-30
 
 Patch on the 1.15 line: it moves the native SDKs to their latest patches (Android 1.15.0 → 1.15.2,

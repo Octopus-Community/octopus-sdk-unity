@@ -53,12 +53,12 @@ helpers; the app-termination guard remains in place.
 {
   "dependencies": {
     "com.google.external-dependency-manager": "https://github.com/googlesamples/unity-jar-resolver.git?path=upm#v1.2.187",
-    "com.octopuscommunity.octopus_sdk_for_unity": "https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#v1.15.1"
+    "com.octopuscommunity.octopus_sdk_for_unity": "https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#v1.15.2"
   }
 }
 ```
 
-Replace `v1.15.1` with the [latest release](https://github.com/Octopus-Community/octopus-sdk-unity/releases/latest)
+Replace `v1.15.2` with the [latest release](https://github.com/Octopus-Community/octopus-sdk-unity/releases/latest)
 tag. Without the `#v…` suffix the URL tracks this repo's `main` branch.
 
 **Legacy `.unitypackage`.** Import the
