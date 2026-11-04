@@ -270,7 +270,8 @@ Display a badge in your app to let users know they have unseen community notific
 ```csharp
 OctopusSDK.OnNotSeenNotificationsCount += (int count) =>
 {
-    // Update your badge UI with 'count'
+    // Update your badge UI with 'count'. A handler added after Initialize
+    // is called right away with the last count received.
 };
 
 // Request the latest count at any time:

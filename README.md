@@ -33,7 +33,7 @@ hosted backend, a few lines of C#.
 | Android | API 23 (the native Android SDK depends on Media3 Compose, which requires it) |
 | iOS | 13.0 |
 | Dependency | [External Dependency Manager for Unity](https://github.com/googlesamples/unity-jar-resolver) (resolves the native Android SDK) |
-| Native SDKs | Android 1.15.2, iOS 1.15.1 (added as a Swift package at Xcode export) |
+| Native SDKs | Android 1.15.3, iOS 1.15.1 (added as a Swift package at Xcode export) |
 
 **iOS unload/quit guard.** The SDK blocks its player pause/resume helpers after Unity's unload
 notification. The block is cleared when the host's
@@ -53,12 +53,12 @@ helpers; the app-termination guard remains in place.
 {
   "dependencies": {
     "com.google.external-dependency-manager": "https://github.com/googlesamples/unity-jar-resolver.git?path=upm#v1.2.187",
-    "com.octopuscommunity.octopus_sdk_for_unity": "https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#v1.15.2"
+    "com.octopuscommunity.octopus_sdk_for_unity": "https://github.com/Octopus-Community/octopus-sdk-unity.git?path=UnityPackage#v1.15.3"
   }
 }
 ```
 
-Replace `v1.15.2` with the [latest release](https://github.com/Octopus-Community/octopus-sdk-unity/releases/latest)
+Replace `v1.15.3` with the [latest release](https://github.com/Octopus-Community/octopus-sdk-unity/releases/latest)
 tag. Without the `#v…` suffix the URL tracks this repo's `main` branch.
 
 **Legacy `.unitypackage`.** Import the

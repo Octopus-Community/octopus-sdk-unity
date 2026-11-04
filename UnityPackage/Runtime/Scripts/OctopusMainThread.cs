@@ -39,6 +39,13 @@ public sealed class OctopusMainThread : MonoBehaviour
 
     void Update()
     {
+        Drain();
+    }
+
+    /// <summary>Runs every queued action now. Main thread only; EditMode tests call it because
+    /// <c>Update()</c> does not run there.</summary>
+    internal static void Drain()
+    {
         while (_queue.TryDequeue(out var action))
         {
             try { action(); }

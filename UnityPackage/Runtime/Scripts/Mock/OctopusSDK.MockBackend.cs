@@ -27,6 +27,8 @@ public partial class OctopusSDK
             LifecycleInitialized = true;
             Mock.Record("Initialize", apiKey, mode.Mode, initializationOptionsJson);
             InitializeProfileMock(mode);
+            // Both bridges push the current not-seen count when they subscribe at Initialize.
+            if (Mock.Enabled) TriggerOnNotSeenNotificationsCount(SeededNotSeenCount());
             // Create the overlay whenever mock is on; ShowOverlay (checked in OnGUI) governs
             // whether it actually draws, so it can be toggled live during Play.
             if (Mock.Enabled) OctopusMockOverlay.EnsureExists();
@@ -79,8 +81,13 @@ public partial class OctopusSDK
         internal static void UpdateNotSeenNotificationsCount()
         {
             Mock.Record("UpdateNotSeenNotificationsCount");
+            TriggerOnNotSeenNotificationsCount(SeededNotSeenCount());
+        }
+
+        private static int SeededNotSeenCount()
+        {
             var settings = OctopusMockSettings.Instance;
-            TriggerOnNotSeenNotificationsCount(settings != null ? settings.InitialNotSeenCount : 0);
+            return settings != null ? settings.InitialNotSeenCount : 0;
         }
 
         internal static void RegisterNotificationsToken(string token) =>

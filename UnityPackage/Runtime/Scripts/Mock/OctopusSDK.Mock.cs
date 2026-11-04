@@ -53,6 +53,7 @@ public partial class OctopusSDK
             ResetDebugMock();
             ResetProfileMock();
             ResetCommunityDataMock();
+            ResetNotSeenNotificationsCount();
             _calls.Clear();
             ResetGroupFollowing();
             NextSetReactionError = null;

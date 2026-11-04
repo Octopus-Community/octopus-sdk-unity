@@ -6,6 +6,34 @@ section when a release is cut (format inspired by
 
 ## Unreleased
 
+## 1.15.3 — 2026-11-05
+
+Patch on the 1.15 line: a not-seen notifications count fix for views that subscribe after
+`Initialize`, the Android native SDK 1.15.3 patch, and a crash fix when opening a notification
+with an unknown link on Android. No C# API change. Native SDKs: Android 1.15.2 → 1.15.3, iOS
+1.15.1 unchanged; bridge AAR rebuilt. Unity 2019.4 minimum unchanged. Legacy
+`OctopusCommunitySDK.unitypackage` for this version was generated from the source tree without the
+Unity Editor (`Scripts/build_legacy_package_nounity.py`), not import-tested in a scratch project
+before the cut. UPM remains the reference install path.
+
+### Changed
+- android: Native Android SDK 1.15.2 → 1.15.3 (patch, no API change; iOS stays on 1.15.1).
+
+### Fixed
+- android: Calling `OctopusSDK.Initialize` again with the same configuration keeps the running
+  session instead of rebuilding the native SDK under an open community screen (Android SDK
+  1.15.3).
+- android: `OctopusSDK.Open(notification)` with a notification whose link the community does
+  not know opens the main feed instead of crashing the community screen, as the Flutter and
+  React Native SDKs do.
+- runtime: A handler added to `OctopusSDK.OnNotSeenNotificationsCount` after `Initialize` now
+  receives the current count. Both native SDKs push the count only when it changes, so a late
+  subscriber used to wait for the next change, which made a badge stay empty after a relaunch.
+  The SDK keeps the last count it received and calls a new handler with it: right away, from
+  within the subscription, on the Unity main thread, or on the next frame when subscribing from
+  another thread. In the Editor, `Initialize` now emits the mock's seeded count too, as
+  both native bridges do.
+
 ## 1.15.2 — 2026-11-02
 
 Patch on the 1.15 line with two iOS export fixes: the exported Xcode project builds again without
