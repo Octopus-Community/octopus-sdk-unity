@@ -94,6 +94,9 @@ public enum OctopusScreen
     OtherUserPosts,
     /// <summary>The connected user's community activity screen, shown under the unified profile instead of <see cref="Profile"/> (native SDK 1.13+). Distinct from the notification center. Android only for now — the iOS SDK has no matching screen event on 1.14.0.</summary>
     Activity,
+    /// <summary>The screen displayed in place of the community when the user cannot access it (native SDK 1.16+).
+    /// The reason is given by <see cref="OctopusSDK.CommunityAccessDeniedReason"/>.</summary>
+    CommunityAccessDenied,
     Unknown
 }
 

@@ -612,7 +612,7 @@ public class OctopusScenarioScreenViewTests
         Assert.IsTrue(panel.gameObject.activeSelf);
         Assert.IsFalse(skeleton.gameObject.activeSelf);
         Assert.AreEqual(pilot.Result, Result(view).text);
-        StringAssert.StartsWith(fail ? "ConnectUser failed: test failure" : "ConnectUser call completed",
+        StringAssert.StartsWith(fail ? "ConnectUser failed: test failure" : "ConnectUser succeeded",
                                 Result(view).text);
     }
 
@@ -636,7 +636,8 @@ public class OctopusScenarioScreenViewTests
         Field(view, "connection-field-action").text = action;
         Tap(view, "connection-run");
         CollectionAssert.AreEqual(new[] { "Initialize", method }, _sdk.ScenarioMethods);
-        StringAssert.Contains("call completed", Result(view).text);
+        StringAssert.Contains(action == "connect" ? "ConnectUser succeeded" : "call completed",
+                              Result(view).text);
     }
 
     [Test]

@@ -253,13 +253,21 @@ OctopusSDK.OpenGroup(groupId);
 // Open a specific post's detail screen (empty string → main feed)
 OctopusSDK.OpenPost("post_123");
 
-// Open the post editor — pass null for a blank editor, or prefill it:
+// Open the post editor — pass null for a blank editor, or prefill it with up to
+// OctopusPrefilledPost.MaxImageCount (10) local images, in display order:
 OctopusSDK.OpenCreatePost(new OctopusPrefilledPost {
-    Text      = "Check this out!",
-    TopicId   = "grp_42",
-    ImagePath = Application.persistentDataPath + "/shot.png"
+    Text       = "Check this out!",
+    TopicId    = "grp_42",
+    ImagePaths = {
+        Application.persistentDataPath + "/shot.png",
+        Application.persistentDataPath + "/shot-2.png"
+    }
 });
 ```
+
+More than 10 images make `OpenCreatePost` throw an `OctopusPrefilledPostTooManyImagesException`
+(`Max`, `Count`) and open nothing. A bridge post (`OctopusClientObject`) takes its images in
+`Medias`, local (`OctopusClientObjectMedia.FromPath`) or remote (`OctopusClientObjectMedia.FromUrl`).
 
 A ready-to-use example is available in the **Groups Example** sample (importable via Unity Package Manager).
 
@@ -307,6 +315,29 @@ OctopusSDK.SetTheme(
 ```
 
 > **Note:** When using the runtime API for logos and fonts, you must add the native resources (Android drawables, iOS bundle resources) to your project manually. The Unity Editor approach handles this automatically.
+
+To style navigation bar text titles on **Android only**, set `OctopusFonts.NavBarTitle`:
+
+```csharp
+OctopusSDK.SetFonts(new OctopusFonts
+{
+    NavBarTitle = new OctopusFont("my_title_font", "", 24)
+});
+```
+
+The resource name refers to an Android `res/font` resource, without an extension. The size is
+in sp. An empty name changes only the size; a non-positive size changes only the font. Each
+override preserves the remaining attributes of the bar's title style, including the existing
+`NavBarItem.FontWeight` override. An unresolved font logs a warning, keeps the base font family
+and still applies the requested size. `NavBarTitle.FontWeight` and `IOSFontName` are ignored.
+Omit `NavBarTitle` or call `SetFonts()` to restore the title defaults. Logos are unaffected.
+On iOS the setting has no effect: the title follows your app's navigation bar appearance.
+
+In **Theme Configuration**, use **Nav Title (Android)** for the same font and size setting.
+Choose **(Bar default)** to override only the size, or size **0** to override only the font.
+Existing assets retain their seven previous font configurations when the new style is added.
+The style applies to every screen title, the main feed included. On Android, as on iOS, the
+main feed shows the app name passed to `SetTheme` when no custom logo is set.
 
 For more detailed theming documentation, visit the [official documentation](https://doc.octopuscommunity.com).
 
@@ -379,8 +410,9 @@ Default profile's `apiKey` and the config-level `ssoTokenSecret` in the Inspecto
 Bridge posts use the same `ssoTokenSecret` to sign HS256 tokens containing only
 `bridge_fingerprint` and `exp` (one hour from the device clock, without `iat`).
 A host-supplied `OctopusScenarioSdk.BridgeShareSigner` takes precedence. Without
-either signer, signing still fails and the sample's in-app Debug console (when included)
-records "Bridge signing refused" with instructions to configure one; a static `authToken`
+either signer, signing still fails: the post goes out unsigned, which a picture-restricted
+community refuses, and the sample's in-app Debug console (when included) records
+"Bridge signing refused" with instructions to configure one; a static `authToken`
 cannot sign bridge posts.
 
 `UnityExample/Assets/Resources/OctopusExampleConfig.asset` is gitignored. Keep credentials

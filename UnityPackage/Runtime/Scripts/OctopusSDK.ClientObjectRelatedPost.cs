@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -47,10 +48,11 @@ public partial class OctopusSDK
                 "An object id without newline or carriage return is required"));
             return;
         }
-        if (!string.IsNullOrEmpty(clientObject.ImagePath) && !string.IsNullOrEmpty(clientObject.ImageUrl))
+        string mediasError;
+        var medias = ClientObjectMedias(clientObject, out mediasError);
+        if (mediasError != null)
         {
-            CompleteClientPost(id, null, new OctopusClientPostError(OctopusClientPostErrorCode.Other,
-                "Set at most one of ImagePath and ImageUrl"));
+            CompleteClientPost(id, null, new OctopusClientPostError(OctopusClientPostErrorCode.Other, mediasError));
             return;
         }
         try
@@ -62,11 +64,11 @@ public partial class OctopusSDK
             using (var plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
             {
                 plugin.CallStatic("fetchOrCreateClientObjectRelatedPost", id,
-                    OctopusJson.ClientObjectToJson(clientObject), clientObject.SignBridgeShare != null);
+                    OctopusJson.ClientObjectToJson(clientObject, medias), clientObject.SignBridgeShare != null);
             }
 #elif UNITY_IOS
             OctopusSdkSetClientPostSignCallback(_clientPostSignCallback);
-            OctopusSdkFetchOrCreateClientObjectRelatedPost(id, OctopusJson.ClientObjectToJson(clientObject),
+            OctopusSdkFetchOrCreateClientObjectRelatedPost(id, OctopusJson.ClientObjectToJson(clientObject, medias),
                 clientObject.SignBridgeShare != null ? 1 : 0);
 #else
             CompleteClientPost(id, null, new OctopusClientPostError(OctopusClientPostErrorCode.Other, "Unsupported platform"));
@@ -133,6 +135,29 @@ public partial class OctopusSDK
     {
         var observation = new ClientPostObservation { Generation = Interlocked.Increment(ref _nextClientPostObservation) };
         return _clientPostObservations.TryAdd(objectId, observation) ? observation.Generation : 0;
+    }
+
+    // The images in display order: the deprecated ImagePath or ImageUrl alone, or the non-null Medias.
+    // error is set, for a request refused before any native call, as the native SDKs would refuse it.
+    internal static List<OctopusClientObjectMedia> ClientObjectMedias(OctopusClientObject value, out string error)
+    {
+        error = null;
+        var medias = new List<OctopusClientObjectMedia>();
+        if (value.Medias != null)
+            foreach (var media in value.Medias)
+                if (media != null) medias.Add(media);
+#pragma warning disable 0618 // the deprecated single image is still honoured
+        string path = value.ImagePath, url = value.ImageUrl;
+#pragma warning restore 0618
+        bool hasPath = !string.IsNullOrEmpty(path), hasUrl = !string.IsNullOrEmpty(url);
+        if (hasPath && hasUrl) error = "Set at most one of ImagePath and ImageUrl";
+        else if ((hasPath || hasUrl) && medias.Count > 0) error = "Set Medias only: ImagePath and ImageUrl are deprecated.";
+        else if (hasPath) medias.Add(OctopusClientObjectMedia.FromPath(path));
+        else if (hasUrl) medias.Add(OctopusClientObjectMedia.FromUrl(url));
+        if (error == null && medias.Count > OctopusPrefilledPost.MaxImageCount)
+            error = string.Format("A client post accepts at most {0} medias, {1} were provided.",
+                OctopusPrefilledPost.MaxImageCount, medias.Count);
+        return medias;
     }
 
     private static bool ValidClientObjectId(string id)

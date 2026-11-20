@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Threading.Tasks;
+using UnityEngine;
 using NUnit.Framework;
 
 public class OctopusMockAuthTests
@@ -6,13 +8,22 @@ public class OctopusMockAuthTests
     [SetUp]
     public void SetUp() { OctopusSDK.Mock.Enabled = true; OctopusSDK.Mock.Reset(); }
 
+    private static void Drain()
+    {
+        OctopusMainThread.EnsureExists();
+        var dispatcher = Object.FindObjectOfType<OctopusMainThread>();
+        typeof(OctopusMainThread).GetMethod("Update", BindingFlags.Instance | BindingFlags.NonPublic)
+            .Invoke(dispatcher, null);
+    }
+
     [Test]
     public void ConnectUser_InvokesTokenProviderOnce_AndCompletes()
     {
         int calls = 0;
         var task = OctopusSDK.ConnectUser("u1", "nick", "bio", "pic",
             () => { calls++; return Task.FromResult("token-123"); });
-        Assert.IsTrue(task.Wait(2000), "ConnectUser did not complete (hang)");
+        Drain();
+        Assert.AreEqual(TaskStatus.RanToCompletion, task.Status);
         Assert.AreEqual(1, calls);
         Assert.IsTrue(OctopusSDK.Mock.LastCall("ConnectUser").HasValue);
     }
@@ -25,7 +36,8 @@ public class OctopusMockAuthTests
         // nickname is empty, not null.
         var task = OctopusSDK.ConnectUser("u1", null, null, null,
             () => Task.FromResult("token-123"));
-        Assert.IsTrue(task.Wait(2000), "ConnectUser did not complete (hang)");
+        Drain();
+        Assert.AreEqual(TaskStatus.RanToCompletion, task.Status);
         var call = OctopusSDK.Mock.LastCall("ConnectUser");
         Assert.IsTrue(call.HasValue);
         Assert.AreEqual("", call.Value.Args[1], "null nickname should be coalesced to empty string");

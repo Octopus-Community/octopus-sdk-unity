@@ -34,20 +34,39 @@ public enum OctopusClientPostErrorCode
     /// <summary>The bridge signature is invalid.</summary>
     TokenInvalid,
     /// <summary>The bridge signature has expired.</summary>
-    TokenExpired
+    TokenExpired,
+    /// <summary>The native SDK refused the per-language button label (OctopusClientObject.ViewObjectButton).
+    /// OctopusClientPostError.LocalizedTextErrorKind and LanguageCode say why.</summary>
+    InvalidLocalizedText
 }
 
-/// <summary>A typed client-post failure. Android reports the first validation error; iOS reports Other.</summary>
+/// <summary>A typed client-post failure. Android reports the first validation error; iOS reports Other for
+/// its own validation errors. Both report a refused per-language button as InvalidLocalizedText.</summary>
 public sealed class OctopusClientPostError
 {
     /// <summary>The classified failure; unfamiliar native cases map to Other.</summary>
     public OctopusClientPostErrorCode Code { get; private set; }
     /// <summary>A native diagnostic or fallback message.</summary>
     public string Message { get; private set; }
+    /// <summary>Why the native SDK refused the button label, when Code is InvalidLocalizedText; null
+    /// otherwise, or for a native reason this package does not know.</summary>
+    public OctopusLocalizedTextValidationErrorKind? LocalizedTextErrorKind { get; private set; }
+    /// <summary>The code of the language the refused label is about, when Code is InvalidLocalizedText and
+    /// the reason is about one language; null otherwise.</summary>
+    public string LanguageCode { get; private set; }
     /// <summary>Creates a failure, including for an Editor mock response.</summary>
     public OctopusClientPostError(OctopusClientPostErrorCode code, string message)
     {
         Code = code;
         Message = string.IsNullOrEmpty(message) ? "Client post error" : message;
+    }
+    /// <summary>Creates a refused-label failure (InvalidLocalizedText), including for an Editor mock
+    /// response.</summary>
+    public OctopusClientPostError(OctopusClientPostErrorCode code, string message,
+        OctopusLocalizedTextValidationErrorKind? localizedTextErrorKind, string languageCode)
+        : this(code, message)
+    {
+        LocalizedTextErrorKind = localizedTextErrorKind;
+        LanguageCode = languageCode;
     }
 }

@@ -37,20 +37,10 @@ public partial class OctopusSDK
         // run on this JNI/Kotlin-channel thread.
         public void onEvent(string json) => OctopusEventDispatcher.Enqueue(json);
 
-        // Loop-independent token request (Lane A). Kicks off the async host token provider on this
-        // JNI/background thread (TriggerOnTokenRequested is async void; its continuation runs off the
-        // Unity main thread, so it completes while the player loop is paused). The minted token is
-        // returned to native via SetUserToken -> Bridge.setUserToken.
-        public void requestToken()
+        // Android correlates every request and reply, including token refreshes after connect.
+        public void requestToken(string payload)
         {
-            try
-            {
-                OctopusSDK.TriggerOnTokenRequested();
-            }
-            catch (System.Exception e)
-            {
-                UnityEngine.Debug.LogException(e);
-            }
+            OctopusSDK.TriggerOnTokenRequested(payload);
         }
 
         // Loop-independent bridge-share signature request (Lane A). Runs the host SignBridgeShare

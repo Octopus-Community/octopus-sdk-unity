@@ -49,6 +49,8 @@ internal static class OctopusDebugParsing
             { "postEnablePictures", value.Post.EnablePictures ? "true" : "false" },
             { "postEnablePolls", value.Post.EnablePolls ? "true" : "false" },
             { "postTextRequired", value.Post.TextRequired ? "true" : "false" },
+            { "postImageTapOpensPost", value.Post.ImageTapOpensPost ? "true" : "false" },
+            { "postGroupNameTapOpensGroup", value.Post.GroupNameTapOpensGroup ? "true" : "false" },
             { "commentEnablePictures", value.Comment.EnablePictures ? "true" : "false" },
             { "replyEnablePictures", value.Reply.EnablePictures ? "true" : "false" }
         };

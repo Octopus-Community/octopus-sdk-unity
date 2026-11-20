@@ -198,6 +198,19 @@ public class OctopusCommunityScenarioTests
     }
 
     [Test]
+    public void CommunityAccessShowsTheLiveAccessDeniedReason()
+    {
+        _sdk.CommunityAccessDeniedReason = OctopusCommunityAccessDeniedReason.NotInCohort;
+        var pilot = Pilot<CommunityAccessScenario>();
+        Tap(pilot, 1);
+        StringAssert.Contains("communityAccessDeniedReason: NotInCohort", pilot.Result);
+        _sdk.EmitAccessDeniedReason(OctopusCommunityAccessDeniedReason.AccountBanned);
+        StringAssert.Contains("communityAccessDeniedReason: AccountBanned", pilot.Result);
+        _sdk.EmitAccessDeniedReason(null);
+        StringAssert.Contains("communityAccessDeniedReason: null", pilot.Result);
+    }
+
+    [Test]
     public void CommunityAccessReportsFailureWithoutInventingAccess()
     {
         _sdk.AccessError = "offline";
@@ -219,7 +232,7 @@ public class OctopusCommunityScenarioTests
         var pilot = Pilot<ContentOptionsScenario>();
         pilot.Presets[index].Fill(pilot.Fields);
         Assert.AreEqual("apply", pilot.Fields.Get("action"));
-        CollectionAssert.AreEqual(new[] { pictures, polls, comments, replies, true },
+        CollectionAssert.AreEqual(new[] { pictures, polls, comments, replies, true, false, false },
             pilot.Fields.All.Skip(1).Select(f => bool.Parse(f.Value)).ToArray());
         Assert.IsEmpty(_sdk.Calls);
         pilot.Presets[index].Run(pilot.Fields);
@@ -319,16 +332,55 @@ public class OctopusCommunityScenarioTests
         Assert.IsFalse(options.Post.TextRequired);
     }
 
+    [TestCase(7, true, false, "qa-preset-contentOptions-8")]
+    [TestCase(8, false, true, "qa-preset-contentOptions-9")]
+    [TestCase(9, true, true, "qa-preset-contentOptions-10")]
+    public void ContentTapPresetsMirrorIosAndCanBeDisabled(int index, bool image, bool group, string expectedTestId)
+    {
+        var pilot = Pilot<ContentOptionsScenario>();
+        Assert.AreEqual(expectedTestId, pilot.Presets[index].TestId);
+        pilot.Presets[index].Fill(pilot.Fields);
+        Assert.IsEmpty(_sdk.Calls);
+        pilot.Presets[index].Run(pilot.Fields);
+        var options = (OctopusContentOptions)_sdk.Last.Args[0];
+        Assert.IsTrue(options.Post.EnablePictures);
+        Assert.IsTrue(options.Post.EnablePolls);
+        Assert.IsTrue(options.Post.TextRequired);
+        Assert.IsTrue(options.Comment.EnablePictures);
+        Assert.IsTrue(options.Reply.EnablePictures);
+        Assert.AreEqual(image, options.Post.ImageTapOpensPost);
+        Assert.AreEqual(group, options.Post.GroupNameTapOpensGroup);
+        StringAssert.Contains("post.imageTapOpensPost=" + image, pilot.Result);
+        StringAssert.Contains("post.groupNameTapOpensGroup=" + group, pilot.Result);
+        Tap(pilot, 0);
+        options = (OctopusContentOptions)_sdk.Last.Args[0];
+        Assert.IsFalse(options.Post.ImageTapOpensPost);
+        Assert.IsFalse(options.Post.GroupNameTapOpensGroup);
+    }
+
+    [TestCase("postImageTapOpensPost")]
+    [TestCase("postGroupNameTapOpensGroup")]
+    public void ContentTapCustomInputRejectsInvalidBoolean(string field)
+    {
+        var pilot = Pilot<ContentOptionsScenario>();
+        pilot.Presets[0].Fill(pilot.Fields);
+        pilot.Fields.Set(field, "invalid");
+        pilot.RunCustom();
+        CollectionAssert.AreEqual(new[] { "Initialize" }, _sdk.ScenarioMethods);
+        StringAssert.Contains("content flags must be true or false", pilot.Result);
+    }
+
     [Test]
     public void ContentClearIsPureAndSendsNullEvenWhenRepeated()
     {
         var pilot = Pilot<ContentOptionsScenario>();
-        pilot.Presets[7].Fill(pilot.Fields);
+        pilot.Presets[10].Fill(pilot.Fields);
+        Assert.AreEqual("qa-preset-contentOptions-clear", pilot.Presets[10].TestId);
         Assert.AreEqual("clear", pilot.Fields.Get("action"));
         Assert.IsTrue(pilot.Fields.All.Skip(1).All(f => f.Value == "backend"));
         Assert.IsEmpty(_sdk.Calls);
-        Tap(pilot, 7);
-        Tap(pilot, 7);
+        Tap(pilot, 10);
+        Tap(pilot, 10);
         Assert.AreEqual("DebugOverrideContentOptions", _sdk.Last.Method);
         Assert.IsNull(_sdk.Last.Args[0]);
         StringAssert.Contains("none (backend default)", pilot.Result);
@@ -396,11 +448,13 @@ public class OctopusCommunityScenarioTests
         StringAssert.Contains("No post yet", pilot.Result);
         Tap(pilot, 0);
         Assert.AreEqual("recipe-1", _sdk.LastClientObject.ObjectId);
-        Assert.AreEqual("View recipe", _sdk.LastClientObject.ViewObjectButtonText);
+        Assert.AreEqual(OctopusLocalizedText.AutoTranslated("View recipe"), _sdk.LastClientObject.ViewObjectButton);
         Assert.AreEqual("A delicious recipe to test the bridge", _sdk.LastClientObject.CatchPhrase);
         Assert.IsNull(_sdk.LastClientObject.GroupId);
         Assert.IsNotNull(_sdk.LastClientObject.SignBridgeShare);
-        StringAssert.Contains("macarons.jpeg", _sdk.LastClientObject.ImageUrl);
+        Assert.AreEqual(2, _sdk.LastClientObject.Medias.Count);
+        StringAssert.Contains("macarons.jpeg", _sdk.LastClientObject.Medias[0].Url);
+        Assert.AreEqual("/sample-cache/scenario-share.png", _sdk.LastClientObject.Medias[1].Path);
         Tap(pilot, 2);
         Assert.AreEqual("SetReaction", _sdk.Last.Method);
         Assert.AreEqual("bridge-post-1", _sdk.Last.Args[0]);
@@ -470,12 +524,82 @@ public class OctopusCommunityScenarioTests
         Assert.AreEqual("OpenCreatePost", _sdk.Last.Method);
         var prefill = _sdk.LastPrefilledPost;
         Assert.AreEqual(text ? CreatePostScenario.DefaultText : null, prefill.Text);
-        Assert.AreEqual(cta ? "Open" : null, prefill.CtaLabel);
+        Assert.AreEqual(cta ? OctopusLocalizedText.AutoTranslated("Open") : null, prefill.CtaLocalizedLabel);
         Assert.AreEqual(cta ? "https://octopuscommunity.com/preset" : null, prefill.CtaUrl);
-        Assert.AreEqual(image ? "/sample-cache/scenario-share.png" : null, prefill.ImagePath);
+        CollectionAssert.AreEqual(image ? new[] { "/sample-cache/scenario-share.png" } : new string[0], prefill.ImagePaths);
         Assert.AreEqual(image, prefill.SignBridgeShare != null);
         Assert.AreEqual(OctopusSampleFixtures.DefaultTopicId, prefill.TopicId);
         StringAssert.Contains("Publishing requires a connected member", pilot.Result);
+    }
+
+    [Test]
+    public void BridgeButtonCanBeGivenPerLanguage()
+    {
+        var pilot = Pilot<BridgeScenario>();
+        pilot.Presets[0].Fill(pilot.Fields);
+        Assert.AreEqual("false", pilot.Fields.Get("buttonPerLanguage"));
+        Assert.AreEqual("en", pilot.Fields.Get("buttonLanguage"));
+        Assert.AreEqual(BridgeScenario.Translations, pilot.Fields.Get("buttonTranslations"));
+        pilot.Fields.Set("buttonPerLanguage", "true");
+        pilot.RunCustom();
+        var button = _sdk.LastClientObject.ViewObjectButton;
+        Assert.AreEqual("en", button.DefaultLanguage);
+        Assert.AreEqual("View recipe", button.DefaultText);
+        Assert.AreEqual("Voir la recette", button.Texts["fr"]);
+        Assert.AreEqual("Ver la receta", button.Texts["es"]);
+    }
+
+    [TestCase("", "fr=Voir")]
+    [TestCase("en", "fr=Voir; es")]
+    [TestCase("en", "pt_BR=Ver")]
+    [TestCase("en", "=Voir")]
+    public void BridgeButtonIsSentAsWrittenAndTheNativeErrorShows(string language, string translations)
+    {
+        var pilot = Pilot<BridgeScenario>();
+        pilot.Presets[0].Fill(pilot.Fields);
+        pilot.Fields.Set("buttonPerLanguage", "true");
+        pilot.Fields.Set("buttonLanguage", language);
+        pilot.Fields.Set("buttonTranslations", translations);
+        _sdk.BridgeError = new OctopusClientPostError(OctopusClientPostErrorCode.InvalidLocalizedText, "refused",
+            OctopusLocalizedTextValidationErrorKind.BlankText, "es");
+        pilot.RunCustom();
+        Assert.AreEqual(language, _sdk.LastClientObject.ViewObjectButton.DefaultLanguage);
+        StringAssert.Contains("InvalidLocalizedText BlankText (es) — refused", pilot.Result);
+    }
+
+    [Test]
+    public void BridgeButtonWithTheSameTagTwiceMakesNoCall()
+    {
+        var pilot = Pilot<BridgeScenario>();
+        pilot.Presets[0].Fill(pilot.Fields);
+        pilot.Fields.Set("buttonPerLanguage", "true");
+        pilot.Fields.Set("buttonTranslations", "fr=Voir; fr=Lire");
+        pilot.RunCustom();
+        StringAssert.Contains("two labels are given for \"fr\"", pilot.Result);
+        Assert.IsFalse(_sdk.Methods.Contains("FetchOrCreateClientObjectRelatedPost"));
+    }
+
+    [Test]
+    public void CreatePostCtaCanBeGivenPerLanguage()
+    {
+        var pilot = Pilot<CreatePostScenario>();
+        pilot.Presets[1].Fill(pilot.Fields);
+        pilot.Fields.Set("groupId", "none");
+        pilot.Fields.Set("ctaPerLanguage", "true");
+        pilot.Fields.Set("ctaLanguage", "fr");
+        pilot.Fields.Set("ctaLabel", "Ouvrir");
+        pilot.Fields.Set("ctaTranslations", "en=Open\npt_BR=Abrir");
+        pilot.RunCustom();
+        var label = _sdk.LastPrefilledPost.CtaLocalizedLabel;
+        Assert.AreEqual("fr", label.DefaultLanguage);
+        Assert.AreEqual("Ouvrir", label.DefaultText);
+        Assert.AreEqual("Abrir", label.Texts["pt_BR"]);
+        StringAssert.Contains("per language, default fr: en, fr, pt_BR", pilot.Result);
+        pilot.Fields.Set("ctaTranslations", "en=; en=Open");
+        _sdk.LastPrefilledPost = null;
+        pilot.RunCustom();
+        Assert.IsNull(_sdk.LastPrefilledPost);
+        StringAssert.Contains("two labels are given for \"en\"", pilot.Result);
     }
 
     [TestCase("none", null)]
@@ -495,7 +619,7 @@ public class OctopusCommunityScenarioTests
     {
         var pilot = Pilot<CreatePostScenario>();
         pilot.Presets[1].Fill(pilot.Fields);
-        pilot.Fields.Set("text", "short");
+        pilot.Fields.Set("text", new string('a', 5001));
         pilot.RunCustom();
         StringAssert.Contains("text must contain", pilot.Result);
         pilot.Presets[1].Fill(pilot.Fields);
@@ -506,6 +630,30 @@ public class OctopusCommunityScenarioTests
         Tap(pilot, 2);
         StringAssert.Contains("Bundled image unavailable", pilot.Result);
         Assert.IsFalse(_sdk.Methods.Contains("OpenCreatePost"));
+    }
+
+    [TestCase(OctopusPrefilledPost.MaxImageCount + 1)]
+    [TestCase(OctopusPrefilledPost.MaxImageCount + 2)]
+    [TestCase(int.MaxValue)]
+    public void CreatePostRepeatsTheBundledImageUpToTheMaximumAndReportsTheRefusalAbove(int requestedImageCount)
+    {
+        var pilot = Pilot<CreatePostScenario>();
+        pilot.Presets[2].Fill(pilot.Fields);
+        Assert.AreEqual("1", pilot.Fields.Get("imageCount"));
+        pilot.Fields.Set("groupId", "none");
+        pilot.Fields.Set("imageCount", OctopusPrefilledPost.MaxImageCount.ToString());
+        pilot.RunCustom();
+        Assert.AreEqual(OctopusPrefilledPost.MaxImageCount, _sdk.LastPrefilledPost.ImagePaths.Count);
+        StringAssert.Contains("images: 10 × bundled sample logo", pilot.Result);
+        _sdk.Clear();
+        _sdk.LastPrefilledPost = null;
+        pilot.Fields.Set("imageCount", requestedImageCount.ToString());
+        pilot.RunCustom();
+        Assert.IsNull(_sdk.LastPrefilledPost);
+        StringAssert.Contains("11 images, at most 10 accepted (OctopusPrefilledPostTooManyImagesException)", pilot.Result);
+        pilot.Fields.Set("imageCount", "0");
+        pilot.RunCustom();
+        StringAssert.Contains("image copies must be a whole number from 1", pilot.Result);
     }
 
     [Test]
@@ -536,7 +684,9 @@ public class OctopusCommunityScenarioTests
         Tap(pilot, 1);
         var next = Pilot<ContentOptionsScenario>();
         StringAssert.Contains("post.enablePictures=False", next.ParameterNotice);
-        Tap(next, 7);
+        var clear = next.Presets.Single(preset => preset.TestId == "qa-preset-contentOptions-clear");
+        clear.Fill(next.Fields);
+        clear.Run(next.Fields);
         StringAssert.Contains("none (backend default)", next.ParameterNotice);
     }
 

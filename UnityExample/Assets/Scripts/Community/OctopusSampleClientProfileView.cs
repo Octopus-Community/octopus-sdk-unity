@@ -199,9 +199,9 @@ public class OctopusSampleClientProfileView : MonoBehaviour
         }
         Row(panel, "profileId", data.ProfileId);
         Row(panel, "messageCount", data.MessageCount.HasValue ? data.MessageCount.Value.ToString() : "—");
-        Row(panel, "gamification level", data.Gamification == null ? "— (gamification off)" : data.Gamification.Level.ToString());
+        Row(panel, "gamification level", data.Gamification == null ? "null" : data.Gamification.Level.ToString());
         Row(panel, "gamification score", data.Gamification == null || !data.Gamification.Score.HasValue
-            ? "— (not exposed by the native SDKs)" : data.Gamification.Score.Value.ToString());
+            ? "null" : data.Gamification.Score.Value.ToString());
     }
 
     private static void Row(RectTransform parent, string label, string value)

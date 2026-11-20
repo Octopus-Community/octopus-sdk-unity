@@ -89,30 +89,34 @@ public partial class OctopusSDK
     }
 
     /// <summary>Opens the Octopus UI on the post editor, optionally prefilled.
-    /// Pass null (or an all-empty prefill) to open a blank editor.</summary>
+    /// Pass null (or an all-empty prefill) to open a blank editor. A CTA label the native SDK refuses is
+    /// logged and the CTA left out, as a CTA label was before. Throws an ArgumentException when
+    /// the prefill sets both ImagePath and ImagePaths, and an OctopusPrefilledPostTooManyImagesException
+    /// when it carries more than OctopusPrefilledPost.MaxImageCount images; nothing opens then.</summary>
     public static void OpenCreatePost(OctopusPrefilledPost prefilled = null)
     {
         OpenCreatePost(prefilled, null);
     }
 
     /// <summary>Open the requested screen with an optional iOS navigation container.
-    /// Null preserves the native default; Android ignores navigationMode.</summary>
+    /// Null preserves the native default; Android ignores navigationMode. Throws on the same
+    /// image errors as OpenCreatePost(OctopusPrefilledPost).</summary>
     public static void OpenCreatePost(OctopusPrefilledPost prefilled = null, OctopusNavigationMode? navigationMode = null)
     {
         NavigationModeCode(navigationMode);
         OctopusPrefilledPostMarshal.ToArgs(prefilled, out string text, out string topicId,
-            out string imagePath, out string ctaLabel, out string ctaUrl);
+            out string imagePathsJson, out string ctaLabelJson, out string ctaUrl);
         StashActiveBridgeShareSigner(prefilled);
 #if UNITY_EDITOR
         MockBackend.OpenCreatePost(prefilled, navigationMode);
 #elif UNITY_ANDROID
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
-            plugin.CallStatic("openCreatePost", text, topicId, imagePath, ctaLabel, ctaUrl,
+            plugin.CallStatic("openCreatePost", text, topicId, imagePathsJson, ctaLabelJson, ctaUrl,
                 prefilled?.SignBridgeShare != null, NavigationModeCode(navigationMode));
         }
 #elif UNITY_IOS
-        OctopusSdkOpenCreatePost(text, topicId, imagePath, ctaLabel, ctaUrl,
+        OctopusSdkOpenCreatePost(text, topicId, imagePathsJson, ctaLabelJson, ctaUrl,
             prefilled?.SignBridgeShare != null ? 1 : 0, NavigationModeCode(navigationMode));
 #endif
     }
@@ -120,7 +124,8 @@ public partial class OctopusSDK
     /// <summary>Open the connected user's profile when clientUserId is null or blank.
     /// Otherwise clientUserId is the host app's client user ID (not an Octopus profile ID),
     /// requiring a community that exposes client user IDs. Unknown IDs show native unavailable UI.
-    /// Null navigationMode preserves the native profile default (`NavigationStack`); Android ignores it.</summary>
+    /// Null navigationMode preserves the native profile default (`NavigationStack`); Android ignores it.
+    /// When the user cannot access the community, the access denied screen is displayed instead.</summary>
     public static void OpenProfile(string clientUserId = null, OctopusNavigationMode? navigationMode = null)
     {
         NavigationModeCode(navigationMode);
@@ -201,7 +206,7 @@ public partial class OctopusSDK
 
     [DllImport("__Internal")]
     private static extern void OctopusSdkOpenCreatePost(
-        string text, string topicId, string imagePath, string ctaLabel, string ctaUrl, int hasSigner, int navigationMode);
+        string text, string topicId, string imagePathsJson, string ctaLabelJson, string ctaUrl, int hasSigner, int navigationMode);
     [DllImport("__Internal")]
     private static extern void OctopusSdkOpenProfile(string clientUserId, int navigationMode);
 

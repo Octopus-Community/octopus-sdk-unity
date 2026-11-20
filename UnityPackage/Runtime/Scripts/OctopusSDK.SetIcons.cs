@@ -105,6 +105,7 @@ public partial class OctopusSDK
             case OctopusIconSlot.ContentReactionRage: return "content.reaction.rage";
             case OctopusIconSlot.ContentDelete: return "content.delete";
             case OctopusIconSlot.ContentReport: return "content.report";
+            case OctopusIconSlot.ContentTranslation: return "content.translation";
             case OctopusIconSlot.ContentViews: return "content.views";
             case OctopusIconSlot.ContentLike: return "content.like";
             case OctopusIconSlot.ProfileDefaultAvatar: return "profile.defaultAvatar";
@@ -407,4 +408,9 @@ public enum OctopusIconSlot
     ScreenStatesError = 78,
     /// <summary>Button that clears a text field, including the nickname-choice field.</summary>
     CommonClearText = 79,
+    /// <summary>
+    /// Icon next to the button that switches an automatically translated post, comment or reply
+    /// between its translation and its original text.
+    /// </summary>
+    ContentTranslation = 80,
 }

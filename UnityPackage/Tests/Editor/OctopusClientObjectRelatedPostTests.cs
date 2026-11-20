@@ -97,7 +97,7 @@ public class OctopusClientObjectRelatedPostTests
     {
         var wires = new[] { "other", "textMissing", "textTooLong", "fileEmpty", "fileTooLarge", "fileBadFormat",
             "fileUpload", "fileDownload", "missingObjectId", "missingCta", "postUnavailable", "postNotFound",
-            "postAlreadyExists", "invalidGroupId", "invalidAuthor", "tokenInvalid", "tokenExpired" };
+            "postAlreadyExists", "invalidGroupId", "invalidAuthor", "tokenInvalid", "tokenExpired", "invalidLocalizedText" };
         var codes = (OctopusClientPostErrorCode[])Enum.GetValues(typeof(OctopusClientPostErrorCode));
         Assert.AreEqual(codes.Length, wires.Length);
         for (int i = 0; i < wires.Length; i++)
@@ -118,17 +118,118 @@ public class OctopusClientObjectRelatedPostTests
     public void ClientObjectWire_PreservesContentAndOmitsSigner()
     {
         var content = new OctopusClientObject { ObjectId = "item-雪", Text = "line\n\"two\"\b\f\u0001", GroupId = "group",
-            CatchPhrase = "Discuss", ViewObjectButtonText = "Read", ImagePath = "/tmp/picture.png",
+            CatchPhrase = "Discuss", ViewObjectButton = OctopusLocalizedText.AutoTranslated("Read"),
+            Medias = { OctopusClientObjectMedia.FromPath("/tmp/picture.png") },
             SignBridgeShare = _ => Task.FromResult("unused") };
-        var row = OctopusJson.ParseObject(OctopusJson.ClientObjectToJson(content));
+        string error;
+        string json = OctopusJson.ClientObjectToJson(content, OctopusSDK.ClientObjectMedias(content, out error));
+        Assert.IsNull(error);
+        var row = OctopusJson.ParseObject(json);
         Assert.AreEqual(content.ObjectId, row["objectId"]);
         Assert.AreEqual(content.Text, row["text"]);
-        Assert.AreEqual(content.ImagePath, row["imagePath"]);
-        Assert.AreEqual("", row["imageUrl"]);
         Assert.AreEqual("group", row["groupId"]);
         Assert.AreEqual("Discuss", row["catchPhrase"]);
-        Assert.AreEqual("Read", row["viewObjectButtonText"]);
-        Assert.AreEqual(7, row.Count);
+        // The flat parser does not read nested values: the button and the medias are checked as text instead.
+        StringAssert.Contains(",\"viewObjectButton\":{\"text\":\"Read\"},", json);
+        StringAssert.EndsWith(",\"medias\":[{\"path\":\"/tmp/picture.png\"}]}", json);
+    }
+
+    [Test]
+    public void ClientObjectWire_MediasKeepOrderAndKind()
+    {
+        var content = new OctopusClientObject { ObjectId = "item", Text = "Discussion text", Medias =
+        {
+            OctopusClientObjectMedia.FromUrl("https://cdn.example/a \"b\".jpg"), null,
+            OctopusClientObjectMedia.FromPath("/tmp/c.png")
+        } };
+        string error;
+        var medias = OctopusSDK.ClientObjectMedias(content, out error);
+        Assert.IsNull(error);
+        StringAssert.EndsWith(",\"medias\":[{\"url\":\"https://cdn.example/a \\\"b\\\".jpg\"},{\"path\":\"/tmp/c.png\"}]}",
+            OctopusJson.ClientObjectToJson(content, medias));
+        StringAssert.EndsWith(",\"medias\":[]}", OctopusJson.ClientObjectToJson(new OctopusClientObject { ObjectId = "item" },
+            new List<OctopusClientObjectMedia>()));
+    }
+
+#pragma warning disable 0618 // the deprecated single image
+    [TestCase("/tmp/legacy.png", null, "/tmp/legacy.png", null)]
+    [TestCase(null, "https://cdn.example/legacy.jpg", null, "https://cdn.example/legacy.jpg")]
+    public void ClientObjectMedias_DeprecatedImage_IsTheOnlyMedia(string path, string url, string expectedPath, string expectedUrl)
+    {
+        string error;
+        var medias = OctopusSDK.ClientObjectMedias(new OctopusClientObject { ImagePath = path, ImageUrl = url, Medias = { null } }, out error);
+        Assert.IsNull(error);
+        Assert.AreEqual(1, medias.Count);
+        Assert.AreEqual(expectedPath, medias[0].Path);
+        Assert.AreEqual(expectedUrl, medias[0].Url);
+    }
+
+    [TestCase("/tmp/legacy.png", null, "Set Medias only: ImagePath and ImageUrl are deprecated.")]
+    [TestCase(null, "https://cdn.example/legacy.jpg", "Set Medias only: ImagePath and ImageUrl are deprecated.")]
+    public void FetchOrCreate_DeprecatedImageWithMedias_RefusedBeforeNativeCall(string path, string url, string message)
+    {
+        OctopusClientPostError error = null;
+        OctopusSDK.FetchOrCreateClientObjectRelatedPost(new OctopusClientObject { ObjectId = "item", Text = "Discussion text",
+            ImagePath = path, ImageUrl = url, Medias = { OctopusClientObjectMedia.FromUrl("https://cdn.example/a.jpg") } },
+            _ => Assert.Fail("No post expected"), e => error = e);
+        Drain();
+        Assert.AreEqual(OctopusClientPostErrorCode.Other, error.Code);
+        Assert.AreEqual(message, error.Message);
+        Assert.IsNull(OctopusSDK.Mock.LastCall("FetchOrCreateClientObjectRelatedPost"));
+    }
+
+    [Test]
+    public void FetchOrCreate_BothDeprecatedImages_StillRefused()
+    {
+        OctopusClientPostError error = null;
+        OctopusSDK.FetchOrCreateClientObjectRelatedPost(new OctopusClientObject { ObjectId = "item", Text = "Discussion text",
+            ImagePath = "/tmp/a.png", ImageUrl = "https://cdn.example/a.jpg" }, null, e => error = e);
+        Drain();
+        Assert.AreEqual(OctopusClientPostErrorCode.Other, error.Code);
+        Assert.AreEqual("Set at most one of ImagePath and ImageUrl", error.Message);
+    }
+#pragma warning restore 0618
+
+    [Test]
+    public void FetchOrCreate_MoreThanMaxImageCountMedias_RefusedAsOther()
+    {
+        var content = new OctopusClientObject { ObjectId = "item", Text = "Discussion text" };
+        for (int i = 0; i <= OctopusPrefilledPost.MaxImageCount; i++)
+            content.Medias.Add(OctopusClientObjectMedia.FromUrl("https://cdn.example/" + i + ".jpg"));
+        OctopusClientPostError error = null;
+        OctopusSDK.FetchOrCreateClientObjectRelatedPost(content, _ => Assert.Fail("No post expected"), e => error = e);
+        Drain();
+        Assert.AreEqual(OctopusClientPostErrorCode.Other, error.Code);
+        Assert.AreEqual("A client post accepts at most 10 medias, 11 were provided.", error.Message);
+        Assert.IsNull(OctopusSDK.Mock.LastCall("FetchOrCreateClientObjectRelatedPost"));
+    }
+
+    [Test]
+    public void FetchOrCreate_MaxImageCountMedias_ReachTheBackend()
+    {
+        var content = new OctopusClientObject { ObjectId = "item", Text = "Discussion text" };
+        for (int i = 0; i < OctopusPrefilledPost.MaxImageCount; i++)
+            content.Medias.Add(i % 2 == 0 ? OctopusClientObjectMedia.FromPath("/tmp/" + i + ".png")
+                : OctopusClientObjectMedia.FromUrl("https://cdn.example/" + i + ".jpg"));
+        string postId = null;
+        OctopusSDK.FetchOrCreateClientObjectRelatedPost(content, id => postId = id, e => Assert.Fail(e.Message));
+        Drain();
+        Assert.AreEqual("mock-post-item", postId);
+    }
+
+    [Test]
+    public void ClientObjectMedia_FactoriesRequireAValue()
+    {
+        Assert.Throws<ArgumentException>(() => OctopusClientObjectMedia.FromPath(null));
+        Assert.Throws<ArgumentException>(() => OctopusClientObjectMedia.FromPath(""));
+        Assert.Throws<ArgumentException>(() => OctopusClientObjectMedia.FromUrl(null));
+        Assert.Throws<ArgumentException>(() => OctopusClientObjectMedia.FromUrl(""));
+        var local = OctopusClientObjectMedia.FromPath("/tmp/a.png");
+        Assert.AreEqual("/tmp/a.png", local.Path);
+        Assert.IsNull(local.Url);
+        var remote = OctopusClientObjectMedia.FromUrl("https://cdn.example/a.jpg");
+        Assert.IsNull(remote.Path);
+        Assert.AreEqual("https://cdn.example/a.jpg", remote.Url);
     }
 
     [Test]

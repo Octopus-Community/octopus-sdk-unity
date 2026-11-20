@@ -41,22 +41,26 @@ public class ForcedLoginExample : MonoBehaviour
         }
         message.text = "";
         DisableButton();
-        if (isLoggedIn)
+        try
         {
-            await OctopusSDK.DisconnectUser();
+            if (isLoggedIn)
+            {
+                await OctopusSDK.DisconnectUser();
+            }
+            else
+            {
+                await OctopusSDK.ConnectUser(config.userId, config.nickname, config.bio, config.picture, GetToken);
+            }
+            isLoggedIn = !isLoggedIn;
         }
-        else
+        catch (System.Exception e)
         {
-            await OctopusSDK.ConnectUser(
-                config.userId,
-                config.nickname,
-                config.bio,
-                config.picture,
-                GetToken
-            );
+            message.text = "Connection failed: " + e.Message;
         }
-        isLoggedIn = !isLoggedIn;
-        UpdateButton();
+        finally
+        {
+            UpdateButton();
+        }
     }
 
     void DisableButton()

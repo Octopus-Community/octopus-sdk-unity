@@ -102,21 +102,52 @@ internal static partial class OctopusJson
                 case "invalidAuthor": code = OctopusClientPostErrorCode.InvalidAuthor; break;
                 case "tokenInvalid": code = OctopusClientPostErrorCode.TokenInvalid; break;
                 case "tokenExpired": code = OctopusClientPostErrorCode.TokenExpired; break;
+                case "invalidLocalizedText": code = OctopusClientPostErrorCode.InvalidLocalizedText; break;
             }
-            return new OctopusClientPostError(code, message);
+            if (code != OctopusClientPostErrorCode.InvalidLocalizedText) return new OctopusClientPostError(code, message);
+            string kind, languageCode;
+            row.TryGetValue("localizedTextError", out kind);
+            row.TryGetValue("languageCode", out languageCode);
+            return new OctopusClientPostError(code, message, LocalizedTextErrorKindFromWire(kind),
+                string.IsNullOrEmpty(languageCode) ? null : languageCode);
         }
         catch (FormatException) { return new OctopusClientPostError(OctopusClientPostErrorCode.Other, "Malformed client post error"); }
     }
 
-    internal static string ClientObjectToJson(OctopusClientObject value)
+    // The native OctopusLocalizedText.ValidationError kind, as both bridges name it; null for a kind
+    // this package does not know.
+    internal static OctopusLocalizedTextValidationErrorKind? LocalizedTextErrorKindFromWire(string kind)
     {
+        switch (kind)
+        {
+            case "emptyTexts": return OctopusLocalizedTextValidationErrorKind.EmptyTexts;
+            case "blankText": return OctopusLocalizedTextValidationErrorKind.BlankText;
+            case "emptyLanguage": return OctopusLocalizedTextValidationErrorKind.EmptyLanguage;
+            case "duplicateLanguage": return OctopusLocalizedTextValidationErrorKind.DuplicateLanguage;
+            case "defaultLanguageMissing": return OctopusLocalizedTextValidationErrorKind.DefaultLanguageMissing;
+            default: return null;
+        }
+    }
+
+    // medias is the normalized list (OctopusSDK.ClientObjectMedias): the deprecated single image
+    // travels as its only element, so the bridges read one shape.
+    internal static string ClientObjectToJson(OctopusClientObject value, List<OctopusClientObjectMedia> medias)
+    {
+        var mediaRows = new List<Dictionary<string, string>>();
+        foreach (var media in medias)
+            mediaRows.Add(media.Path != null
+                ? new Dictionary<string, string> { { "path", media.Path } }
+                : new Dictionary<string, string> { { "url", media.Url } });
+        var button = value.ResolveViewObjectButton();
         var row = new Dictionary<string, string>
         {
             { "objectId", value.ObjectId }, { "text", value.Text }, { "groupId", value.GroupId },
-            { "catchPhrase", value.CatchPhrase }, { "viewObjectButtonText", value.ViewObjectButtonText },
-            { "imagePath", value.ImagePath }, { "imageUrl", value.ImageUrl }
+            { "catchPhrase", value.CatchPhrase },
+            { "viewObjectButton", button == null ? "null" : button.ToJson() },
+            { "medias", WriteArray(mediaRows, new HashSet<string>()) }
         };
-        string array = WriteArray(new List<Dictionary<string, string>> { row }, new HashSet<string>());
+        string array = WriteArray(new List<Dictionary<string, string>> { row },
+            new HashSet<string> { "medias", "viewObjectButton" });
         // The shared flat writer handles common escapes; JSON also forbids every other
         // raw control character (for example backspace and form feed) in content fields.
         var json = new StringBuilder();

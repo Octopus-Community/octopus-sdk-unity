@@ -156,13 +156,10 @@ public sealed class ConnectionScenario : OctopusScenarioPilot
             await OctopusScenarioSdk.Current.ConnectUser(profile.userId, profile.nickname, profile.bio,
                                                         profile.picture, () => Task.FromResult(provider.GetToken(profile.userId, requested)));
             if (generation != OctopusScenarioSdk.CommunityGeneration) return;
-            // Completion is not success: the native bridges signal the end of the call whether
-            // the token was accepted or not, and this package exposes no connection state to
-            // read back. Say what is actually known.
-            Report("ConnectUser call completed for '" + profile.userId + "' (mode: " + mode +
-                   "). This confirms the call returned, not that a session exists — check the " +
-                   "Community tab for the real state." +
-                   caveat);
+            // The Task now faults on connection or token provider failure. A successful await
+            // means native accepted this connection; check Community for its current state.
+            Report("ConnectUser succeeded for '" + profile.userId + "' (mode: " + mode +
+                   "). Open the Community tab to inspect the current session." + caveat);
             OctopusSampleState.ReportSession(OctopusSampleState.Session.ConnectCompleted,
                                              "Connect call completed for '" + profile.userId + "'");
         }

@@ -58,19 +58,6 @@ public partial class OctopusSDK
             if (Mock.Enabled) { Mock.LastPrefilledPost = prefilled; Mock.CurrentScreen = "Create post"; }
         }
 
-        internal static async void ConnectUser(string userId, string nickname, string bio, string picture)
-        {
-            Mock.Record("ConnectUser", userId, nickname);
-            // Mirror the real flow: request a token from the host, then complete.
-            if (TokenProvider != null)
-            {
-                try { await TokenProvider.Invoke(); }
-                catch (Exception e) { UnityEngine.Debug.LogError($"[Octopus Mock] tokenProvider threw: {e}"); }
-            }
-            if (Mock.Enabled) Mock.EmitProfileChanged(new OctopusProfile(clientUserId: userId));
-            TriggerOnConnectUserCompleted();
-        }
-
         internal static void DisconnectUser()
         {
             Mock.Record("DisconnectUser");
@@ -152,7 +139,12 @@ public partial class OctopusSDK
         internal static void SetNavBarUsesPrimaryColor(bool usesPrimary) => Mock.Record("SetNavBarUsesPrimaryColor", usesPrimary);
         internal static void SetColorSchemeType(int colorSchemeType) => Mock.Record("SetColorSchemeType", colorSchemeType);
         internal static void SetForcedOrientation(int forcedOrientation) => Mock.Record("SetForcedOrientation", forcedOrientation);
-        internal static void SetFonts(OctopusFonts fonts) => Mock.Record("SetFonts", fonts);
+        internal static void SetFonts(OctopusFonts fonts)
+        {
+            Mock.Record("SetFonts", fonts);
+            Mock.Record("SetNavBarTitle", fonts?.NavBarTitle?.AndroidFontResourceName ?? "",
+                fonts?.NavBarTitle?.Size ?? 0f);
+        }
 
         internal static void SyncFollowGroups(
             IList<OctopusSyncFollowGroupAction> actions,

@@ -351,6 +351,7 @@ public class OctopusSignInThemeScenarioTests
         var call = _sdk.Calls.Single(c => c.Method == "SetIcons");
         var icons = (OctopusIcons)call.Args[0];
         Assert.IsNotNull(icons.Get(OctopusIconSlot.CommonClearText));
+        Assert.IsNotNull(icons.Get(OctopusIconSlot.ContentTranslation));
         Tap(pilot, 4);
         Assert.IsNull(_sdk.Calls.Last(c => c.Method == "SetIcons").Args[0]);
     }

@@ -161,7 +161,7 @@ public class OctopusProfileEntitlementsTests
     public void Mock_RefreshSimulatesSuccessAndTypedFailuresAndAlwaysCompletes()
     {
         OctopusSDK.MockBackend.InitializeProfileMock(ConnectionMode.SSO());
-        OctopusSDK.ConnectUser("user1", null, null, null, () => Task.FromResult("test-token")).GetAwaiter().GetResult();
+        Assert.IsTrue(OctopusSDK.ConnectUser("user1", null, null, null, () => Task.FromResult("test-token")).Wait(TimeSpan.FromSeconds(1)), "ConnectUser must complete without a Unity update");
         OctopusSDK.Mock.EmitProfileChanged(new OctopusProfile(new[] { "premium" }, "user1"));
         Drain();
         int success = 0;
@@ -182,7 +182,16 @@ public class OctopusProfileEntitlementsTests
     public void Mock_ConnectAndDisconnectDriveProfileObservation()
     {
         OctopusSDK.MockBackend.InitializeProfileMock(ConnectionMode.SSO());
-        OctopusSDK.ConnectUser("user1", null, null, null, null).GetAwaiter().GetResult();
+        var failed = OctopusSDK.ConnectUser("user1", null, null, null, null);
+        Assert.IsTrue(failed.IsFaulted, "A null provider must fault without waiting for a Unity update");
+        Assert.Throws<InvalidOperationException>(() => failed.GetAwaiter().GetResult());
+        Assert.AreEqual("A token provider is required", failed.Exception.InnerException.Message);
+        Assert.IsFalse(OctopusSDK.Mock.LastCall("ConnectUser").HasValue);
+        Drain();
+        Assert.IsNull(OctopusSDK.CurrentProfile);
+
+        var connected = OctopusSDK.ConnectUser("user1", null, null, null, () => Task.FromResult("test-token"));
+        Assert.IsTrue(connected.Wait(TimeSpan.FromSeconds(1)), "ConnectUser must complete without a Unity update");
         Drain();
         Assert.AreEqual("user1", OctopusSDK.CurrentProfile.ClientUserId);
         OctopusSDK.DisconnectUser().GetAwaiter().GetResult();
@@ -206,7 +215,7 @@ public class OctopusProfileEntitlementsTests
         Assert.IsFalse(OctopusSDK.Mock.LastCall("RefreshEntitlements").HasValue);
         Assert.IsFalse(OctopusSDK.Mock.LastCall("DisconnectUser").HasValue);
 
-        OctopusSDK.ConnectUser("user1", null, null, null, () => Task.FromResult("test-token")).GetAwaiter().GetResult();
+        Assert.IsTrue(OctopusSDK.ConnectUser("user1", null, null, null, () => Task.FromResult("test-token")).Wait(TimeSpan.FromSeconds(1)), "ConnectUser must complete without a Unity update");
         Drain();
         OctopusSDK.DisconnectUser().GetAwaiter().GetResult();
         Drain();
@@ -218,7 +227,7 @@ public class OctopusProfileEntitlementsTests
     public void Mock_CommunitySwitchAndStopForgetProviderRegistration()
     {
         OctopusSDK.MockBackend.InitializeProfileMock(ConnectionMode.SSO());
-        OctopusSDK.ConnectUser("user1", null, null, null, () => Task.FromResult("test-token")).GetAwaiter().GetResult();
+        Assert.IsTrue(OctopusSDK.ConnectUser("user1", null, null, null, () => Task.FromResult("test-token")).Wait(TimeSpan.FromSeconds(1)), "ConnectUser must complete without a Unity update");
         Drain();
         OctopusSDK.SwitchCommunity("YOUR_API_KEY", ConnectionMode.SSO());
         Drain();
@@ -227,7 +236,7 @@ public class OctopusProfileEntitlementsTests
         Drain();
         Assert.AreEqual(OctopusRefreshEntitlementsErrorKind.NoClientTokenProvider, error.Kind);
 
-        OctopusSDK.ConnectUser("user2", null, null, null, () => Task.FromResult("test-token")).GetAwaiter().GetResult();
+        Assert.IsTrue(OctopusSDK.ConnectUser("user2", null, null, null, () => Task.FromResult("test-token")).Wait(TimeSpan.FromSeconds(1)), "ConnectUser must complete without a Unity update");
         Drain();
         OctopusSDK.Stop();
         Drain();

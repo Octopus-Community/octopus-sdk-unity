@@ -105,6 +105,12 @@ public class OctopusEventParsingTests
         Assert.AreEqual(OctopusScreen.OtherUserPosts, e.Screen); Assert.AreEqual("u1", e.ProfileId);
     }
 
+    [Test] public void ScreenDisplayed_communityAccessDenied()
+    {
+        var e = (ScreenDisplayedEvent)Parse("{\"type\":\"ScreenDisplayed\",\"screen\":\"CommunityAccessDenied\"}");
+        Assert.AreEqual(OctopusScreen.CommunityAccessDenied, e.Screen);
+    }
+
     [Test] public void ScreenDisplayed_activity()
     {
         var e = (ScreenDisplayedEvent)Parse("{\"type\":\"ScreenDisplayed\",\"screen\":\"Activity\"}");

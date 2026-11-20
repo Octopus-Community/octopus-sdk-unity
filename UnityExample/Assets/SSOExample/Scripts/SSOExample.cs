@@ -27,42 +27,51 @@ public class SSOExample : MonoBehaviour
         string reason;
         if (!isLoggedIn && !OctopusSampleTokenProvider.CanConnect(config, out reason))
         {
-            if (refusalText == null)
-            {
-                refusalText = SampleUi.Label("sso-connection-refusal", loginButton.transform, "",
-                    SampleUi.TextBody, OctopusSampleBranding.Palette.Title, TextAnchor.LowerLeft);
-                var rect = refusalText.rectTransform;
-                rect.anchorMin = new Vector2(0, 1);
-                rect.anchorMax = new Vector2(1, 1);
-                rect.pivot = new Vector2(0.5f, 0);
-                rect.anchoredPosition = new Vector2(0, 16);
-                rect.sizeDelta = Vector2.zero;
-                refusalText.gameObject.AddComponent<ContentSizeFitter>().verticalFit =
-                    ContentSizeFitter.FitMode.PreferredSize;
-            }
-            refusalText.text = reason;
+            ShowMessage(reason);
             UpdateButton();
             OctopusSampleLog.Current.LogStateChange("[OctopusQA] scene=SSO state=refused", reason);
             return;
         }
         if (refusalText != null) refusalText.text = "";
         DisableButton();
-        if (isLoggedIn)
+        try
         {
-            await OctopusSDK.DisconnectUser();
+            if (isLoggedIn)
+            {
+                await OctopusSDK.DisconnectUser();
+            }
+            else
+            {
+                await OctopusSDK.ConnectUser(config.userId, config.nickname, config.bio, config.picture, GetToken);
+            }
+            isLoggedIn = !isLoggedIn;
         }
-        else
+        catch (System.Exception e)
         {
-            await OctopusSDK.ConnectUser(
-                config.userId,
-                config.nickname,
-                config.bio,
-                config.picture,
-                GetToken
-            );
+            ShowMessage("Connection failed: " + e.Message);
         }
-        isLoggedIn = !isLoggedIn;
-        UpdateButton();
+        finally
+        {
+            UpdateButton();
+        }
+    }
+
+    void ShowMessage(string text)
+    {
+        if (refusalText == null)
+        {
+            refusalText = SampleUi.Label("sso-connection-refusal", loginButton.transform, "",
+                SampleUi.TextBody, OctopusSampleBranding.Palette.Title, TextAnchor.LowerLeft);
+            var rect = refusalText.rectTransform;
+            rect.anchorMin = new Vector2(0, 1);
+            rect.anchorMax = new Vector2(1, 1);
+            rect.pivot = new Vector2(0.5f, 0);
+            rect.anchoredPosition = new Vector2(0, 16);
+            rect.sizeDelta = Vector2.zero;
+            refusalText.gameObject.AddComponent<ContentSizeFitter>().verticalFit =
+                ContentSizeFitter.FitMode.PreferredSize;
+        }
+        refusalText.text = text;
     }
 
     void DisableButton()

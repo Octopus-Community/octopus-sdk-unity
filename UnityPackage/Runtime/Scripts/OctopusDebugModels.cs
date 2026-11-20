@@ -53,6 +53,11 @@ public sealed class OctopusPostOptions
     /// <summary>Debug/QA only — do not ship in production builds. Whether a post needs text. Defaults to true; false permits an image without text, while posts without an image still need text.</summary>
     public bool TextRequired { get; private set; }
 
+    /// <summary>Debug/QA only — do not ship in production builds. Whether a feed image tap opens the post when its detail is available. Defaults to false; detail images still open fullscreen.</summary>
+    public bool ImageTapOpensPost { get; private set; }
+    /// <summary>Debug/QA only — do not ship in production builds. Whether tapping a post's group name opens the group in feeds and post detail. Defaults to false.</summary>
+    public bool GroupNameTapOpensGroup { get; private set; }
+
     /// <summary>Debug/QA only — do not ship in production builds. Create options with text required and native picture/poll defaults.</summary>
     public OctopusPostOptions(bool enablePictures = true, bool enablePolls = true)
         : this(enablePictures, enablePolls, textRequired: true)
@@ -61,10 +66,19 @@ public sealed class OctopusPostOptions
 
     /// <summary>Debug/QA only — do not ship in production builds. Create options with explicit picture, poll and text requirements.</summary>
     public OctopusPostOptions(bool enablePictures, bool enablePolls, bool textRequired)
+        : this(enablePictures, enablePolls, textRequired, false, false)
+    {
+    }
+
+    /// <summary>Debug/QA only — do not ship in production builds. Create post options with optional tap behaviors, both disabled by default. Requires native SDKs 1.16.</summary>
+    public OctopusPostOptions(bool enablePictures, bool enablePolls, bool textRequired,
+        bool imageTapOpensPost = false, bool groupNameTapOpensGroup = false)
     {
         EnablePictures = enablePictures;
         EnablePolls = enablePolls;
         TextRequired = textRequired;
+        ImageTapOpensPost = imageTapOpensPost;
+        GroupNameTapOpensGroup = groupNameTapOpensGroup;
     }
 }
 
@@ -97,14 +111,14 @@ public sealed class OctopusReplyOptions
 /// <summary>Debug/QA only — do not ship in production builds. Immutable ContentOptions override.</summary>
 public sealed class OctopusContentOptions
 {
-    /// <summary>Debug/QA only — do not ship in production builds. Options for post creation.</summary>
+    /// <summary>Debug/QA only — do not ship in production builds. Options for post creation and tap navigation.</summary>
     public OctopusPostOptions Post { get; private set; }
     /// <summary>Debug/QA only — do not ship in production builds. Options for comment creation.</summary>
     public OctopusCommentOptions Comment { get; private set; }
     /// <summary>Debug/QA only — do not ship in production builds. Options for reply creation.</summary>
     public OctopusReplyOptions Reply { get; private set; }
 
-    /// <summary>Debug/QA only — do not ship in production builds. Create options with native defaults; omitted content flags are enabled.</summary>
+    /// <summary>Debug/QA only — do not ship in production builds. Create options with native defaults: creation flags enabled and optional tap behaviors disabled.</summary>
     public OctopusContentOptions(OctopusPostOptions post = null, OctopusCommentOptions comment = null, OctopusReplyOptions reply = null)
     {
         Post = post ?? new OctopusPostOptions();

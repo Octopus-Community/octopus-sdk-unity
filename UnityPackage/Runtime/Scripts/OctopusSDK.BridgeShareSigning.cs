@@ -37,9 +37,9 @@ public partial class OctopusSDK
             }
         }
         // A valid JWT signs the post. Any failure (no signer, the host threw, or an empty result)
-        // tells native the host could NOT sign, so it aborts the post with a clean error instead of
-        // publishing an unsigned image — which a picture-restricted community rejects and which would
-        // otherwise leave the editor's publish spinner stuck.
+        // tells native the host could NOT sign, and both platforms then send the post unsigned: the
+        // server publishes it where the community allows member pictures and refuses it, with the
+        // editor's error, where it does not. Native always gets a reply, so the publish never hangs.
         if (failed || string.IsNullOrEmpty(jwt))
             FailBridgeShareSignature();
         else
@@ -63,9 +63,9 @@ public partial class OctopusSDK
 #endif
     }
 
-    // Failure: signal "couldn't sign". iOS makes the sign closure THROW (the SDK aborts the post
-    // cleanly). Android signals it by returning null to its provider (empty maps to null), the
-    // platform's "unsigned" value.
+    // Failure: signal "couldn't sign". Both platforms answer the native token provider with null,
+    // the SDK's "send unsigned" value: iOS resumes the sign closure with nil, Android maps the empty
+    // string to null.
     private static void FailBridgeShareSignature()
     {
 #if UNITY_EDITOR

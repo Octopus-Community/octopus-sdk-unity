@@ -35,7 +35,9 @@ public sealed class CommunityDataScenario : OctopusScenarioPilot
     }
     public override string ParameterNotice
     {
-        get { return "Preset 2 uses the last lookup or user.other when run first. Client id lookups require exposed client user ids. Public gamification score is normally null. " +
+        get { return "Preset 2 uses the last lookup or user.other when run first. Client id lookups require exposed client user ids. " +
+            "Native SDK 1.16.0 returns total points on Android and iOS. Zero is a reported total. " +
+            "The score is null when unavailable, and gamification is null for admins or when disabled. " +
             "The C# factories enforce exactly one id by construction. Host profile navigation needs a renderer " +
             "subscribed to HostProfileRequested; the pilot supplies its data, unknown-member and error states."; }
     }

@@ -132,6 +132,62 @@ public class OctopusLegacyTokenPathTests
         Assert.AreEqual(0, _log.ApiCalls);
     }
 
+    [TestCase("ForcedLoginExample")]
+    [TestCase("ManagedFieldsExample")]
+    [TestCase("SSOExample")]
+    public void ConnectionFailuresLeaveVisibleErrorAndUsableControls(string sceneName)
+    {
+        Configure(sceneName, "static");
+        var scene = CreateScene(sceneName);
+        var button = Child<Button>(scene.transform, "Login");
+        var caption = Child<Text>(button.transform, "Caption");
+        var message = Child<Text>(scene.transform, "Message");
+        if (sceneName == "ManagedFieldsExample")
+        {
+            Set(scene, "CallToActionButton", button);
+            Set(scene, "MessageText", message);
+            Set(scene, "Frame1", Child<Image>(scene.transform, "Frame1"));
+            Set(scene, "Frame2", Child<Image>(scene.transform, "Frame2"));
+            var nickname = Child<InputField>(scene.transform, "Nickname");
+            var bio = Child<InputField>(scene.transform, "Bio");
+            nickname.text = "Fixture";
+            bio.text = "Fixture bio";
+            Set(scene, "NicknameInput", nickname);
+            Set(scene, "BioInput", bio);
+        }
+        else
+        {
+            Set(scene, "loginButton", button);
+            if (sceneName == "ForcedLoginExample") Set(scene, "message", message);
+        }
+        bool previousMock = OctopusSDK.Mock.Enabled;
+        try
+        {
+            OctopusSDK.Mock.Enabled = true;
+            OctopusSDK.Mock.Reset();
+            OctopusSDK.Mock.NextConnectUserError = new OctopusClientUserError(
+                OctopusClientUserErrorCode.Other, "Fixture connection refused");
+            var method = scene.GetType().GetMethod(sceneName == "ManagedFieldsExample" ? "OpenOctopus" : "OnLoginButtonClicked");
+            Assert.DoesNotThrow(() => method.Invoke(scene, null));
+            // Complete the correlated Task on this same Unity synchronization context.
+            typeof(OctopusMainThread).GetMethod("Drain", BindingFlags.Static | BindingFlags.NonPublic)
+                .Invoke(null, null);
+            var visible = sceneName == "SSOExample"
+                ? scene.GetComponentInChildren<TMP_Text>(true).text : message.text;
+            Assert.AreEqual("Connection failed: Fixture connection refused", visible);
+            Assert.IsTrue(button.enabled);
+            Assert.AreEqual(sceneName == "ManagedFieldsExample" ? "Open octopus" : "Connect user", caption.text);
+            Assert.IsFalse(OctopusSDK.Mock.LastCall("Open").HasValue);
+            if (sceneName == "ManagedFieldsExample")
+                Assert.IsFalse((bool)scene.GetType().GetField("IsLoading", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(scene));
+        }
+        finally
+        {
+            OctopusSDK.Mock.Reset();
+            OctopusSDK.Mock.Enabled = previousMock;
+        }
+    }
+
     private OctopusExampleConfig.ExampleProfile Configure(string sceneName, string mode)
     {
         var profile = new OctopusExampleConfig.ExampleProfile

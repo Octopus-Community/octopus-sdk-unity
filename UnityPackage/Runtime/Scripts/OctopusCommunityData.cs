@@ -7,7 +7,8 @@ public sealed class OctopusCommunityData
     /// <summary>Total posts, comments and replies, or null when unavailable.</summary>
     public int? MessageCount { get; private set; }
 
-    /// <summary>The member's standing, or null when gamification is unavailable.</summary>
+    /// <summary>The member's standing, or null when gamification is disabled or unavailable,
+    /// including for admin-tagged profiles.</summary>
     public OctopusGamification Gamification { get; private set; }
 
     /// <summary>Creates an immutable community-data snapshot.</summary>
@@ -25,7 +26,8 @@ public sealed class OctopusGamification
     /// <summary>The community's level index.</summary>
     public int Level { get; private set; }
 
-    /// <summary>Points, or null when unavailable. The pinned native SDKs do not expose scores on public profiles.</summary>
+    /// <summary>Total points for the connected member or any other member on Android and iOS
+    /// with native SDK 1.16.0. Null when the total is unavailable. A reported total of zero is 0.</summary>
     public int? Score { get; private set; }
 
     /// <summary>Creates an immutable gamification snapshot.</summary>

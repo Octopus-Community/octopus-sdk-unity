@@ -123,6 +123,10 @@ public class CustomThemesExample : MonoBehaviour
                 caption2: new OctopusFont("onest_bold", "Onest-Bold", 10),
                 navBarItem: new OctopusFont("onest_bold", "Onest-Bold", 17)
             )
+            {
+                // Android only; iOS uses the app's navigation bar appearance.
+                NavBarTitle = new OctopusFont("freckleface_regular", "", 24)
+            }
         );
         OctopusSDK.Open();
     }

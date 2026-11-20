@@ -93,6 +93,7 @@ public class OctopusIconsTests
     [TestCase(OctopusIconSlot.ScreenStatesNetworkError, 77, "screenStates.networkError")]
     [TestCase(OctopusIconSlot.ScreenStatesError, 78, "screenStates.error")]
     [TestCase(OctopusIconSlot.CommonClearText, 79, "common.clearText")]
+    [TestCase(OctopusIconSlot.ContentTranslation, 80, "content.translation")]
     public void SlotValueAndBridgeKeyArePinned(OctopusIconSlot slot, int value, string key)
     {
         Assert.AreEqual(value, (int)slot);
@@ -103,7 +104,7 @@ public class OctopusIconsTests
     public void EverySlotHasAUniqueKeyAndIsPinned()
     {
         var slots = (OctopusIconSlot[])Enum.GetValues(typeof(OctopusIconSlot));
-        Assert.AreEqual(80, slots.Length, "a new slot needs a pinned TestCase above");
+        Assert.AreEqual(81, slots.Length, "a new slot needs a pinned TestCase above");
         var keys = slots.Select(OctopusSDK.IconSlotKey).ToList();
         CollectionAssert.AllItemsAreNotNull(keys);
         CollectionAssert.AllItemsAreUnique(keys);
@@ -166,6 +167,17 @@ public class OctopusIconsTests
         Assert.AreEqual(1, rows.Count);
         Assert.AreEqual("common.clearText", rows[0]["slot"]);
         Assert.AreEqual(ios ? "Clear" : "ic_clear", rows[0]["resource"]);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void TranslationRoundTripsForBothPlatforms(bool ios)
+    {
+        var icons = new OctopusIcons().Set(OctopusIconSlot.ContentTranslation, new OctopusIcon("ic_translate", "Translate"));
+        var rows = OctopusJson.ParseArray(OctopusSDK.IconsToJson(icons, ios));
+        Assert.AreEqual(1, rows.Count);
+        Assert.AreEqual("content.translation", rows[0]["slot"]);
+        Assert.AreEqual(ios ? "Translate" : "ic_translate", rows[0]["resource"]);
     }
 
     [Test]

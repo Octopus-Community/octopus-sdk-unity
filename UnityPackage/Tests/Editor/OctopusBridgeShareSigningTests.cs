@@ -15,7 +15,7 @@ public class OctopusBridgeShareSigningTests
         var post = new OctopusPrefilledPost
         {
             Text = "hi",
-            ImagePath = "/tmp/a.png",
+            ImagePaths = { "/tmp/a.png" },
             SignBridgeShare = fp => { seenFingerprint = fp; return Task.FromResult("jwt.abc"); }
         };
         OctopusSDK.OpenCreatePost(post);
@@ -55,7 +55,7 @@ public class OctopusBridgeShareSigningTests
         OctopusSDK.OpenCreatePost(new OctopusPrefilledPost
         {
             Text = "hi",
-            ImagePath = "/tmp/a.png",
+            ImagePaths = { "/tmp/a.png" },
             SignBridgeShare = fp => throw new System.Exception("backend down")
         });
         OctopusSDK.Mock.EmitBridgeShareSignatureRequest("fp123");
@@ -68,7 +68,7 @@ public class OctopusBridgeShareSigningTests
         OctopusSDK.OpenCreatePost(new OctopusPrefilledPost
         {
             Text = "hi",
-            ImagePath = "/tmp/a.png",
+            ImagePaths = { "/tmp/a.png" },
             SignBridgeShare = fp => Task.FromResult("") // host declines / empty -> treated as a failure
         });
         OctopusSDK.Mock.EmitBridgeShareSignatureRequest("fp123");

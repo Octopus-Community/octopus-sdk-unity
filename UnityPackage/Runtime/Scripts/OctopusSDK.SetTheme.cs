@@ -99,8 +99,8 @@ public partial class OctopusSDK
     }
 
     /// <summary>
-    /// Sets the community's app name, applied on iOS only until the native Android SDK exposes
-    /// a title hook. Null, empty, or whitespace-only names clear the custom name.
+    /// Sets the community's app name, shown as the main feed title when no custom logo is set.
+    /// Null, empty, or whitespace-only names clear the custom name.
     /// </summary>
     public static void SetAppName(string appName)
     {
@@ -187,7 +187,9 @@ public partial class OctopusSDK
                 fonts?.Caption2?.AndroidFontResourceName ?? "",
                 fonts?.Caption2?.Size ?? 0f,
                 fonts?.NavBarItem?.AndroidFontResourceName ?? "",
-                fonts?.NavBarItem?.Size ?? 0f
+                fonts?.NavBarItem?.Size ?? 0f,
+                fonts?.NavBarTitle?.AndroidFontResourceName ?? "",
+                fonts?.NavBarTitle?.Size ?? 0f
             );
         }
 #elif UNITY_IOS
@@ -365,6 +367,14 @@ public class OctopusFonts
     public readonly OctopusFont Caption1;
     public readonly OctopusFont Caption2;
     public readonly OctopusFont NavBarItem;
+
+    /// <summary>
+    /// Android only. Font resource and size in sp for navigation bar text titles; null keeps
+    /// the native style. An empty resource name keeps the base font and a non-positive size
+    /// keeps the base size. IOSFontName and FontWeight are ignored for this slot.
+    /// On iOS the title follows your app's navigation bar appearance.
+    /// </summary>
+    public OctopusFont NavBarTitle { get; set; }
 
     public OctopusFonts(
         OctopusFont title1 = null,

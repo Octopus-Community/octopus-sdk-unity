@@ -272,9 +272,9 @@ public class OctopusReefRunTests
         var clientObject = OctopusReefRunShare.ClientObject(runId, 5, "/cache/share.png", _sdk.SignBridgeShare);
         Assert.AreEqual(OctopusReefRunShare.ObjectId(runId, 5), clientObject.ObjectId);
         Assert.AreEqual(OctopusReefRunShare.PostText(5), clientObject.Text);
-        Assert.AreEqual(OctopusReefRunShare.ViewObjectButtonText, clientObject.ViewObjectButtonText);
-        Assert.AreEqual("/cache/share.png", clientObject.ImagePath);
-        Assert.IsNull(clientObject.ImageUrl, "A client object must carry at most one image.");
+        Assert.AreEqual(OctopusLocalizedText.AutoTranslated(OctopusReefRunShare.ViewObjectButtonText), clientObject.ViewObjectButton);
+        Assert.AreEqual(1, clientObject.Medias.Count, "The score carries one image.");
+        Assert.AreEqual("/cache/share.png", clientObject.Medias[0].Path);
         Assert.IsNotNull(clientObject.SignBridgeShare);
         StringAssert.Contains("5", clientObject.CatchPhrase);
     }

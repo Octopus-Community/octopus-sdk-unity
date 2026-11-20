@@ -54,6 +54,7 @@ public partial class OctopusSDK
             ResetProfileMock();
             ResetCommunityDataMock();
             ResetNotSeenNotificationsCount();
+            OctopusSDK.CommunityAccessDeniedReason = null;
             _calls.Clear();
             ResetGroupFollowing();
             NextSetReactionError = null;
@@ -101,6 +102,10 @@ public partial class OctopusSDK
         /// <summary>Simulate a community-access change from native (A/B config or override).</summary>
         public static void EmitHasAccessToCommunity(bool hasAccess) =>
             OctopusSDK.TriggerOnHasAccessToCommunity(hasAccess);
+
+        /// <summary>Simulate a change of the reason the community access is denied (null: access granted).</summary>
+        public static void EmitCommunityAccessDeniedReason(OctopusCommunityAccessDeniedReason? reason) =>
+            OctopusSDK.TriggerOnCommunityAccessDeniedReason(reason);
 
         /// <summary>Simulate the SDK requesting login.</summary>
         public static void EmitLoginRequired() => OctopusSDK.TriggerOnLoginRequired();

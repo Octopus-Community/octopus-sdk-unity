@@ -73,6 +73,82 @@ public class OctopusCommunityAccessTests
         }
     }
 
+    [TestCase("NOT_IN_COHORT", OctopusCommunityAccessDeniedReason.NotInCohort)]
+    [TestCase("COMMUNITY_TEMPORARILY_DISABLED", OctopusCommunityAccessDeniedReason.CommunityTemporarilyDisabled)]
+    [TestCase("COMMUNITY_CLOSED", OctopusCommunityAccessDeniedReason.CommunityClosed)]
+    [TestCase("MEMBER_EXCLUDED", OctopusCommunityAccessDeniedReason.MemberExcluded)]
+    [TestCase("ACCOUNT_BANNED", OctopusCommunityAccessDeniedReason.AccountBanned)]
+    [TestCase("ACCOUNT_DELETED", OctopusCommunityAccessDeniedReason.AccountDeleted)]
+    [TestCase("UNKNOWN", OctopusCommunityAccessDeniedReason.Unknown)]
+    [TestCase("ACCOUNT_SUSPENDED", OctopusCommunityAccessDeniedReason.Unknown)]
+    [TestCase("AccountBanned", OctopusCommunityAccessDeniedReason.Unknown)]
+    public void ParseCommunityAccessDeniedReason_MapsNativeNames(string wire, OctopusCommunityAccessDeniedReason expected)
+    {
+        Assert.AreEqual(expected, OctopusSDK.ParseCommunityAccessDeniedReason(wire));
+    }
+
+    [Test]
+    public void ParseCommunityAccessDeniedReason_EmptyOrNull_IsNoReason()
+    {
+        Assert.IsNull(OctopusSDK.ParseCommunityAccessDeniedReason(""));
+        Assert.IsNull(OctopusSDK.ParseCommunityAccessDeniedReason(null));
+    }
+
+    [Test]
+    public void Channel_OnCommunityAccessDeniedReason_ParsesWireValueAndRaisesEvent()
+    {
+        int calls = 0;
+        OctopusCommunityAccessDeniedReason? seen = null;
+        Action<OctopusCommunityAccessDeniedReason?> handler = v => { calls++; seen = v; };
+        OctopusSDK.OnCommunityAccessDeniedReasonChanged += handler;
+        GameObject go = null;
+        try
+        {
+            go = new GameObject("ch");
+            var channel = go.AddComponent<OctopusSDK.OctopusChannel>();
+
+            channel.OnCommunityAccessDeniedReason("ACCOUNT_BANNED");
+            Assert.AreEqual(1, calls);
+            Assert.AreEqual(OctopusCommunityAccessDeniedReason.AccountBanned, seen);
+            Assert.AreEqual(OctopusCommunityAccessDeniedReason.AccountBanned, OctopusSDK.CommunityAccessDeniedReason);
+
+            channel.OnCommunityAccessDeniedReason("");
+            Assert.AreEqual(2, calls);
+            Assert.IsNull(seen);
+            Assert.IsNull(OctopusSDK.CommunityAccessDeniedReason);
+        }
+        finally
+        {
+            OctopusSDK.OnCommunityAccessDeniedReasonChanged -= handler;
+            if (go != null) UnityEngine.Object.DestroyImmediate(go);
+        }
+    }
+
+    [Test]
+    public void EmitCommunityAccessDeniedReason_RaisesEventAndCachesValue()
+    {
+        OctopusCommunityAccessDeniedReason? seen = null;
+        Action<OctopusCommunityAccessDeniedReason?> h = v => seen = v;
+        OctopusSDK.OnCommunityAccessDeniedReasonChanged += h;
+        try { OctopusSDK.Mock.EmitCommunityAccessDeniedReason(OctopusCommunityAccessDeniedReason.CommunityClosed); }
+        finally { OctopusSDK.OnCommunityAccessDeniedReasonChanged -= h; }
+        Assert.AreEqual(OctopusCommunityAccessDeniedReason.CommunityClosed, seen);
+        Assert.AreEqual(OctopusCommunityAccessDeniedReason.CommunityClosed, OctopusSDK.CommunityAccessDeniedReason);
+        OctopusSDK.Mock.EmitCommunityAccessDeniedReason(null);
+        Assert.IsNull(OctopusSDK.CommunityAccessDeniedReason);
+    }
+
+    [Test]
+    public void Reset_ClearsCommunityAccessDeniedReason()
+    {
+        OctopusSDK.Mock.EmitCommunityAccessDeniedReason(OctopusCommunityAccessDeniedReason.AccountBanned);
+        Assert.AreEqual(OctopusCommunityAccessDeniedReason.AccountBanned, OctopusSDK.CommunityAccessDeniedReason);
+
+        OctopusSDK.Mock.Reset();
+
+        Assert.IsNull(OctopusSDK.CommunityAccessDeniedReason);
+    }
+
     // The result/error channel methods must not throw when the request id is unknown
     // (e.g. a late callback after the entry was already consumed or dropped).
     [Test]

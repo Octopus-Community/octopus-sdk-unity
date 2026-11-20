@@ -91,6 +91,7 @@ var groupsCancellable: AnyCancellable?
 private var profileCancellable: AnyCancellable?
 var eventsCancellable: AnyCancellable?
 var communityAccessCancellable: AnyCancellable?
+var communityAccessDeniedReasonCancellable: AnyCancellable?
 
 // Toggled from C# (OctopusSdkSetUrlInterceptionEnabled). When false the SDK opens URLs
 // itself (in-app browser); when true taps are forwarded to Unity for the host to decide.
@@ -184,7 +185,7 @@ private var eventCallback: EventCallback?
 private var tokenRequestCallback: TokenRequestCallback?
 private var bridgeShareSignCallback: BridgeShareSignCallback?
 private var urlStrategyCallback: UrlStrategyCallback?
-private var bridgeShareSignContinuation: CheckedContinuation<String, Error>?
+private var bridgeShareSignContinuation: CheckedContinuation<String?, Error>?
 private enum BridgeShareSignError: Error { case noCallback, superseded, hostFailed }
 
 @_cdecl("OctopusSdkSetBridgeCallbacks")
@@ -330,6 +331,10 @@ private func configureLifecycleBridge() {
     communityAccessCancellable = octopus?.$hasAccessToCommunity.sink { hasAccess in
         sendUnityMessage("OctopusChannel", "OnHasAccessToCommunity", hasAccess ? "true" : "false")
     }
+    communityAccessDeniedReasonCancellable = octopus?.$communityAccessDeniedReason.sink { reason in
+        sendUnityMessage("OctopusChannel", "OnCommunityAccessDeniedReason",
+                         communityAccessDeniedReasonWireValue(reason))
+    }
     eventsCancellable = octopus?.eventPublisher.sink { event in
         let json = eventToJson(event)
         // Loop-independent lane: delivers even while the Octopus UI is up and the loop is paused.
@@ -413,12 +418,13 @@ public func OctopusSdkOpenPost(postId: UnsafePointer<Int8>, navigationMode: Int3
 
 // Builds the bridge-share signing closure handed to OctopusPrefilledPost. Defined out-of-line so
 // its throwing async body isn't inside the Task { } closure (which otherwise makes Task-init
-// overload resolution ambiguous). The host signs on its backend; if it can't (no callback, or the
-// host signer throws / returns empty) we THROW so the SDK aborts the post with a clean error rather
-// than publishing an empty signature, which the server rejects and leaves the editor spinning.
-private func makeBridgeShareSignClosure() -> @Sendable (_ bridgeFingerprint: String) async throws -> String {
+// overload resolution ambiguous). The host signs on its backend; when it can't (no callback, or the
+// host signer throws / returns empty) we return nil, as Android's bridgeShareTokenProvider does: the
+// SDK sends the post unsigned and the server decides, publishing it where the community allows
+// member pictures and refusing it, with the editor's error, where it does not.
+private func makeBridgeShareSignClosure() -> @Sendable (_ bridgeFingerprint: String) async throws -> String? {
     return { fingerprint in
-        guard let cb = bridgeShareSignCallback else { throw BridgeShareSignError.noCallback }
+        guard let cb = bridgeShareSignCallback else { return nil }
         return try await withCheckedThrowingContinuation { continuation in
             // Register the continuation BEFORE invoking C#. The C# callback can resolve synchronously
             // (a host signer that throws or returns immediately runs entirely inside cb($0)), firing
@@ -433,23 +439,30 @@ private func makeBridgeShareSignClosure() -> @Sendable (_ bridgeFingerprint: Str
 
 @_cdecl("OctopusSdkOpenCreatePost")
 public func OctopusSdkOpenCreatePost(
-    text: UnsafePointer<Int8>, topicId: UnsafePointer<Int8>, imagePath: UnsafePointer<Int8>,
-    ctaLabel: UnsafePointer<Int8>, ctaUrl: UnsafePointer<Int8>, hasSigner: Int32, navigationMode: Int32
+    text: UnsafePointer<Int8>, topicId: UnsafePointer<Int8>, imagePathsJson: UnsafePointer<Int8>,
+    ctaLabelJson: UnsafePointer<Int8>, ctaUrl: UnsafePointer<Int8>, hasSigner: Int32, navigationMode: Int32
 ) {
     let textStr = String(cString: text)
     let topicStr = String(cString: topicId)
-    let pathStr = String(cString: imagePath)
-    let ctaLabelStr = String(cString: ctaLabel)
+    let paths = imagePathsFromJson(String(cString: imagePathsJson))
+    let ctaLabelStr = String(cString: ctaLabelJson)
     let ctaUrlStr = String(cString: ctaUrl)
     let wantsSigner = hasSigner != 0
     Task {
-        let imageData = pathStr.isEmpty ? nil : await fetchImageData(fromPathOrUrl: pathStr)
+        // An image that cannot be read is left out, as the single image was before.
+        var images: [Data] = []
+        for path in paths {
+            if let data = await fetchImageData(fromPathOrUrl: path) { images.append(data) }
+        }
 
-        // CTA marshalling guarantees both fields are set together (or both empty).
+        // CTA marshalling guarantees both fields are set together (or both empty). A label the native
+        // SDK refuses leaves the CTA out, as the Kotlin bridge does.
         var cta: OctopusPrefilledPost.CTA? = nil
         if !ctaLabelStr.isEmpty, !ctaUrlStr.isEmpty, let url = URL(string: ctaUrlStr) {
             do {
-                cta = try OctopusPrefilledPost.CTA(url: url, label: ctaLabelStr)
+                if let label = try localizedTextFromJson(ctaLabelStr) {
+                    cta = try OctopusPrefilledPost.CTA(url: url, localizedLabel: label)
+                }
             } catch {
                 print("OctopusSdkOpenCreatePost: invalid CTA (\(error)); dropping CTA")
             }
@@ -458,13 +471,13 @@ public func OctopusSdkOpenCreatePost(
         // Hand the SDK-computed fingerprint to C# over the loop-independent lane; await the JWT.
         // The closure is built out-of-line (see makeBridgeShareSignClosure) to keep its throwing
         // async body out of this Task { } closure.
-        let sign: (@Sendable (_ bridgeFingerprint: String) async throws -> String)? =
+        let sign: (@Sendable (_ bridgeFingerprint: String) async throws -> String?)? =
             wantsSigner ? makeBridgeShareSignClosure() : nil
 
-        // Since iOS 1.13.0 text and image are both optional, so a topic-only (or CTA-only)
+        // Since iOS 1.13.0 text and images are both optional, so a topic-only (or CTA-only)
         // request builds a real payload instead of being downgraded to the empty editor —
         // same shape as the Kotlin bridge's openCreatePost. init still throws on content
-        // that fails the editor's publish-time validation; that falls back to nil.
+        // that fails the editor's publish-time validation; see makePrefilledPost.
         //
         // A fully empty request (OpenCreatePost() with no prefill) must stay `nil`: iOS
         // records the post's creationSource from the presence of the prefilled object
@@ -472,24 +485,114 @@ public func OctopusSdkOpenCreatePost(
         // content — so a non-nil empty prefill would make a blank editor report
         // prefilledFromClient on iOS only.
         let info: OctopusInitialScreen.CreatePostScreenInfo
-        if textStr.isEmpty, imageData == nil, topicStr.isEmpty, cta == nil {
+        if textStr.isEmpty, images.isEmpty, topicStr.isEmpty, cta == nil {
             info = .init(prefilledPost: nil)
         } else {
-            do {
-                let prefilled = try OctopusPrefilledPost(
-                    text: textStr.isEmpty ? nil : textStr,
-                    image: imageData,
-                    topicId: topicStr.isEmpty ? nil : topicStr,
-                    cta: cta,
-                    sign: sign
-                )
-                info = .init(prefilledPost: prefilled)
-            } catch {
-                print("OctopusSdkOpenCreatePost: invalid prefilled post (\(error)); opening empty editor")
-                info = .init(prefilledPost: nil)
-            }
+            info = .init(prefilledPost: makePrefilledPost(
+                text: textStr.isEmpty ? nil : textStr, images: images,
+                topicId: topicStr.isEmpty ? nil : topicStr, cta: cta, sign: sign))
         }
         presentHome(initialScreen: .createPost(info), payloadJson: nil, navigationMode: navigationMode)
+    }
+}
+
+// The OctopusLocalizedText JSON C# sends: {"text":"…"} when auto-translated,
+// {"defaultLanguage":"en","texts":{"en":"…","fr":"…"}} when given per language, the tags as the app wrote
+// them. nil for an empty or malformed wire, or an empty auto-translated text. The only conversion is the
+// one the Kotlin bridge makes too: "_" read as "-" (a hyphenated identifier keeps its script), then
+// Locale(identifier:); the native perLanguage validates and throws OctopusLocalizedText.ValidationError.
+// Two tags giving the same Locale cannot both be kept in its dictionary: they are refused rather than
+// one text being dropped, with what the native SDK reports for them: emptyLanguage for a locale without
+// a language ("", "und"), duplicateLanguage otherwise.
+func localizedTextFromJson(_ json: String) throws -> OctopusLocalizedText? {
+    guard let data = json.data(using: .utf8),
+          let row = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+    return try localizedText(from: row)
+}
+
+func localizedText(from row: [String: Any]) throws -> OctopusLocalizedText? {
+    guard let rawTexts = row["texts"] as? [String: Any] else {
+        guard let text = row["text"] as? String, !text.isEmpty else { return nil }
+        return .autoTranslated(text)
+    }
+    var texts: [Locale: String] = [:]
+    // Sorted, so the duplicate reported does not depend on the order of the dictionary.
+    for (tag, text) in rawTexts.sorted(by: { $0.key < $1.key }) {
+        let locale = localeFromTag(tag)
+        guard texts.updateValue(text as? String ?? "", forKey: locale) == nil else {
+            guard let code = languageCode(of: locale) else {
+                throw OctopusLocalizedText.ValidationError(kind: .emptyLanguage)
+            }
+            throw OctopusLocalizedText.ValidationError(kind: .duplicateLanguage, languageCode: code)
+        }
+    }
+    return try .perLanguage(texts, defaultLanguage: localeFromTag(row["defaultLanguage"] as? String ?? ""))
+}
+
+func localeFromTag(_ tag: String) -> Locale {
+    Locale(identifier: tag.replacingOccurrences(of: "_", with: "-"))
+}
+
+// The code the native SDK sends for a locale (language, script, region of its identifier), for the
+// duplicateLanguage this bridge raises itself; nil for a locale without a language ("" or "und", which
+// the native SDK refuses as emptyLanguage).
+private func languageCode(of locale: Locale) -> String? {
+    let components = Locale.components(fromIdentifier: locale.identifier)
+    let language = components[NSLocale.Key.languageCode.rawValue] ?? ""
+    guard !language.isEmpty, language.lowercased() != "und" else { return nil }
+    let parts = [components[NSLocale.Key.languageCode.rawValue],
+                 components[NSLocale.Key.scriptCode.rawValue],
+                 components[NSLocale.Key.countryCode.rawValue]]
+    let code = parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "-")
+    return code.isEmpty ? nil : code
+}
+
+// The wire name of a native OctopusLocalizedText.ValidationError kind, as C# reads it; nil for a kind
+// this bridge does not know, which C# reports without a kind.
+func localizedTextErrorKind(_ error: OctopusLocalizedText.ValidationError) -> String? {
+    switch error.kind {
+    case .emptyTexts: return "emptyTexts"
+    case .blankText: return "blankText"
+    case .emptyLanguage: return "emptyLanguage"
+    case .duplicateLanguage: return "duplicateLanguage"
+    case .defaultLanguageMissing: return "defaultLanguageMissing"
+    @unknown default: return nil
+    }
+}
+
+// The JSON array of local paths C# sends ("[]" when there is no image); empty entries are dropped.
+func imagePathsFromJson(_ json: String) -> [String] {
+    guard let data = json.data(using: .utf8),
+          let paths = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else { return [] }
+    return paths.compactMap { $0 as? String }.filter { !$0.isEmpty }
+}
+
+// The native prefilled post for these fields, or nil when even the image-less payload is refused.
+// iOS validates the images eagerly (decode, size, ratio), unlike Android, whose editor drops only
+// the image it cannot use. So a refused payload is built again with the images that pass on their
+// own; when that fails too, the text was the problem and the editor opens empty.
+// TooManyImagesError only guards a native maximum that moved, since C# refuses more images first
+// (OctopusPrefilledPostMarshal): the first `max` images are kept.
+func makePrefilledPost(
+    text: String?, images: [Data], topicId: String?, cta: OctopusPrefilledPost.CTA?,
+    sign: (@Sendable (_ bridgeFingerprint: String) async throws -> String?)?
+) -> OctopusPrefilledPost? {
+    do {
+        return try OctopusPrefilledPost(text: text, images: images, topicId: topicId, cta: cta, sign: sign)
+    } catch let error as OctopusPrefilledPost.TooManyImagesError {
+        print("OctopusSdkOpenCreatePost: \(error.count) images, keeping the first \(error.max)")
+        return makePrefilledPost(text: text, images: Array(images.prefix(error.max)), topicId: topicId,
+                                 cta: cta, sign: sign)
+    } catch {
+        let usable = images.filter { (try? OctopusPrefilledPost(images: [$0])) != nil }
+        do {
+            let prefilled = try OctopusPrefilledPost(text: text, images: usable, topicId: topicId, cta: cta, sign: sign)
+            print("OctopusSdkOpenCreatePost: \(images.count - usable.count) image(s) rejected (\(error)); opening the editor without them")
+            return prefilled
+        } catch {
+            print("OctopusSdkOpenCreatePost: invalid prefilled post (\(error)); opening empty editor")
+            return nil
+        }
     }
 }
 
@@ -614,8 +717,13 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
             )
             let view: AnyView
             if opensProfile {
-                view = AnyView(OctopusProfileScreen(
-                    octopus: sdk, clientUserId: profileClientUserId,
+                // OctopusHomeScreen on its .profile initial screen, exactly what the deprecated native
+                // OctopusProfileScreen now builds: like every initial screen, it is replaced by the access
+                // denied screen when the user cannot access the community.
+                let profile: OctopusInitialScreen.ProfileScreenInfo =
+                    profileClientUserId.map { .init(clientUserId: $0) } ?? .currentUser
+                view = AnyView(OctopusHomeScreen(
+                    octopus: sdk, initialScreen: .profile(profile),
                     navigationMode: decodeNavigationMode(navigationMode, profile: true),
                     navBarLeadingAction: .close(onTap: { OctopusSdkClose() })
                 ))
@@ -651,6 +759,22 @@ private func presentHome(initialScreen: OctopusInitialScreen, payloadJson: Strin
             }
             presentingVC.present(octopusController!, animated: true)
         }
+    }
+}
+
+/// The wire value of a native access denied reason: the Android enum name, empty for no reason. A case a
+/// newer native SDK adds goes out as UNKNOWN, which is also what C# maps any name it does not know to.
+private func communityAccessDeniedReasonWireValue(_ reason: OctopusCommunityAccessDeniedReason?) -> String {
+    guard let reason else { return "" }
+    switch reason {
+    case .notInCohort: return "NOT_IN_COHORT"
+    case .communityTemporarilyDisabled: return "COMMUNITY_TEMPORARILY_DISABLED"
+    case .communityClosed: return "COMMUNITY_CLOSED"
+    case .memberExcluded: return "MEMBER_EXCLUDED"
+    case .accountBanned: return "ACCOUNT_BANNED"
+    case .accountDeleted: return "ACCOUNT_DELETED"
+    case .unknown: return "UNKNOWN"
+    @unknown default: return "UNKNOWN"
     }
 }
 
@@ -855,6 +979,7 @@ public func OctopusSdkStop(requestId: Int32) {
         profileCancellable = nil
         eventsCancellable = nil
         communityAccessCancellable = nil
+        communityAccessDeniedReasonCancellable = nil
         octopus = nil
         sendUnityMessage("OctopusChannel", "OnLifecycleResult", "\(requestId)\n")
     }
@@ -995,7 +1120,7 @@ public func OctopusSdkSetUserToken(token: UnsafePointer<Int8>) {
 @_cdecl("OctopusSdkSetBridgeShareSignature")
 public func OctopusSdkSetBridgeShareSignature(token: UnsafePointer<Int8>) {
     // Success path only: C# routes empty/null/failed results through OctopusSdkFailBridgeShareSignature
-    // (which resumes throwing), so tokenStr is always a real JWT here.
+    // (which resumes with nil), so tokenStr is always a real JWT here.
     let tokenStr = String(cString: token)
     bridgeShareSignContinuation?.resume(returning: tokenStr)
     bridgeShareSignContinuation = nil
@@ -1003,9 +1128,10 @@ public func OctopusSdkSetBridgeShareSignature(token: UnsafePointer<Int8>) {
 
 @_cdecl("OctopusSdkFailBridgeShareSignature")
 public func OctopusSdkFailBridgeShareSignature() {
-    // Host couldn't sign -> throw into the SDK so it aborts the post with a clean error
-    // (rather than publishing an empty/invalid signature).
-    bridgeShareSignContinuation?.resume(throwing: BridgeShareSignError.hostFailed)
+    // Host couldn't sign -> nil: the SDK sends the post unsigned and the server decides (published
+    // where member pictures are allowed, refused with the editor's error where they are not), as on
+    // Android, where the bridge maps the same empty reply to a null token.
+    bridgeShareSignContinuation?.resume(returning: nil)
     bridgeShareSignContinuation = nil
 }
 
@@ -1824,6 +1950,8 @@ private func eventToJson(_ e: OctopusEvent) -> String {
             o["screen"] = "SettingsAccount"
         case .reportExplanation:
             o["screen"] = "ReportExplanation"
+        case .communityAccessDenied:
+            o["screen"] = "CommunityAccessDenied"
         case .deleteAccount:
             o["screen"] = "DeleteAccount"
         @unknown default:
@@ -2048,7 +2176,9 @@ public func OctopusSdkDebugOverrideContentOptions(json: UnsafePointer<CChar>) {
             post: ContentOptions.PostOptions(
                 enablePictures: $0["postEnablePictures"] as? Bool ?? true,
                 enablePolls: $0["postEnablePolls"] as? Bool ?? true,
-                textRequired: $0["postTextRequired"] as? Bool ?? true),
+                textRequired: $0["postTextRequired"] as? Bool ?? true,
+                imageTapOpensPost: $0["postImageTapOpensPost"] as? Bool ?? false,
+                groupNameTapOpensGroup: $0["postGroupNameTapOpensGroup"] as? Bool ?? false),
             comment: ContentOptions.CommentOptions(enablePictures: $0["commentEnablePictures"] as? Bool ?? true),
             reply: ContentOptions.ReplyOptions(enablePictures: $0["replyEnablePictures"] as? Bool ?? true))
     }
@@ -2224,31 +2354,43 @@ public func OctopusSdkFetchOrCreateClientObjectRelatedPost(
         }
         do {
             guard let data = payload.data(using: .utf8),
-                  let row = try JSONSerialization.jsonObject(with: data) as? [String: String],
-                  let objectId = row["objectId"], !objectId.isEmpty else {
+                  let row = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let objectId = row["objectId"] as? String, !objectId.isEmpty else {
                 sendClientPostError(requestId, "missingObjectId", "An object id is required")
                 return
             }
             func optional(_ key: String) -> String? {
-                guard let value = row[key], !value.isEmpty else { return nil }
+                guard let value = row[key] as? String, !value.isEmpty else { return nil }
                 return value
             }
-            var attachment: Octopus.ClientPost.Attachment?
-            if let path = optional("imagePath") {
-                let bytes = try await Task.detached { try Data(contentsOf: URL(fileURLWithPath: path)) }.value
-                attachment = .localImage(bytes)
-            } else if let remote = optional("imageUrl") {
-                guard let url = URL(string: remote), let scheme = url.scheme?.lowercased(),
-                      ["https", "http"].contains(scheme), url.host != nil else {
-                    sendClientPostError(requestId, "fileDownload", "An absolute HTTP(S) image URL is required")
-                    return
+            // C# sends the deprecated single image as the only element, and refuses more than
+            // the native maximum first; a larger list still reaches the native SDK, which refuses it.
+            var medias: [Octopus.ClientPost.Attachment] = []
+            for media in (row["medias"] as? [[String: String]]) ?? [] {
+                if let path = media["path"], !path.isEmpty {
+                    let bytes = try await Task.detached { try Data(contentsOf: URL(fileURLWithPath: path)) }.value
+                    medias.append(.localImage(bytes))
+                } else if let remote = media["url"], !remote.isEmpty {
+                    guard let url = URL(string: remote), let scheme = url.scheme?.lowercased(),
+                          ["https", "http"].contains(scheme), url.host != nil else {
+                        sendClientPostError(requestId, "fileDownload", "An absolute HTTP(S) image URL is required")
+                        return
+                    }
+                    medias.append(.distantImage(url))
                 }
-                attachment = .distantImage(url)
             }
             try Task.checkCancellation()
+            let button: OctopusLocalizedText?
+            do {
+                button = try (row["viewObjectButton"] as? [String: Any]).flatMap { try localizedText(from: $0) }
+            } catch let error as OctopusLocalizedText.ValidationError {
+                sendClientPostError(requestId, "invalidLocalizedText", error.debugDescription,
+                                    localizedTextError: localizedTextErrorKind(error), languageCode: error.languageCode)
+                return
+            }
             let content = Octopus.ClientPost(clientObjectId: objectId, groupId: optional("groupId"),
-                text: row["text"] ?? "", catchPhrase: optional("catchPhrase"), attachment: attachment,
-                viewClientObjectButtonText: optional("viewObjectButtonText"))
+                text: optional("text") ?? "", catchPhrase: optional("catchPhrase"), medias: medias,
+                viewClientObjectButton: button)
             let signer: @Sendable (String) async throws -> String? = { fingerprint in
                 if hasSigner == 0 { return nil }
                 return try await requestClientPostSignature(requestId, fingerprint)
@@ -2325,8 +2467,11 @@ private func clientPostReactionToken(_ kind: OctopusReactionKind) -> String {
     }
 }
 
-private func sendClientPostError(_ requestId: Int32, _ type: String, _ message: String) {
-    let row = ["type": type, "message": message]
+private func sendClientPostError(_ requestId: Int32, _ type: String, _ message: String,
+                                 localizedTextError: String? = nil, languageCode: String? = nil) {
+    var row = ["type": type, "message": message]
+    if let localizedTextError { row["localizedTextError"] = localizedTextError }
+    if let languageCode { row["languageCode"] = languageCode }
     guard let data = try? JSONSerialization.data(withJSONObject: row),
           let json = String(data: data, encoding: .utf8) else { return }
     sendUnityMessage("OctopusChannel", "OnClientPostError", "\(requestId)\n\(json)")
@@ -2373,7 +2518,7 @@ private let iosIconKeys: Set<String> = [
     "content.poll.selectedOption",
     "content.reaction.heart", "content.reaction.joy", "content.reaction.mouthOpen",
     "content.reaction.clap", "content.reaction.cry", "content.reaction.rage",
-    "content.delete", "content.report",
+    "content.delete", "content.report", "content.translation",
     "profile.addPicture", "profile.editPicture", "profile.addBio",
     "profile.emptyNotifications", "profile.report", "profile.notConnected", "profile.blockUser",
     "gamification.badge", "gamification.info", "gamification.rulesHeader",
@@ -2450,7 +2595,8 @@ private func bridgeIcons(_ images: [String: UIImage]) -> OctopusTheme.Assets.Ico
                 cry: images["content.reaction.cry"],
                 rage: images["content.reaction.rage"]),
             delete: images["content.delete"],
-            report: images["content.report"]),
+            report: images["content.report"],
+            translation: images["content.translation"]),
         profile: Icons.Profile(
             addPicture: images["profile.addPicture"],
             editPicture: images["profile.editPicture"],

@@ -8,7 +8,7 @@ public sealed class InitialScreenScenario : OctopusScenarioPilot
         new OctopusScenarioField("preset", "Destination (preset number 1–11)"),
         new OctopusScenarioField("postId", "Post id (presets 2 & 5; auto uses the last Bridge post)"),
         new OctopusScenarioField("groupId", "Group (presets 3, 4 & 6; auto selects General / first, none skips)"),
-        new OctopusScenarioField("text", "Prefill text (10–5000 characters)"),
+        new OctopusScenarioField("text", "Prefill text (up to 5000 characters)"),
         new OctopusScenarioField("ctaLabel", "CTA label (optional; none skips)"),
         new OctopusScenarioField("ctaUrl", "CTA url (optional; none skips)"),
         new OctopusScenarioField("profileId", "Member profileId (preset 9)"),
@@ -129,18 +129,22 @@ public sealed class InitialScreenScenario : OctopusScenarioPilot
             if (preset == 4 || preset == 6)
             {
                 var text = fields.Get("text");
-                if (text.Length < 10 || text.Length > 5000)
-                { Report("OctopusPrefilledPost rejected: text must contain 10–5000 characters. The editor was not opened."); return; }
+                if (text.Length > 5000)
+                { Report("OctopusPrefilledPost rejected: text must contain at most 5000 characters. The editor was not opened."); return; }
                 var label = Optional(fields.Get("ctaLabel"));
                 var url = Optional(fields.Get("ctaUrl"));
                 Uri parsed;
                 if ((label != null || url != null) && (label == null || url == null ||
                     !Uri.TryCreate(url, UriKind.Absolute, out parsed) || (parsed.Scheme != "http" && parsed.Scheme != "https")))
                 { Report("OctopusPrefilledPost rejected: CTA needs a label and an absolute HTTP(S) URL, or both fields empty / none."); return; }
-                prefill = new OctopusPrefilledPost { Text = text, CtaLabel = label, CtaUrl = url };
+                prefill = new OctopusPrefilledPost
+                {
+                    Text = text, CtaUrl = url,
+                    CtaLocalizedLabel = label == null ? null : OctopusLocalizedText.AutoTranslated(label)
+                };
                 if (preset == 6)
                 {
-                    prefill.ImagePath = sdk.PrepareBundledShareImage();
+                    prefill.ImagePaths.Add(sdk.PrepareBundledShareImage());
                     prefill.SignBridgeShare = sdk.SignBridgeShare;
                 }
             }

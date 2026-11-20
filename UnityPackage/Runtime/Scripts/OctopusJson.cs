@@ -158,7 +158,7 @@ internal static partial class OctopusJson
         return sb.ToString();
     }
 
-    static string Escape(string s)
+    internal static string Escape(string s)
     {
         if (string.IsNullOrEmpty(s)) return "";
         var sb = new StringBuilder(s.Length);

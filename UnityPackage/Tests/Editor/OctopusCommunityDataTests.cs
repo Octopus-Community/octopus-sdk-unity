@@ -142,6 +142,43 @@ public class OctopusCommunityDataTests
         Assert.IsNull(data.Gamification);
     }
 
+    [TestCase(320)]
+    [TestCase(0)]
+    [TestCase(null)]
+    public void Fetch_NativeResultPreservesTotalPointsAndNull(int? score)
+    {
+        OctopusCommunityData result = null;
+        int request = OctopusSDK.RegisterCommunityDataRequest(data => result = data, error => Assert.Fail(error));
+        _channel.OnFetchCommunityDataResult(request + "\n" + CommunityDataPayload(score));
+        Assert.IsNull(result);
+        Drain();
+        Assert.IsNotNull(result);
+        Assert.AreEqual(4, result.Gamification.Level);
+        Assert.AreEqual(score, result.Gamification.Score);
+    }
+
+    [TestCase(320)]
+    [TestCase(0)]
+    [TestCase(null)]
+    public void Observation_NativeUpdatePreservesTotalPointsAndNull(int? score)
+    {
+        OctopusSDK.StartObservingCommunityData(Member);
+        Drain();
+        _updates.Clear();
+        _channel.OnCommunityDataChanged(CommunityDataPayload(score));
+        Assert.IsEmpty(_updates);
+        Drain();
+        Assert.AreEqual(1, _updates.Count);
+        Assert.AreEqual(4, _updates[0].Gamification.Level);
+        Assert.AreEqual(score, _updates[0].Gamification.Score);
+    }
+
+    private static string CommunityDataPayload(int? score)
+    {
+        return "{\"profileId\":\"member\",\"gamification\":{\"level\":4,\"score\":" +
+            (score.HasValue ? score.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "null") + "}}";
+    }
+
     [TestCase(null)]
     [TestCase("")]
     [TestCase(" null ")]

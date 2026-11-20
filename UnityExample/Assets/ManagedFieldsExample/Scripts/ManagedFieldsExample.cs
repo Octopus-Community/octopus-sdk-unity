@@ -115,18 +115,21 @@ public class ManagedFieldsExample : MonoBehaviour
         MessageContent = "";
         UpdateUI();
 
-        await OctopusSDK.ConnectUser(
-            config.userId,
-            NicknameInput.text,
-            BioInput.text,
-            PICTURES[SelectedPicture],
-            GetToken
-        );
-
-        IsLoading = false;
-        UpdateUI();
-
-        OctopusSDK.Open();
+        try
+        {
+            await OctopusSDK.ConnectUser(config.userId, NicknameInput.text, BioInput.text,
+                PICTURES[SelectedPicture], GetToken);
+            OctopusSDK.Open();
+        }
+        catch (System.Exception e)
+        {
+            MessageContent = "Connection failed: " + e.Message;
+        }
+        finally
+        {
+            IsLoading = false;
+            UpdateUI();
+        }
     }
 
     public async Task<string> GetToken()

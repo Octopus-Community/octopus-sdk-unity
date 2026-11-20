@@ -4,6 +4,7 @@ public sealed class CommunityAccessScenario : CommunityScenarioPilot
 {
     private bool _observing;
     private bool _access;
+    private OctopusCommunityAccessDeniedReason? _reason;
     private string _outcome = "Observing community access.";
 
     public CommunityAccessScenario() : base("communityAccess",
@@ -16,7 +17,7 @@ public sealed class CommunityAccessScenario : CommunityScenarioPilot
     }
 
     public override IReadOnlyList<string> ApiSymbols
-    { get { return new[] { "OverrideCommunityAccess", "TrackAccessToCommunity", "HasAccessToCommunity", "OnHasAccessToCommunityChanged" }; } }
+    { get { return new[] { "OverrideCommunityAccess", "TrackAccessToCommunity", "HasAccessToCommunity", "OnHasAccessToCommunityChanged", "CommunityAccessDeniedReason", "OnCommunityAccessDeniedReasonChanged" }; } }
     public override string ParameterNotice
     { get { return "Override controls access. Track is analytics only and does not grant access."; } }
 
@@ -30,6 +31,8 @@ public sealed class CommunityAccessScenario : CommunityScenarioPilot
         EnsureObserving(sdk);
         Announce("HasAccessToCommunity.get");
         _access = sdk.HasAccessToCommunity;
+        Announce("CommunityAccessDeniedReason.get");
+        _reason = sdk.CommunityAccessDeniedReason;
         if (action == "track")
         {
             Announce("TrackAccessToCommunity", "hasAccess=" + access);
@@ -51,6 +54,10 @@ public sealed class CommunityAccessScenario : CommunityScenarioPilot
             Announce("OnHasAccessToCommunityChanged +=");
             Observe<bool>(h => sdk.OnHasAccessToCommunityChanged += h, h => { Announce("OnHasAccessToCommunityChanged -="); sdk.OnHasAccessToCommunityChanged -= h; },
                 (owner, value) => ((CommunityAccessScenario)owner).Changed(value));
+            Announce("OnCommunityAccessDeniedReasonChanged +=");
+            Observe<OctopusCommunityAccessDeniedReason?>(h => sdk.OnCommunityAccessDeniedReasonChanged += h,
+                h => { Announce("OnCommunityAccessDeniedReasonChanged -="); sdk.OnCommunityAccessDeniedReasonChanged -= h; },
+                (owner, value) => ((CommunityAccessScenario)owner).ReasonChanged(value));
             _observing = true;
         }
     }
@@ -61,6 +68,16 @@ public sealed class CommunityAccessScenario : CommunityScenarioPilot
         if (IsRunning) ReportRunning(Line()); else Report(Line());
     }
 
+    private void ReasonChanged(OctopusCommunityAccessDeniedReason? reason)
+    {
+        _reason = reason;
+        if (IsRunning) ReportRunning(Line()); else Report(Line());
+    }
+
     private void Finish(string outcome) { _outcome = outcome; Report(Line()); }
-    private string Line() { return _outcome + "\nhasAccessToCommunity: " + _access; }
+    private string Line()
+    {
+        return _outcome + "\nhasAccessToCommunity: " + _access +
+            "\ncommunityAccessDeniedReason: " + (_reason.HasValue ? _reason.Value.ToString() : "null");
+    }
 }

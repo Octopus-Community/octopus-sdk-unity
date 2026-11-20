@@ -12,24 +12,47 @@ public partial class OctopusSDK
         internal Action Success;
         internal Action<OctopusClientUserError> Error;
         internal volatile OctopusClientUserError TokenError;
+        internal bool PostToMainThread;
+    }
+
+    // Read the connection id and provider together: a new connect must never lend its provider
+    // to an older native request. Stop/Initialize already release TokenProvider by setting null.
+    private static readonly object _tokenProviderLock = new object();
+    private static int _tokenProviderConnectionId;
+
+    internal static Func<Task<string>> TokenProviderForConnection(int id)
+    {
+        lock (_tokenProviderLock)
+        {
+            return id == _tokenProviderConnectionId ? TokenProvider : null;
+        }
     }
 
     private static int _nextConnectUserRequestId;
     private static readonly ConcurrentDictionary<int, ConnectUserCallbacks> _connectUserCallbacks
         = new ConcurrentDictionary<int, ConnectUserCallbacks>();
 
-    /// <summary>Connects a user with typed success/error callbacks, leaving the Task overload unchanged.
+    /// <summary>Connects a user with typed success/error callbacks.
     /// Call on the Unity main thread after Initialize in SSO mode. Serialize connection calls:
     /// the SDK retains one token provider for the session. Profile strings may be null.
     /// The provider must use loop-independent I/O and may run on a background thread, including
     /// during later token refreshes. Empty tokens fail with MissingToken; provider exceptions use Other.
+    /// Token requests wait for the host provider without a deadline, including interactive login.
+    /// On Android, stopping or replacing the SDK session cancels pending token requests.
     /// Callbacks run on a subsequent Unity update and wait while native UI pauses the game.
     /// Unclassified native and transport failures use Other. Android classifies the first validation error.</summary>
     public static void ConnectUser(string userId, string nickname, string bio, string picture,
         Func<Task<string>> tokenProvider, Action onSuccess, Action<OctopusClientUserError> onError)
     {
+        ConnectUserCore(userId, nickname, bio, picture, tokenProvider, onSuccess, onError, true);
+    }
+
+    private static void ConnectUserCore(string userId, string nickname, string bio, string picture,
+        Func<Task<string>> tokenProvider, Action onSuccess, Action<OctopusClientUserError> onError,
+        bool postToMainThread)
+    {
         OctopusMainThread.EnsureExists();
-        int id = RegisterConnectUserCallbacks(onSuccess, onError);
+        int id = RegisterConnectUserCallbacks(onSuccess, onError, postToMainThread);
         if (string.IsNullOrEmpty(userId))
         {
             CompleteConnectUser(id, new OctopusClientUserError(
@@ -44,7 +67,11 @@ public partial class OctopusSDK
         }
         // Retained for native refresh requests after the initial connect, just like the legacy API.
         Func<Task<string>> provider = () => GetConnectUserToken(id, tokenProvider);
-        TokenProvider = provider;
+        lock (_tokenProviderLock)
+        {
+            TokenProvider = provider;
+            _tokenProviderConnectionId = id;
+        }
         try
         {
 #if UNITY_EDITOR
@@ -90,10 +117,14 @@ public partial class OctopusSDK
         if (_connectUserCallbacks.TryGetValue(id, out callbacks)) callbacks.TokenError = error;
     }
 
-    internal static int RegisterConnectUserCallbacks(Action success, Action<OctopusClientUserError> error)
+    internal static int RegisterConnectUserCallbacks(Action success, Action<OctopusClientUserError> error,
+        bool postToMainThread = true)
     {
         int id = Interlocked.Increment(ref _nextConnectUserRequestId);
-        _connectUserCallbacks[id] = new ConnectUserCallbacks { Success = success, Error = error };
+        _connectUserCallbacks[id] = new ConnectUserCallbacks
+        {
+            Success = success, Error = error, PostToMainThread = postToMainThread
+        };
         return id;
     }
 
@@ -104,11 +135,15 @@ public partial class OctopusSDK
         // Wait for native completion even when token acquisition failed: iOS can connect as a
         // guest after an empty token. That fallback must not report success for the requested user.
         error = callbacks.TokenError ?? error;
-        OctopusMainThread.Post(() =>
+        Action complete = () =>
         {
             if (error == null) callbacks.Success?.Invoke();
             else callbacks.Error?.Invoke(error);
-        });
+        };
+        // Task registrations only complete their TCS here; user continuations run asynchronously.
+        // Callback registrations retain their documented next-Unity-update delivery.
+        if (callbacks.PostToMainThread) OctopusMainThread.Post(complete);
+        else complete();
     }
 
     internal static void ReceiveConnectUserResult(string payload, bool failed)

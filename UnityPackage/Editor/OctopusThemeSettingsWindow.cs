@@ -38,7 +38,8 @@ public class OctopusThemeSettingsWindow : EditorWindow
         "Body 2",
         "Caption 1",
         "Caption 2",
-        "Nav Bar Item"
+        "Nav Bar Item",
+        "Nav Title (Android)"
     };
 
     // Default font sizes for each style
@@ -50,7 +51,8 @@ public class OctopusThemeSettingsWindow : EditorWindow
         14f,  // Body 2
         12f,  // Caption 1
         10f,  // Caption 2
-        16f   // Nav Bar Item
+        16f,  // Nav Bar Item
+        0f    // Nav Bar Title (Android): keep the bar's size unless explicitly overridden
     };
 
     [MenuItem("Octopus SDK/Theme Configuration", false, 100)]
@@ -552,11 +554,8 @@ public class OctopusThemeSettingsWindow : EditorWindow
         EditorGUI.EndDisabledGroup();
 
         // Font Style Configuration section
-        if (fontList.Count > 0)
-        {
-            EditorGUILayout.Space(10);
-            DrawFontStyleConfigurations();
-        }
+        EditorGUILayout.Space(10);
+        DrawFontStyleConfigurations();
 
         EditorGUILayout.EndVertical();
     }
@@ -591,6 +590,8 @@ public class OctopusThemeSettingsWindow : EditorWindow
 
         for (int i = 0; i < FontStyleNames.Length; i++)
         {
+            bool isNavTitle = i == (int)OctopusThemeSettings.FontStyleType.NavBarTitle;
+            if (!isNavTitle && fontList.Count == 0) continue;
             var config = fontStyles[i];
             if (config == null)
             {
@@ -609,11 +610,11 @@ public class OctopusThemeSettingsWindow : EditorWindow
                 config.enabled = newEnabled;
                 if (newEnabled)
                 {
-                    if (config.fontSize <= 0)
+                    if (config.fontSize <= 0 && !isNavTitle)
                     {
                         config.fontSize = DefaultFontSizes[i];
                     }
-                    if (config.fontIndex < 0 && fontList.Count > 0)
+                    if (config.fontIndex < 0 && fontList.Count > 0 && !isNavTitle)
                     {
                         config.fontIndex = 0;
                     }
@@ -622,19 +623,27 @@ public class OctopusThemeSettingsWindow : EditorWindow
             }
 
             // Style name label
-            EditorGUILayout.LabelField(FontStyleNames[i], GUILayout.Width(90));
+            EditorGUILayout.LabelField(FontStyleNames[i], GUILayout.Width(125));
 
             // Font dropdown and size (only enabled when checkbox is checked)
             EditorGUI.BeginDisabledGroup(!config.enabled);
 
             // Font dropdown (direct index, no offset)
             int dropdownIndex = config.fontIndex;
+            string[] styleFontOptions = fontOptionsArray;
+            if (isNavTitle)
+            {
+                var titleOptions = new List<string> { "(Bar default)" };
+                titleOptions.AddRange(fontOptions);
+                styleFontOptions = titleOptions.ToArray();
+                dropdownIndex++;
+            }
             if (dropdownIndex < 0) dropdownIndex = 0;
             EditorGUI.BeginChangeCheck();
-            int newDropdownIndex = EditorGUILayout.Popup(dropdownIndex, fontOptionsArray, GUILayout.MinWidth(120));
+            int newDropdownIndex = EditorGUILayout.Popup(dropdownIndex, styleFontOptions, GUILayout.MinWidth(120));
             if (EditorGUI.EndChangeCheck())
             {
-                config.fontIndex = newDropdownIndex;
+                config.fontIndex = isNavTitle ? newDropdownIndex - 1 : newDropdownIndex;
                 changed = true;
             }
 
@@ -644,7 +653,7 @@ public class OctopusThemeSettingsWindow : EditorWindow
             float newSize = EditorGUILayout.FloatField(config.fontSize, GUILayout.Width(50));
             if (EditorGUI.EndChangeCheck())
             {
-                config.fontSize = Mathf.Max(1f, newSize);
+                config.fontSize = Mathf.Max(isNavTitle ? 0f : 1f, newSize);
                 changed = true;
             }
 

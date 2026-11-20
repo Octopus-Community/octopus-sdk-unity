@@ -6,9 +6,8 @@ public partial class OctopusSDK
 {
     public static partial class Mock
     {
-        /// <summary>Failure for the next valid callback-based ConnectUser call, consumed once even when
-        /// Mock.Enabled is false. Null succeeds by default. Reset clears it; the legacy Task call
-        /// does not consume it.</summary>
+        /// <summary>Failure for the next valid ConnectUser call, consumed once even when
+        /// Mock.Enabled is false. Null succeeds by default. Reset clears it. Both connection overloads consume it.</summary>
         public static OctopusClientUserError NextConnectUserError { get; set; }
     }
 

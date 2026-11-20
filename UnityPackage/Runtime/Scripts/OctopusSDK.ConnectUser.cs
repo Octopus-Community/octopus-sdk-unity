@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -7,9 +6,14 @@ using UnityEngine;
 public partial class OctopusSDK
 {
     private static Func<Task<string>> TokenProvider;
-    private static TaskCompletionSource<bool> ConnectUserTaskCompleter;
     /// <summary>
-    /// Connects a user. <paramref name="tokenProvider"/> mints a fresh client token on demand from
+    /// Connects a user. Connection and token provider failures fault the returned Task with
+    /// InvalidOperationException. Token requests wait for the host provider without a deadline,
+    /// including interactive login. On Android, stopping or replacing the SDK session cancels
+    /// pending token requests. A null provider faults with InvalidOperationException ("A token
+    /// provider is required"); use the callback overload for typed error codes. Await the Task;
+    /// never block the main thread on it, since on iOS the native result arrives through a Unity message.
+    /// <paramref name="tokenProvider"/> mints a fresh client token on demand from
     /// your backend. <paramref name="nickname"/>, <paramref name="bio"/> and <paramref name="picture"/>
     /// are optional — pass null (or "") for any you don't have.
     ///
@@ -19,60 +23,61 @@ public partial class OctopusSDK
     /// loop-independent I/O (System.Net.Http), never UnityWebRequest, and do not await continuations
     /// that marshal back to the main thread. Do not cache tokens — mint on demand.
     /// </summary>
-    public static async Task ConnectUser(string userId, string nickname, string bio, string picture, Func<Task<string>> tokenProvider)
+    public static Task ConnectUser(string userId, string nickname, string bio, string picture, Func<Task<string>> tokenProvider)
     {
-        // The native SDKs model nickname/bio/picture as optional (nullable), but the bridge transports
-        // below do NOT tolerate a null: iOS marshals to a null char* and crashes in String(cString:),
-        // and the Android bridge's non-null Kotlin params throw and hang the awaited connect. Coalesce
-        // to empty here so callers may pass null for "no value". Empty picture => no avatar (both
-        // bridges treat blank as no image).
-        nickname = nickname ?? "";
-        bio = bio ?? "";
-        picture = picture ?? "";
-
-        TokenProvider = tokenProvider;
-        ConnectUserTaskCompleter = new TaskCompletionSource<bool>();
-#if UNITY_EDITOR
-        MockBackend.ConnectUser(userId, nickname, bio, picture);
-#elif UNITY_ANDROID
-        using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
         {
-            plugin.CallStatic("connectUser", userId, nickname, bio, picture);
+            ConnectUserCore(userId, nickname, bio, picture, tokenProvider,
+                () => completion.TrySetResult(true),
+                error => completion.TrySetException(new InvalidOperationException(error.Message)), false);
         }
-#elif UNITY_IOS
-        OctopusSdkConnectUser(userId, nickname, bio, picture);
+        catch (Exception e)
+        {
+            completion.TrySetException(e);
+        }
+        return completion.Task;
+    }
+
+    // Payload on Android: connection id, newline, token request id. iOS keeps its empty payload.
+    private static async void TriggerOnTokenRequested(string payload = "")
+    {
+        int tokenRequestId = 0;
+        Func<Task<string>> provider = TokenProvider;
+#if UNITY_ANDROID && !UNITY_EDITOR
+        int connectionId;
+        string tokenId;
+        if (string.IsNullOrEmpty(payload) || !SplitRequest(payload, out connectionId, out tokenId)
+            || !int.TryParse(tokenId, out tokenRequestId) || tokenRequestId <= 0) return;
+        provider = TokenProviderForConnection(connectionId);
 #endif
-        await ConnectUserTaskCompleter.Task;
-    }
-
-    private static void TriggerOnConnectUserCompleted()
-    {
-        ConnectUserTaskCompleter?.SetResult(true);
-    }
-
-    private static async void TriggerOnTokenRequested()
-    {
-        if (TokenProvider != null)
+        string token = "";
+        try
         {
-            string token = await TokenProvider.Invoke();
-            SetUserToken(token);
+            if (provider != null) token = await provider().ConfigureAwait(false) ?? "";
         }
-        else
+        catch (Exception)
         {
-            throw new Exception("OctopusSDK requested a token but host app has not set a token provider function");
+            // Always answer, including a synchronous provider throw. Never let async void throw
+            // into the host process or leave the native coroutine suspended.
+        }
+        try
+        {
+            SetUserToken(token, tokenRequestId);
+        }
+        catch (Exception)
+        {
+            // A lifecycle change retires the native request if the JNI transport is unavailable.
         }
     }
 
-    private static void SetUserToken(string token)
+    private static void SetUserToken(string token, int tokenRequestId)
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
-        // Async token providers resume on a thread-pool thread not attached to the JVM; attach
-        // before the JNI reply or it is dropped and the native connect await hangs. See
-        // OctopusSDK.EnsureJniAttached (idempotent on the main/JNI threads).
         EnsureJniAttached();
         using (AndroidJavaClass plugin = new AndroidJavaClass("com.octopuscommunity.bridge.Bridge"))
         {
-            plugin.CallStatic("setUserToken", token);
+            plugin.CallStatic("setUserTokenForRequest", tokenRequestId, token);
         }
 #elif UNITY_IOS && !UNITY_EDITOR
         OctopusSdkSetUserToken(token);
@@ -83,12 +88,13 @@ public partial class OctopusSDK
     {
         public void OnTokenRequested(string _)
         {
-            OctopusSDK.TriggerOnTokenRequested();
+            OctopusSDK.TriggerOnTokenRequested(_);
         }
 
+        /// <summary>Legacy native completion pad. Current connections use correlated success/error pads.</summary>
         public void OnConnectUserCompleted(string _)
         {
-            OctopusSDK.TriggerOnConnectUserCompleted();
+            // Retained for the bridge contract; no current Task is completed by this message.
         }
     }
     

@@ -6,6 +6,158 @@ section when a release is cut (format inspired by
 
 ## Unreleased
 
+## 1.16.0 — 2026-11-19
+
+Minor release on native SDKs 1.16.0 (Android 1.15.3 → 1.16.0, iOS 1.15.1 → 1.16.0). New: up to 10
+photos per post, bridge button labels per language, the reason a community access is denied and its
+dedicated screen, members' total points in community data, post tap options and a themable
+translation icon. Android host apps must now compile against API 36 with AGP 8.9.1 or later (see
+`### Breaking` and [MIGRATING.md](MIGRATING.md#to-1160-from-115x)). Unity 2019.4 minimum unchanged.
+Legacy `OctopusCommunitySDK.unitypackage` for this version was generated from the source tree
+without the Unity Editor (`Scripts/build_legacy_package_nounity.py`), not import-tested in a
+scratch project before the cut. UPM remains the reference install path.
+
+### Removed
+- android: Building an Android host app with a compile SDK below API 36 or an Android Gradle
+  Plugin (AGP) below 8.9.1. The native Android SDK 1.16 compiles against Android 16 (API 36).
+
+### Breaking
+- android: Android host apps must compile against API 36 or later and build with AGP 8.9.1 or
+  later, the minimum AGP for API 36. The minimum Android version an app runs on stays API 23. Unity
+  compiles against the Player Settings Target API Level, which also sets the target SDK: raising
+  it to 36 opts the app into Android 16 behaviour changes, and a custom Gradle template can keep
+  the current target SDK instead. Unity 6.1, Unity 6.0 before 6000.0.61f1 and the 2019.4 to 2022.3
+  Editors bundle an older AGP, to raise in a custom base Gradle template. See
+  [MIGRATING.md](MIGRATING.md#build-requirements--compile-sdk-36).
+
+### Added
+- runtime: With native SDK 1.16.0 on Android and iOS, community-data lookups and observations
+  expose total points in `OctopusGamification.Score` for the connected member and other members.
+  An unavailable score is `null` and a reported zero stays `0`. `Gamification` is `null`
+  for admin-tagged profiles or when gamification is disabled.
+- runtime: `OctopusPostOptions.ImageTapOpensPost` and `GroupNameTapOpensGroup` can force the
+  native SDK 1.16 post tap behaviors through `DebugOverrideContentOptions`. Both default to
+  `false`; existing constructors keep their behavior. Image taps open available post details
+  from feeds (fullscreen elsewhere); group-name taps open the group in feeds and post detail.
+  Passing `null` restores backend configuration. The sample adds image, group-name and combined
+  tap presets.
+- runtime: A post carries up to 10 photos. `OctopusPrefilledPost.ImagePaths` prefills the editor
+  with several local images, in display order (`OctopusPrefilledPost.MaxImageCount` is 10; null
+  and empty entries are ignored). More make `OpenCreatePost` throw the new
+  `OctopusPrefilledPostTooManyImagesException` (`Max`, `Count`), an `ArgumentException` of its
+  own, before anything opens. `OctopusClientObject.Medias` attaches several local or remote images
+  (`OctopusClientObjectMedia.FromPath` / `FromUrl`) to a bridge post;
+  `FetchOrCreateClientObjectRelatedPost` refuses more than 10 with `OctopusClientPostErrorCode.Other`.
+  The native SDKs also bring a fullscreen photo viewer. iOS validates prefilled images when the
+  editor opens: an image it refuses is now left out instead of emptying the whole prefill. See
+  [MIGRATING.md](MIGRATING.md#several-photos-per-post).
+- runtime, android: `OctopusFonts.NavBarTitle` and the Theme Configuration window's
+  navigation title style set the Android bar title font resource and size in sp. Each value
+  overrides only that part of the bar's own title style; an unavailable font warns and keeps
+  the base family while applying the requested size. Logos are unchanged. iOS ignores this
+  setting and follows the app's navigation bar appearance. The main feed honours it with the
+  native Android SDK 1.16.
+- runtime: `OctopusIconSlot.ContentTranslation = 80` overrides the icon next to the button that
+  switches an automatically translated post, comment or reply between its translation and its
+  original text, on Android and iOS (native SDKs 1.16). Existing icon ordinals stay unchanged.
+- runtime: `OctopusSDK.CommunityAccessDeniedReason` tells why the user cannot access the
+  community, as an `OctopusCommunityAccessDeniedReason` (`NotInCohort`,
+  `CommunityTemporarilyDisabled`, `CommunityClosed`, `MemberExcluded`, `AccountBanned`,
+  `AccountDeleted`, `Unknown`), or `null` when the access is granted or not known yet.
+  `OnCommunityAccessDeniedReasonChanged` fires when it changes, like `OnHasAccessToCommunityChanged`.
+  A reason a newer native SDK adds is reported as `Unknown`. With `AccountDeleted`, your app can
+  disconnect the member on its side; `ConnectUser` keeps reporting a banned member as `UserBanned`.
+- runtime: `OctopusScreen.CommunityAccessDenied`, reported by `ScreenDisplayedEvent` when the
+  access denied screen is displayed, on Android and iOS. `OctopusScreen.Unknown` moves one value up:
+  compare screens by name, not by numeric value.
+- sample: The community access scenario shows `communityAccessDeniedReason` next to
+  `hasAccessToCommunity`.
+- sample: The create-post scenario repeats the bundled image up to its new *Image copies* field
+  (11 shows the refusal), and the bridge scenario posts a remote and a bundled local photo. The
+  theme scenario's icon preset also replaces the translation icon.
+- runtime: Bridge button labels can be given per language. The new `OctopusLocalizedText` is built
+  with `OctopusLocalizedText.AutoTranslated(text)` (one label, translated automatically, which is
+  what a plain string label means) or `OctopusLocalizedText.PerLanguage(texts, defaultLanguage)`,
+  whose languages are BCP-47 tags (`"en"`, `"pt-BR"`, `"zh-Hant-TW"`). A reader whose language is
+  listed sees that label as is; any other reader sees an automatic translation of the default
+  language's label. It is set on `OctopusPrefilledPost.CtaLocalizedLabel` (Bridge Share CTA) and
+  `OctopusClientObject.ViewObjectButton` (bridge post button; taken when the post is created only).
+  `PerLanguage` keeps the texts and the default language as given (`Texts`, `DefaultLanguage`): the
+  native SDK reads the tags (`_` as `-`) and validates them when the label is used, refusing no
+  text, a blank text, a tag without a language, two tags giving the same language code, or a
+  default language that is not one of them. See
+  [MIGRATING.md](MIGRATING.md#button-labels-per-language).
+- runtime: `OctopusClientPostErrorCode.InvalidLocalizedText`, with
+  `OctopusClientPostError.LocalizedTextErrorKind` (`OctopusLocalizedTextValidationErrorKind`) and
+  `LanguageCode`, reports a bridge post button the native SDK refuses. A prefilled post's CTA label
+  the native SDK refuses is logged and the CTA left out, as before.
+- runtime: Editor mock: `OctopusSDK.Mock.ClientObjectRelatedPostButton(objectId)` returns the button
+  a mock bridge post was created with.
+- sample: The bridge and create-post scenarios take their button label per language: set
+  *Per-language label* to `true`, edit the default language (prefilled `en`) and the `tag=label`
+  rows of the other languages.
+
+### Deprecated
+- runtime: `OctopusPrefilledPost.CtaLabel`, replaced by `CtaLocalizedLabel`, and
+  `OctopusClientObject.ViewObjectButtonText`, replaced by `ViewObjectButton`. Both remain public
+  fields. A non-empty legacy label is auto-translated when the corresponding new field is null.
+- runtime: `OctopusPrefilledPost.ImagePath`, replaced by `ImagePaths`. Alone, it still opens the
+  editor on that one image; together with a non-empty `ImagePaths`, `OpenCreatePost` throws an
+  `ArgumentException`.
+- runtime: `OctopusClientObject.ImagePath` and `ImageUrl`, replaced by `Medias`. Alone, either
+  still creates a one-image post; together with a non-empty `Medias`,
+  `FetchOrCreateClientObjectRelatedPost` fails with `OctopusClientPostErrorCode.Other` before any
+  native call.
+
+### Changed
+- android: When community access is denied, pushed screens are popped so the access denied
+  screen is visible (native Android SDK 1.16).
+- android, ios: Native 1.16 replaces the community with a dedicated screen when the user cannot access it: an
+  icon, a title for the reason and the server's message. A banned member reads which policy they
+  broke and who to contact; a member whose account was deleted can access the community again
+  from the screen.
+- ios: `OpenProfile` no longer uses the native `OctopusProfileScreen`, deprecated in native 1.16:
+  it opens the native `OctopusHomeScreen` on its `.profile` initial screen, which, like every
+  initial screen, shows the access denied screen when the user cannot access the community.
+- runtime: A post text has no minimum length any more. One visible character is enough, so a
+  member can publish "Bravo !"; the 5000-character maximum is unchanged. `OctopusClientObject.Text`
+  documents the new 1–5000 range, and the sample's create-post scenarios stop refusing prefilled
+  texts under 10 characters. The editor applies it with the native SDKs 1.16.
+- android: The main feed shows the app name passed to `SetTheme` when no custom logo is set, as
+  on iOS; a custom logo still takes its place. It used to show the default community title.
+- android: Native Android SDK 1.15.3 → 1.16.0; ios: native iOS SDK 1.15.1 → 1.16.0. Bridge AAR
+  rebuilt, with the bridge module's `compileSdk` raised from 34 to 36.
+- ios: A prefilled post whose `OctopusPrefilledPost.SignBridgeShare` throws or returns `null` or
+  an empty string is now sent unsigned, as on Android, instead of not being published. The
+  server decides: a community that allows member pictures publishes it with its images, one that
+  forbids them refuses it and the editor shows an error. A valid JWT still signs the post, and
+  `OctopusClientObject.SignBridgeShare` is unchanged. Needs the native iOS SDK 1.16.
+- android, ios: The native 1.16 screens also bring, with no C# change: a fullscreen photo viewer
+  and pinch to zoom on photos, a one-line post footer, short timestamps, Slovak, and an informal
+  tone per community language ("tu" rather than "vous", "du" rather than "Sie"), which Octopus
+  sets in the community settings. See the native release notes:
+  [Android 1.16.0](https://github.com/Octopus-Community/octopus-sdk-android/releases/tag/v1.16.0),
+  [iOS 1.16.0](https://github.com/Octopus-Community/octopus-sdk-swift/releases/tag/v1.16.0).
+- android: A session the server ends is replaced by a new one instead of leaving the community
+  screens on a dead session (native Android SDK 1.16); ios: a device whose ban is lifted gets a
+  new session (native iOS SDK 1.16).
+- android: The group name in a post header has a larger tap target (native Android SDK 1.16).
+
+### Fixed
+- android: Connecting before initialization or after stopping the SDK now fails the connection
+  Task instead of crashing the host app. Token provider failures complete with an error. Token
+  requests wait for the host provider, including interactive login, without a bridge deadline.
+  Failed connections retain their token provider so token refresh and native re-login can try again.
+- android: Stopping, switching communities or replacing a connection cancels pending connections
+  and token requests. Late token responses cannot authenticate a different connection.
+- runtime: The Task-based `ConnectUser` overload now faults with `InvalidOperationException`
+  for connection and token provider errors, instead of leaving failures incomplete or reporting
+  them as success. A null token provider now faults with `InvalidOperationException` ("A token
+  provider is required"); use the callback overload for typed error codes. Await the Task and catch
+  connection errors; never block the main thread on it, since on iOS the native result arrives
+  through a Unity message. The SSO, forced-login and managed-fields
+  examples show the error and restore their controls so the user can retry.
+
 ## 1.15.3 — 2026-11-05
 
 Patch on the 1.15 line: a not-seen notifications count fix for views that subscribe after

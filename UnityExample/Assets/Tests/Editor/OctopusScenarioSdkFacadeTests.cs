@@ -351,7 +351,7 @@ public class OctopusScenarioSdkFacadeTests
         // …and the slot is released once the first call completes, so the screen is usable again.
         _sdk.CompletePending();
         _context.Drain();
-        StringAssert.Contains("completed", pilot.Result);
+        StringAssert.Contains("ConnectUser succeeded", pilot.Result);
 
         Tap(pilot, 4);
         CollectionAssert.AreEqual(new[] { "Initialize", "ConnectUser", "DisconnectUser" }, _sdk.ScenarioMethods);

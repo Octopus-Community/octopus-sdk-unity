@@ -35,7 +35,8 @@ public sealed class ThemeScenario : OctopusScenarioPilot
         get { return "Custom presets reuse the bundled blueberry logo: Unity takes native resource names, " +
                      "not Flutter's base64 logo. Nav-bar item size is iOS only. Unset colors and fonts " +
                      "use SDK defaults. Icons: screenStates reuses the bundled blueberry logo for all four " +
-                     "empty/error illustrations and common.clearText; unset restores native defaults. Open Community and the nickname field to verify."; }
+                     "empty/error illustrations, common.clearText and content.translation; unset restores native defaults. " +
+                     "Open Community, the nickname field and a translated post to verify."; }
     }
 
     private OctopusScenarioPreset Preset(int index, string label, bool brand, bool surface, bool logo)
@@ -67,7 +68,8 @@ public sealed class ThemeScenario : OctopusScenarioPilot
             .Set(OctopusIconSlot.ScreenStatesEmptyNotifications, icon)
             .Set(OctopusIconSlot.ScreenStatesNetworkError, icon)
             .Set(OctopusIconSlot.ScreenStatesError, icon)
-            .Set(OctopusIconSlot.CommonClearText, icon) : null;
+            .Set(OctopusIconSlot.CommonClearText, icon)
+            .Set(OctopusIconSlot.ContentTranslation, icon) : null;
         var fonts = fields.Get("navBarItem") == "22"
             ? new OctopusFonts(navBarItem: new OctopusFont("", "", 22)) : null;
         var sdk = OctopusScenarioSdk.Current;

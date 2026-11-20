@@ -6,6 +6,18 @@ public partial class OctopusSDK
     public static partial class Mock
     {
         internal static readonly Dictionary<string, OctopusPost> ClientPosts = new Dictionary<string, OctopusPost>();
+        // The button each mock post was created with: like the native SDKs, a fetch of an existing
+        // post does not change it.
+        internal static readonly Dictionary<string, OctopusLocalizedText> ClientPostButtons =
+            new Dictionary<string, OctopusLocalizedText>();
+
+        /// <summary>The button label the mock post of objectId was created with, or null when it has no
+        /// button or no mock post was created for it.</summary>
+        public static OctopusLocalizedText ClientObjectRelatedPostButton(string objectId)
+        {
+            OctopusLocalizedText button;
+            return objectId != null && ClientPostButtons.TryGetValue(objectId, out button) ? button : null;
+        }
         /// <summary>Failure consumed by the next valid fetch/create call, then cleared.</summary>
         public static OctopusClientPostError NextClientPostError { get; set; }
 
@@ -14,7 +26,7 @@ public partial class OctopusSDK
         public static void SetClientObjectRelatedPost(string objectId, OctopusPost post)
         {
             if (!ValidClientObjectId(objectId)) throw new System.ArgumentException("A valid object id is required", "objectId");
-            if (post == null) ClientPosts.Remove(objectId);
+            if (post == null) { ClientPosts.Remove(objectId); ClientPostButtons.Remove(objectId); }
             else ClientPosts[objectId] = post;
             QueueClientObjectRelatedPost(objectId, post);
         }
@@ -22,6 +34,7 @@ public partial class OctopusSDK
         internal static void ClearClientPostState()
         {
             ClientPosts.Clear();
+            ClientPostButtons.Clear();
             NextClientPostError = null;
         }
     }
@@ -43,6 +56,7 @@ public partial class OctopusSDK
                 else
                 {
                     post = new OctopusPost("mock-post-" + value.ObjectId);
+                    Mock.ClientPostButtons[value.ObjectId] = value.ResolveViewObjectButton();
                     Mock.SetClientObjectRelatedPost(value.ObjectId, post);
                 }
             }

@@ -225,9 +225,9 @@ public class OctopusInitialScreenScenarioTests
         var prefill = _sdk.LastPrefilledPost;
         Assert.AreEqual(InitialScreenScenario.DefaultText, prefill.Text);
         Assert.AreEqual("chosen", prefill.TopicId);
-        Assert.AreEqual("Open", prefill.CtaLabel);
+        Assert.AreEqual(OctopusLocalizedText.AutoTranslated("Open"), prefill.CtaLocalizedLabel);
         Assert.AreEqual("https://example.org/post", prefill.CtaUrl);
-        Assert.AreEqual(image ? "/sample-cache/scenario-share.png" : null, prefill.ImagePath);
+        CollectionAssert.AreEqual(image ? new[] { "/sample-cache/scenario-share.png" } : new string[0], prefill.ImagePaths);
         Assert.AreEqual(image, prefill.SignBridgeShare != null);
         Assert.IsFalse(_sdk.Methods.Contains("SignBridgeShare"), "Opening must never sign or publish.");
     }
@@ -238,11 +238,10 @@ public class OctopusInitialScreenScenarioTests
         Fill(4);
         Run();
         Assert.AreEqual("PMYFiz0sv6cKEcpMkq5qlT", _sdk.LastPrefilledPost.TopicId);
-        Assert.IsNull(_sdk.LastPrefilledPost.CtaLabel);
+        Assert.IsNull(_sdk.LastPrefilledPost.CtaLocalizedLabel);
         Assert.IsNull(_sdk.LastPrefilledPost.CtaUrl);
     }
 
-    [TestCase("text", "short")]
     [TestCase("ctaLabel", "Only label")]
     [TestCase("ctaUrl", "invalid")]
     public void InvalidPrefillDoesNotOpenTheEditor(string field, string value)
@@ -252,6 +251,26 @@ public class OctopusInitialScreenScenarioTests
         Run();
         StringAssert.Contains("rejected", _pilot.Result);
         Assert.IsFalse(_sdk.Methods.Contains("OpenCreatePost"));
+    }
+
+    [Test]
+    public void TooLongPrefillTextDoesNotOpenTheEditor()
+    {
+        Fill(4);
+        _pilot.Fields.Set("text", new string('a', 5001));
+        Run();
+        StringAssert.Contains("rejected", _pilot.Result);
+        Assert.IsFalse(_sdk.Methods.Contains("OpenCreatePost"));
+    }
+
+    [Test]
+    public void ShortPrefillTextOpensTheEditor()
+    {
+        Fill(4);
+        _pilot.Fields.Set("text", "Fini !");
+        Run();
+        Assert.IsTrue(_sdk.Methods.Contains("OpenCreatePost"));
+        Assert.AreEqual("Fini !", _sdk.LastPrefilledPost.Text);
     }
 
     [Test]

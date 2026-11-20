@@ -11,7 +11,6 @@ public class OctopusConnectUserErrorsTests
     private GameObject _channelObject;
     private OctopusSDK.OctopusChannel _channel;
     private object _previousProvider;
-    private object _previousCompleter;
 
     private static FieldInfo PrivateField(string name)
     {
@@ -31,7 +30,6 @@ public class OctopusConnectUserErrorsTests
         OctopusMainThread.EnsureExists();
         Drain();
         _previousProvider = PrivateField("TokenProvider").GetValue(null);
-        _previousCompleter = PrivateField("ConnectUserTaskCompleter").GetValue(null);
         OctopusSDK.Mock.Reset();
         OctopusSDK.Mock.Enabled = true;
         _channelObject = new GameObject("ConnectUserErrorsTestChannel");
@@ -46,7 +44,6 @@ public class OctopusConnectUserErrorsTests
         OctopusSDK.Mock.Enabled = true;
         OctopusSDK.Mock.Reset();
         PrivateField("TokenProvider").SetValue(null, _previousProvider);
-        PrivateField("ConnectUserTaskCompleter").SetValue(null, _previousCompleter);
     }
 
     [TestCase("missingToken", OctopusClientUserErrorCode.MissingToken)]
@@ -77,10 +74,8 @@ public class OctopusConnectUserErrorsTests
     }
 
     [Test]
-    public void PadsCorrelateOutOfOrderIgnoreDuplicatesAndDoNotCompleteLegacyTask()
+    public void PadsCorrelateOutOfOrderIgnoreDuplicatesAndLegacyCompletion()
     {
-        var legacy = new TaskCompletionSource<bool>();
-        PrivateField("ConnectUserTaskCompleter").SetValue(null, legacy);
         var successes = new List<int>();
         OctopusClientUserError error = null;
         int first = OctopusSDK.RegisterConnectUserCallbacks(() => successes.Add(1), e => error = e);
@@ -92,15 +87,13 @@ public class OctopusConnectUserErrorsTests
         _channel.OnConnectUserFailed(first + "\n{\"code\":\"userBanned\",\"message\":\"Reason\"}");
         _channel.OnConnectUserSucceeded(first + "\n");
         _channel.OnConnectUserFailed(second + "\n{}");
+        _channel.OnConnectUserCompleted("");
         Assert.IsNull(error);
         Assert.AreEqual(0, successes.Count);
         Drain();
         CollectionAssert.AreEqual(new[] { 2 }, successes);
         Assert.AreEqual(OctopusClientUserErrorCode.UserBanned, error.Code);
         Assert.AreEqual("Reason", error.Message);
-        Assert.IsFalse(legacy.Task.IsCompleted);
-        _channel.OnConnectUserCompleted("");
-        Assert.IsTrue(legacy.Task.IsCompleted);
     }
 
     [Test]
@@ -233,14 +226,84 @@ public class OctopusConnectUserErrorsTests
     }
 
     [Test]
-    public void LegacyTaskStillCompletesAndDoesNotConsumeInjectedTypedError()
+    public void TokenRequestsCannotBorrowAnotherConnectionOrStoppedProvider()
+    {
+        OctopusSDK.ConnectUser("user-1", null, null, null, () => Task.FromResult("first"),
+            () => { }, e => Assert.Fail(e.Message));
+        int first = (int)PrivateField("_nextConnectUserRequestId").GetValue(null);
+        Assert.IsNotNull(OctopusSDK.TokenProviderForConnection(first));
+        OctopusSDK.ConnectUser("user-2", null, null, null, () => Task.FromResult("second"),
+            () => { }, e => Assert.Fail(e.Message));
+        int second = (int)PrivateField("_nextConnectUserRequestId").GetValue(null);
+        Assert.IsNull(OctopusSDK.TokenProviderForConnection(first));
+        Assert.AreEqual("second", OctopusSDK.TokenProviderForConnection(second)().Result);
+        // Same provider reset used by Stop/Initialize/SwitchCommunity.
+        PrivateField("TokenProvider").SetValue(null, null);
+        Assert.IsNull(OctopusSDK.TokenProviderForConnection(second));
+        Drain();
+    }
+
+    [Test]
+    public void TaskOverloadBlockingWaitCompletesWithoutUnityUpdate()
+    {
+        bool updateRan = false;
+        OctopusMainThread.Post(() => updateRan = true);
+        Task task = OctopusSDK.ConnectUser("blocking-user", null, null, null,
+            () => Task.FromResult("mock-token"));
+        Assert.IsTrue(task.Wait(TimeSpan.FromSeconds(1)),
+            "Task completion must not depend on pumping a Unity update");
+        Assert.IsFalse(updateRan, "The blocking caller must not drain Unity callbacks");
+        Assert.AreEqual(TaskStatus.RanToCompletion, task.Status);
+        Assert.AreEqual(TaskCreationOptions.RunContinuationsAsynchronously,
+            task.CreationOptions & TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    [Test]
+    public void TaskCompletionFromWorkerDoesNotNeedUnityUpdateWhileCallbacksStayPosted()
+    {
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        int directId = OctopusSDK.RegisterConnectUserCallbacks(() => completion.TrySetResult(true),
+            e => completion.TrySetException(new InvalidOperationException(e.Message)), false);
+        bool callbackRan = false;
+        int postedId = OctopusSDK.RegisterConnectUserCallbacks(() => callbackRan = true,
+            e => Assert.Fail(e.Message));
+        var worker = new Thread(() =>
+        {
+            OctopusSDK.CompleteConnectUser(directId, null);
+            OctopusSDK.CompleteConnectUser(postedId, null);
+        });
+        worker.Start();
+        Assert.IsTrue(worker.Join(5000), "Native result dispatch must not wait for Unity");
+        Assert.IsTrue(completion.Task.Wait(TimeSpan.FromSeconds(1)));
+        Assert.IsFalse(callbackRan);
+        Drain();
+        Assert.IsTrue(callbackRan);
+    }
+
+    [Test]
+    public void TaskOverloadUsesTypedErrorsAndCompletesOnSuccess()
     {
         var expected = new OctopusClientUserError(OctopusClientUserErrorCode.UserBanned, "Simulated failure");
         OctopusSDK.Mock.NextConnectUserError = expected;
-        Task legacy = OctopusSDK.ConnectUser("user-1", null, null, null, () => Task.FromResult("mock-token"));
-        Assert.IsTrue(legacy.IsCompleted);
-        Assert.AreSame(expected, OctopusSDK.Mock.NextConnectUserError);
-        OctopusSDK.Mock.Reset();
+        Task failed = OctopusSDK.ConnectUser("user-1", null, null, null, () => Task.FromResult("mock-token"));
+        Assert.IsTrue(failed.IsFaulted);
+        Assert.AreEqual(expected.Message, failed.Exception.InnerException.Message);
         Assert.IsNull(OctopusSDK.Mock.NextConnectUserError);
+        Task success = OctopusSDK.ConnectUser("user-2", null, null, null, () => Task.FromResult("mock-token"));
+        Assert.AreEqual(TaskStatus.RanToCompletion, success.Status);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void TaskOverloadCatchesProviderExceptions(bool asynchronous)
+    {
+        Func<Task<string>> provider = () =>
+        {
+            if (asynchronous) return Task.FromException<string>(new InvalidOperationException("Backend unavailable"));
+            throw new InvalidOperationException("Backend unavailable");
+        };
+        Task task = OctopusSDK.ConnectUser("user-1", null, null, null, provider);
+        Assert.IsTrue(task.IsFaulted);
+        Assert.AreEqual("Backend unavailable", task.Exception.InnerException.Message);
     }
 }

@@ -8,21 +8,26 @@ public sealed class ContentOptionsScenario : CommunityScenarioPilot
         new OctopusScenarioField("postPolls", "Post: enable polls"),
         new OctopusScenarioField("commentPictures", "Comment: enable pictures"),
         new OctopusScenarioField("replyPictures", "Reply: enable pictures"),
-        new OctopusScenarioField("postTextRequired", "Post: require text"))
+        new OctopusScenarioField("postTextRequired", "Post: require text"),
+        new OctopusScenarioField("postImageTapOpensPost", "Post: image tap opens the post"),
+        new OctopusScenarioField("postGroupNameTapOpensGroup", "Post: group name opens the group"))
     {
-        Add(1, PresetLabel(1, "All enabled (default / no-op)"), "apply", "true", "true", "true", "true", "true");
-        Add(2, PresetLabel(2, "Post: pictures off"), "apply", "false", "true", "true", "true", "true");
-        Add(3, PresetLabel(3, "Post: polls off"), "apply", "true", "false", "true", "true", "true");
-        Add(4, PresetLabel(4, "Post: pictures + polls off"), "apply", "false", "false", "true", "true", "true");
-        Add(5, PresetLabel(5, "Comment: pictures off"), "apply", "true", "true", "false", "true", "true");
-        Add(6, PresetLabel(6, "Reply: pictures off"), "apply", "true", "true", "true", "false", "true");
-        Add(7, PresetLabel(7, "Post: text optional with an image"), "apply", "true", "true", "true", "true", "false");
-        Add(8, "Clear override (backend default)", "clear", "backend", "backend", "backend", "backend", "backend");
+        Add(1, PresetLabel(1, "All enabled (default / no-op)"), "apply", "true", "true", "true", "true", "true", "false", "false");
+        Add(2, PresetLabel(2, "Post: pictures off"), "apply", "false", "true", "true", "true", "true", "false", "false");
+        Add(3, PresetLabel(3, "Post: polls off"), "apply", "true", "false", "true", "true", "true", "false", "false");
+        Add(4, PresetLabel(4, "Post: pictures + polls off"), "apply", "false", "false", "true", "true", "true", "false", "false");
+        Add(5, PresetLabel(5, "Comment: pictures off"), "apply", "true", "true", "false", "true", "true", "false", "false");
+        Add(6, PresetLabel(6, "Reply: pictures off"), "apply", "true", "true", "true", "false", "true", "false", "false");
+        Add(7, PresetLabel(7, "Post: text optional with an image"), "apply", "true", "true", "true", "true", "false", "false", "false");
+        Add(8, PresetLabel(8, "Post: image tap opens the post"), "apply", "true", "true", "true", "true", "true", "true", "false");
+        Add(9, PresetLabel(9, "Post: group name opens the group"), "apply", "true", "true", "true", "true", "true", "false", "true");
+        Add(10, PresetLabel(10, "Post: image and group name taps"), "apply", "true", "true", "true", "true", "true", "true", "true");
+        Add(11, "Clear override (backend default)", "clear", "backend", "backend", "backend", "backend", "backend", "backend", "backend");
     }
 
     public override IReadOnlyList<string> ApiSymbols { get { return new[] { "DebugOverrideContentOptions" }; } }
     public override string ParameterNotice
-    { get { return "Debug/QA only. Controls creation affordances, not existing content. Clear restores backend configuration. The SDK call has no completion acknowledgement. Last override sent: " + OctopusScenarioSdk.ContentOptionsSummary; } }
+    { get { return "Debug/QA only. Controls creation affordances and post tap navigation. Image taps open available post details from feeds; group-name taps open the group. Clear restores backend configuration. The SDK call has no completion acknowledgement. Last override sent: " + OctopusScenarioSdk.ContentOptionsSummary; } }
 
     protected override void Run(OctopusScenarioFields fields)
     {
@@ -30,24 +35,28 @@ public sealed class ContentOptionsScenario : CommunityScenarioPilot
         OctopusContentOptions options = null;
         if (action == "apply")
         {
-            bool postPictures, postPolls, commentPictures, replyPictures, textRequired;
+            bool postPictures, postPolls, commentPictures, replyPictures, textRequired, imageTapOpensPost, groupNameTapOpensGroup;
             if (!bool.TryParse(fields.Get("postPictures"), out postPictures) ||
                 !bool.TryParse(fields.Get("postPolls"), out postPolls) ||
                 !bool.TryParse(fields.Get("commentPictures"), out commentPictures) ||
                 !bool.TryParse(fields.Get("replyPictures"), out replyPictures) ||
-                !bool.TryParse(fields.Get("postTextRequired"), out textRequired))
+                !bool.TryParse(fields.Get("postTextRequired"), out textRequired) ||
+                !bool.TryParse(fields.Get("postImageTapOpensPost"), out imageTapOpensPost) ||
+                !bool.TryParse(fields.Get("postGroupNameTapOpensGroup"), out groupNameTapOpensGroup))
             { Report("No call made: content flags must be true or false."); return; }
-            options = new OctopusContentOptions(new OctopusPostOptions(postPictures, postPolls, textRequired),
+            options = new OctopusContentOptions(new OctopusPostOptions(postPictures, postPolls, textRequired, imageTapOpensPost, groupNameTapOpensGroup),
                 new OctopusCommentOptions(commentPictures), new OctopusReplyOptions(replyPictures));
         }
         else if (action != "clear")
         { Report("No call made: action must be apply or clear."); return; }
         var summary = options == null ? "none (backend default)" :
             "post.enablePictures=" + options.Post.EnablePictures + ", post.enablePolls=" + options.Post.EnablePolls +
-            ", post.textRequired=" + options.Post.TextRequired + ", comment.enablePictures=" + options.Comment.EnablePictures + ", reply.enablePictures=" + options.Reply.EnablePictures;
+            ", post.textRequired=" + options.Post.TextRequired +
+            ", post.imageTapOpensPost=" + options.Post.ImageTapOpensPost + ", post.groupNameTapOpensGroup=" + options.Post.GroupNameTapOpensGroup +
+            ", comment.enablePictures=" + options.Comment.EnablePictures + ", reply.enablePictures=" + options.Reply.EnablePictures;
         Announce("DebugOverrideContentOptions", summary);
         OctopusScenarioSdk.Current.DebugOverrideContentOptions(options);
         OctopusScenarioSdk.ContentOptionsSummary = summary;
-        Report("Applied: " + summary + ". Override call sent; open Community and start a post (or comment / reply) to verify the creation options.");
+        Report("Applied: " + summary + ". Override call sent; open Community to verify creation options and image / group-name taps in feeds and post detail.");
     }
 }

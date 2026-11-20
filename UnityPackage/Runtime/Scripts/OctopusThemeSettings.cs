@@ -49,7 +49,11 @@ public class OctopusThemeSettings : ScriptableObject
         Body2 = 3,
         Caption1 = 4,
         Caption2 = 5,
-        NavBarItem = 6
+        NavBarItem = 6,
+        /// <summary>
+        /// Android only. On iOS the title follows your app's navigation bar appearance.
+        /// </summary>
+        NavBarTitle = 7
     }
 
     /// <summary>
@@ -172,7 +176,7 @@ public class OctopusThemeSettings : ScriptableObject
 
     // Font style configurations (runtime accessible)
     [SerializeField]
-    private FontStyleConfig[] fontStyles = new FontStyleConfig[7];
+    private FontStyleConfig[] fontStyles = new FontStyleConfig[8];
 
     // Font file names for runtime use (populated during build)
     [SerializeField]
@@ -293,19 +297,20 @@ public class OctopusThemeSettings : ScriptableObject
     }
 
     /// <summary>
-    /// Font style configurations for all 7 style types.
+    /// Font style configurations, including the Android-only navigation bar title.
     /// </summary>
     public FontStyleConfig[] FontStyles
     {
         get
         {
-            if (fontStyles == null || fontStyles.Length != 7)
+            if (fontStyles == null || fontStyles.Length < 8)
             {
-                fontStyles = new FontStyleConfig[7];
-                for (int i = 0; i < 7; i++)
-                {
-                    fontStyles[i] = new FontStyleConfig();
-                }
+                // Assets saved before NavBarTitle have seven entries. Preserve their values.
+                System.Array.Resize(ref fontStyles, 8);
+            }
+            for (int i = 0; i < fontStyles.Length; i++)
+            {
+                if (fontStyles[i] == null) fontStyles[i] = new FontStyleConfig();
             }
             return fontStyles;
         }

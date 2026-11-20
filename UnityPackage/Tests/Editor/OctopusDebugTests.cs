@@ -70,8 +70,11 @@ public class OctopusDebugTests
         Assert.AreEqual("null", OctopusDebugParsing.ProfileLockToJson(null));
         Assert.AreEqual("null", OctopusDebugParsing.ContentOptionsToJson(null));
         var defaults = OctopusJson.ParseRawObject(OctopusDebugParsing.ContentOptionsToJson(new OctopusContentOptions()));
-        Assert.AreEqual(5, defaults.Count);
-        foreach (var value in defaults.Values) Assert.AreEqual("true", value);
+        Assert.AreEqual(7, defaults.Count);
+        foreach (var key in new[] { "postEnablePictures", "postEnablePolls", "postTextRequired", "commentEnablePictures", "replyEnablePictures" })
+            Assert.AreEqual("true", defaults[key]);
+        Assert.AreEqual("false", defaults["postImageTapOpensPost"]);
+        Assert.AreEqual("false", defaults["postGroupNameTapOpensGroup"]);
         var disabled = OctopusJson.ParseRawObject(OctopusDebugParsing.ContentOptionsToJson(new OctopusContentOptions(
             new OctopusPostOptions(false, false, false), new OctopusCommentOptions(false), new OctopusReplyOptions(false))));
         foreach (var value in disabled.Values) Assert.AreEqual("false", value);
@@ -95,6 +98,41 @@ public class OctopusDebugTests
         OctopusSDK.DebugOverrideContentOptions(options);
         Assert.AreSame(options, OctopusSDK.Mock.DebugOverrides.ContentOptions);
         Assert.IsFalse(OctopusSDK.Mock.DebugOverrides.ContentOptions.Post.TextRequired);
+        OctopusSDK.DebugOverrideContentOptions(null);
+        Assert.IsNull(OctopusSDK.Mock.DebugOverrides.ContentOptions);
+    }
+
+    [Test]
+    public void PostTapOptions_OmittedArgumentsPreserveLegacyDefaults()
+    {
+        foreach (var post in new[] { new OctopusPostOptions(), new OctopusPostOptions(false, false),
+            new OctopusPostOptions(false, false, false), new OctopusContentOptions().Post })
+        {
+            Assert.IsFalse(post.ImageTapOpensPost);
+            Assert.IsFalse(post.GroupNameTapOpensGroup);
+        }
+        Assert.IsFalse(new OctopusPostOptions(true, true, true, imageTapOpensPost: true).GroupNameTapOpensGroup);
+        Assert.IsFalse(new OctopusPostOptions(true, true, true, groupNameTapOpensGroup: true).ImageTapOpensPost);
+        Assert.IsNotNull(typeof(OctopusPostOptions).GetConstructor(new[] { typeof(bool), typeof(bool) }));
+        Assert.IsNotNull(typeof(OctopusPostOptions).GetConstructor(new[] { typeof(bool), typeof(bool), typeof(bool) }));
+    }
+
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(true, true)]
+    public void PostTapOptions_SerializeIndependentBooleansAndMockClear(bool image, bool group)
+    {
+        var options = new OctopusContentOptions(new OctopusPostOptions(false, true, false, image, group));
+        var row = OctopusJson.ParseRawObject(OctopusDebugParsing.ContentOptionsToJson(options));
+        Assert.AreEqual(image ? "true" : "false", row["postImageTapOpensPost"]);
+        Assert.AreEqual(group ? "true" : "false", row["postGroupNameTapOpensGroup"]);
+        Assert.AreEqual("false", row["postEnablePictures"]);
+        Assert.AreEqual("true", row["postEnablePolls"]);
+        Assert.AreEqual("false", row["postTextRequired"]);
+        OctopusSDK.DebugOverrideContentOptions(options);
+        Assert.AreEqual(image, OctopusSDK.Mock.DebugOverrides.ContentOptions.Post.ImageTapOpensPost);
+        Assert.AreEqual(group, OctopusSDK.Mock.DebugOverrides.ContentOptions.Post.GroupNameTapOpensGroup);
         OctopusSDK.DebugOverrideContentOptions(null);
         Assert.IsNull(OctopusSDK.Mock.DebugOverrides.ContentOptions);
     }

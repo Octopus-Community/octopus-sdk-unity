@@ -9,6 +9,8 @@ using UnityEngine;
 //   • HasAccessToCommunity (reactive, read-only): whether the current user can access community
 //     features. Respects both the SDK's internal A/B test configuration AND any status set via
 //     OverrideCommunityAccess. Mirrors the native reactive value (iOS @Published, Android Flow).
+//   • CommunityAccessDeniedReason (reactive, read-only): why the access is denied, null when it is
+//     granted or not known yet. Mirrors the native reactive value the same way.
 //   • OverrideCommunityAccess(bool): lets the host app take FULL control of access, bypassing the
 //     SDK's internal A/B test config and the analytics-only TrackAccessToCommunity signal.
 //
@@ -30,6 +32,24 @@ public partial class OctopusSDK
     /// The current value is also cached in <see cref="HasAccessToCommunity"/> for late readers.
     /// </summary>
     public static event Action<bool> OnHasAccessToCommunityChanged;
+
+    /// <summary>
+    /// Why the current user cannot access the community, or <c>null</c> when the access is granted or not
+    /// known yet. It is the reason the Octopus UI displays its access denied screen for. While the community
+    /// is closed or temporarily disabled, the reason is that closure. It is updated separately from
+    /// <see cref="HasAccessToCommunity"/>, so the two values can briefly disagree. A reason a newer native SDK
+    /// adds is reported as <see cref="OctopusCommunityAccessDeniedReason.Unknown"/>.
+    ///
+    /// Updated from native; subscribe to <see cref="OnCommunityAccessDeniedReasonChanged"/> to be notified
+    /// when it changes.
+    /// </summary>
+    public static OctopusCommunityAccessDeniedReason? CommunityAccessDeniedReason { get; private set; }
+
+    /// <summary>
+    /// Raised whenever the reason of the access refusal changes (mirrors the native reactive value).
+    /// The current value is also cached in <see cref="CommunityAccessDeniedReason"/> for late readers.
+    /// </summary>
+    public static event Action<OctopusCommunityAccessDeniedReason?> OnCommunityAccessDeniedReasonChanged;
 
     // Completion callbacks for in-flight OverrideCommunityAccess requests, keyed by request id.
     // Error callbacks reuse the shared _errorCallbacks registry (see OctopusSDK.SyncFollowGroups.cs).
@@ -82,12 +102,47 @@ public partial class OctopusSDK
         OnHasAccessToCommunityChanged?.Invoke(hasAccess);
     }
 
+    static void TriggerOnCommunityAccessDeniedReason(OctopusCommunityAccessDeniedReason? reason)
+    {
+        CommunityAccessDeniedReason = reason;
+        OnCommunityAccessDeniedReasonChanged?.Invoke(reason);
+    }
+
+    // Wire value: the native enum name in UPPER_SNAKE ("ACCOUNT_BANNED", ...), or an empty string for no
+    // reason (access granted or not known yet). Any other name, one a newer native SDK added, is Unknown.
+    internal static OctopusCommunityAccessDeniedReason? ParseCommunityAccessDeniedReason(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        switch (value)
+        {
+            case "NOT_IN_COHORT": return OctopusCommunityAccessDeniedReason.NotInCohort;
+            case "COMMUNITY_TEMPORARILY_DISABLED": return OctopusCommunityAccessDeniedReason.CommunityTemporarilyDisabled;
+            case "COMMUNITY_CLOSED": return OctopusCommunityAccessDeniedReason.CommunityClosed;
+            case "MEMBER_EXCLUDED": return OctopusCommunityAccessDeniedReason.MemberExcluded;
+            case "ACCOUNT_BANNED": return OctopusCommunityAccessDeniedReason.AccountBanned;
+            case "ACCOUNT_DELETED": return OctopusCommunityAccessDeniedReason.AccountDeleted;
+            default: return OctopusCommunityAccessDeniedReason.Unknown;
+        }
+    }
+
     public partial class OctopusChannel : MonoBehaviour
     {
         // Reactive push: native emits "true"/"false" on subscription and on every change.
         public void OnHasAccessToCommunity(string value)
         {
             OctopusSDK.TriggerOnHasAccessToCommunity(value == "true");
+        }
+
+        /// <summary>
+        /// Receives the native community access denial reason on subscription and on every change,
+        /// updates the cached reason, and raises the change event.
+        /// The payload is an UPPER_SNAKE reason name such as <c>ACCOUNT_BANNED</c>, or an empty string
+        /// when access is granted or the reason is not known yet. Unrecognized names map to
+        /// <see cref="OctopusCommunityAccessDeniedReason.Unknown"/>.
+        /// </summary>
+        public void OnCommunityAccessDeniedReason(string value)
+        {
+            OctopusSDK.TriggerOnCommunityAccessDeniedReason(OctopusSDK.ParseCommunityAccessDeniedReason(value));
         }
 
         // payload is "<requestId>\n" (no data — success carries only completion).

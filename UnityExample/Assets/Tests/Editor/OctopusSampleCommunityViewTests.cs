@@ -517,6 +517,9 @@ public class OctopusSampleCommunityViewTests
         { add { _recording.OnOctopusEvent += value; } remove { _recording.OnOctopusEvent -= value; } }
         public event System.Action<bool> OnHasAccessToCommunityChanged
         { add { _recording.OnHasAccessToCommunityChanged += value; } remove { _recording.OnHasAccessToCommunityChanged -= value; } }
+        public OctopusCommunityAccessDeniedReason? CommunityAccessDeniedReason { get { return _recording.CommunityAccessDeniedReason; } }
+        public event System.Action<OctopusCommunityAccessDeniedReason?> OnCommunityAccessDeniedReasonChanged
+        { add { _recording.OnCommunityAccessDeniedReasonChanged += value; } remove { _recording.OnCommunityAccessDeniedReasonChanged -= value; } }
         public event System.Action<int> OnNotSeenNotificationsCount
         { add { _recording.OnNotSeenNotificationsCount += value; } remove { _recording.OnNotSeenNotificationsCount -= value; } }
         public void TrackAccessToCommunity(bool value) { _recording.TrackAccessToCommunity(value); }

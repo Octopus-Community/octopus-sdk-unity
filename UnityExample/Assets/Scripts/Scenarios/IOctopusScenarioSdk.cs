@@ -61,6 +61,8 @@ public interface IOctopusScenarioSdk
     void TrackAccessToCommunity(bool hasAccess);
     bool HasAccessToCommunity { get; }
     event Action<bool> OnHasAccessToCommunityChanged;
+    OctopusCommunityAccessDeniedReason? CommunityAccessDeniedReason { get; }
+    event Action<OctopusCommunityAccessDeniedReason?> OnCommunityAccessDeniedReasonChanged;
     void OverrideCommunityAccess(bool hasAccess, Action onCompleted, Action<string> onError);
     OctopusExampleConfig.ExampleProfile AlternateProfile { get; }
     /// <summary>`OctopusSDK.SwitchCommunity(apiKey, mode, apiServerHost, 443, ...)` — the host overload, so a switch stays on the backend Initialize targeted (#391).</summary>
@@ -260,6 +262,12 @@ public sealed class OctopusLiveScenarioSdk : IOctopusScenarioSdk
     {
         add { OctopusSDK.OnHasAccessToCommunityChanged += value; }
         remove { OctopusSDK.OnHasAccessToCommunityChanged -= value; }
+    }
+    public OctopusCommunityAccessDeniedReason? CommunityAccessDeniedReason { get { return OctopusSDK.CommunityAccessDeniedReason; } }
+    public event Action<OctopusCommunityAccessDeniedReason?> OnCommunityAccessDeniedReasonChanged
+    {
+        add { OctopusSDK.OnCommunityAccessDeniedReasonChanged += value; }
+        remove { OctopusSDK.OnCommunityAccessDeniedReasonChanged -= value; }
     }
     public void OverrideCommunityAccess(bool hasAccess, Action onCompleted, Action<string> onError)
     { OctopusSDK.OverrideCommunityAccess(hasAccess, onCompleted, onError); }

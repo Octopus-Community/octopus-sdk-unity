@@ -110,8 +110,8 @@ public static class OctopusReefRunShare
             ObjectId = ObjectId(runId, score),
             Text = PostText(score),
             CatchPhrase = CatchPhrase(score),
-            ViewObjectButtonText = ViewObjectButtonText,
-            ImagePath = imagePath,
+            ViewObjectButton = OctopusLocalizedText.AutoTranslated(ViewObjectButtonText),
+            Medias = { OctopusClientObjectMedia.FromPath(imagePath) },
             SignBridgeShare = signBridgeShare,
         };
     }

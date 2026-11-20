@@ -70,7 +70,7 @@ public partial class OctopusSDK
         }
     }
 
-    private static void ApplyFontSettings(OctopusThemeSettings settings)
+    internal static void ApplyFontSettings(OctopusThemeSettings settings)
     {
         var fontStyles = settings.FontStyles;
         if (fontStyles == null) return;
@@ -78,6 +78,10 @@ public partial class OctopusSDK
         bool hasFonts = false;
         for (int i = 0; i < fontStyles.Length; i++)
         {
+#if UNITY_IOS && !UNITY_EDITOR
+            // An Android-only setting must not reset the iOS fonts when no iOS style is set.
+            if (i == (int)OctopusThemeSettings.FontStyleType.NavBarTitle) continue;
+#endif
             if (fontStyles[i] != null && fontStyles[i].enabled)
             {
                 hasFonts = true;
@@ -94,7 +98,10 @@ public partial class OctopusSDK
             CreateOctopusFont(settings, OctopusThemeSettings.FontStyleType.Caption1),
             CreateOctopusFont(settings, OctopusThemeSettings.FontStyleType.Caption2),
             CreateOctopusFont(settings, OctopusThemeSettings.FontStyleType.NavBarItem)
-        );
+        )
+        {
+            NavBarTitle = CreateOctopusFont(settings, OctopusThemeSettings.FontStyleType.NavBarTitle)
+        };
 
         SetFonts(fonts);
     }
@@ -106,7 +113,14 @@ public partial class OctopusSDK
         if (index < 0 || index >= fontStyles.Length) return null;
 
         var config = fontStyles[index];
-        if (config == null || !config.enabled || config.fontIndex < 0) return null;
+        if (config == null || !config.enabled) return null;
+
+        // The Android title can override size alone, preserving the bar's own font family.
+        if (styleType == OctopusThemeSettings.FontStyleType.NavBarTitle && config.fontIndex < 0)
+        {
+            return new OctopusFont("", "", config.fontSize);
+        }
+        if (config.fontIndex < 0) return null;
 
         var fontFileNames = settings.FontFileNames;
         if (config.fontIndex >= fontFileNames.Length) return null;

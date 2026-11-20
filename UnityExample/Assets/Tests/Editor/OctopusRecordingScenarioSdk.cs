@@ -296,6 +296,9 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
     {
         // The prefill's own fields rather than the object: a test asserting "the editor opens on
         // this text" should read the text, and OctopusPrefilledPost has no value equality.
+        // The real SDK refuses more images than a post carries before opening anything.
+        if (prefilled != null && prefilled.ImagePaths.Count > OctopusPrefilledPost.MaxImageCount)
+            throw new OctopusPrefilledPostTooManyImagesException(OctopusPrefilledPost.MaxImageCount, prefilled.ImagePaths.Count);
         LastPrefilledPost = prefilled;
         Record("OpenCreatePost", prefilled == null ? null : prefilled.Text);
     }
@@ -372,7 +375,7 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
     {
         LastClientObject = clientObject;
         Record("FetchOrCreateClientObjectRelatedPost", clientObject.ObjectId, clientObject.Text,
-            clientObject.GroupId, clientObject.ImageUrl, clientObject.SignBridgeShare != null);
+            clientObject.GroupId, clientObject.Medias.Count, clientObject.SignBridgeShare != null);
         if (BridgeError != null) error(BridgeError); else completed(BridgePostId);
     }
     public void StartObservingClientObjectRelatedPost(string objectId)
@@ -401,6 +404,13 @@ public sealed class OctopusRecordingScenarioSdk : IOctopusScenarioSdk
     internal int CommunityAccessListenerCount
     {
         get { return OnHasAccessToCommunityChanged == null ? 0 : OnHasAccessToCommunityChanged.GetInvocationList().Length; }
+    }
+    public OctopusCommunityAccessDeniedReason? CommunityAccessDeniedReason { get; set; }
+    public event Action<OctopusCommunityAccessDeniedReason?> OnCommunityAccessDeniedReasonChanged;
+    public void EmitAccessDeniedReason(OctopusCommunityAccessDeniedReason? value)
+    {
+        CommunityAccessDeniedReason = value;
+        if (OnCommunityAccessDeniedReasonChanged != null) OnCommunityAccessDeniedReasonChanged(value);
     }
     public string AccessError;
     public void EmitCommunityAccess(bool access) { EmitAccess(access); }

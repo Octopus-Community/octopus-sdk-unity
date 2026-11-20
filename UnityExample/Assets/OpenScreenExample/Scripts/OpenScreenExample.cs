@@ -45,14 +45,15 @@ public class OpenScreenExample : MonoBehaviour
 
     public void OnOpenCreatePostClicked()
     {
-        OctopusSDK.OpenCreatePost(new OctopusPrefilledPost
+        var prefilled = new OctopusPrefilledPost
         {
             Text = prefilledText,
             TopicId = string.IsNullOrEmpty(prefilledTopicId) ? OctopusSampleFixtures.DefaultTopicId : prefilledTopicId,
-            ImagePath = string.IsNullOrEmpty(prefilledImagePath) ? null : prefilledImagePath,
-            CtaLabel = string.IsNullOrEmpty(prefilledCtaLabel) ? null : prefilledCtaLabel,
+            CtaLocalizedLabel = string.IsNullOrEmpty(prefilledCtaLabel) ? null : OctopusLocalizedText.AutoTranslated(prefilledCtaLabel),
             CtaUrl = string.IsNullOrEmpty(prefilledCtaUrl) ? null : prefilledCtaUrl
-        });
+        };
+        if (!string.IsNullOrEmpty(prefilledImagePath)) prefilled.ImagePaths.Add(prefilledImagePath);
+        OctopusSDK.OpenCreatePost(prefilled);
     }
 
     // Demo URL interception: handle our own deep links in-game, let Octopus open the rest.
